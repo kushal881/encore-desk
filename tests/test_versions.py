@@ -24,7 +24,7 @@ def use(v):
 def test_versions():
     use("v2")
     c.post("/login/dev/1")
-    c.get(U)
+    c.get(U + "/work")
     with db.Session() as s:
         qs = {q.key: q.id for q in s.query(db.Question)}
     for key, val in (("note", "Black bracket"), ("size", "L1200 D450 H750"), ("shelves", "1"), ("hinge", "Right")):
@@ -75,7 +75,7 @@ def test_versions():
     with db.Session() as s:
         cid = s.query(db.Change).filter_by(status="asked").one().id
     c.post("%s/change/%d/yes" % (U, cid)); c.post(U + "/issue")
-    h = c.get(U).text
+    h = c.get(U + "/work").text
     assert h.count("Made from an older revision") == 2                               # production and subcontractor sets of product 2
     with db.Session() as s:
         assert s.query(db.Revision).order_by(db.Revision.id.desc()).first().engine_version == "v2"      # still on its own version

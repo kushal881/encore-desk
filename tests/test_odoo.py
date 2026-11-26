@@ -79,7 +79,7 @@ def test_in_the_desk():
     A.ODOO = OdooSource("encore.odoo.com", "encore", "kushal@example.com", "good", client=stand_in(True))
     A.SOURCE = A.Sources(A.ODOO, A.SampleSource())
     c = TestClient(A.app); c.post("/login/dev/1")
-    h = c.get("/orders/Q-2026-11-900").text
+    h = c.get("/orders/Q-2026-11-900/work").text
     assert "Blue Sky Ltd" in h and "/photos/1" in h and h.count("No photo") == 1 and "Product 2." in h
     with db.Session() as s:
         ph = s.query(db.Photo).one()

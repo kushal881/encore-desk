@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from . import db, spec, engines, finishes, auth, changes as chg
-import datetime, secrets, io
+import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
 from .sources.odoo import OdooSource, OdooError
@@ -155,7 +155,7 @@ def load(ref):
                                     and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
                                        and l.last_rev.engine_version != engines.version() and not l.remake)
-            _ = l.sets
+            _ = l.sets, l.marks
             if l.remake:
                 l.open_count = 0                                     # an exact copy of a past drawing needs no answers
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
@@ -185,7 +185,7 @@ def timeline(o):
             if q.answer:
                 ev.append((q.answered_at, q.id, dict(kind="me", text=q.answer, by=q.answered_by)))
         for c in l.changes:
-            ev.append((c.at, 2 * c.id, dict(kind="me", text=c.typed, by=c.by)))
+            ev.append((c.at, 2 * c.id, dict(kind="me", text=c.typed, by=c.by, view=l.no if "[Markers:" in c.typed else None)))
             ev.append((c.at, 2 * c.id + 1, dict(kind="change", line=l, c=c)))
     for st in o.steps:
         if st.kind != "issued":
@@ -202,9 +202,11 @@ def ctx(user, **kw):
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, show: str = "active", user=User):
+def home(request: Request, show: str = "active", focus: str = "", user=User):
     """The dashboard: every project the desk holds, where each stands, and what is waiting."""
-    rows, count = [], dict(active=0, pending=0, with_client=0, approved=0, production=0, completed=0)
+    rows, items, count = [], [], dict(active=0, pending=0, with_client=0, approved=0, production=0, completed=0)
+    titles = dict(active="All drawings of active projects", pending="Drawings pending", with_client="Drawings waiting for client approval", approved="Drawings approved, not yet released", production="Drawings in production")
+    focus = focus if focus in titles else ""
     with db.Session() as s:
         for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
             st, pend = stage_of(o.steps, any(l.revisions for l in o.lines))
@@ -220,13 +222,25 @@ def home(request: Request, show: str = "active", user=User):
                 count["with_client"] += st in ("issued", "sent")
                 count["approved"] += st == "approved"
                 count["production"] += st == "production"
+            if st != "completed":
+                for l in o.lines:
+                    r = l.revisions[-1] if l.revisions else None
+                    hit = dict(active=True, pending=r is None, with_client=bool(r) and st in ("issued", "sent"), approved=bool(r) and st == "approved", production=bool(r) and st == "production").get(focus, False)
+                    if hit:
+                        can_view = bool(r) or bool(l.drawing and l.drawing.status == "preview")
+                        state = "%s Rev %s" % (r.number, r.rev) if r else "Could not be drawn" if l.drawing and l.drawing.status == "failed" else "Preview, not issued" if l.drawing else "Not drawn yet"
+                        ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
+                        items.append(dict(ref=o.source_ref, client=o.client.name, no=l.no, name=l.name.split("(")[0].strip(), state=state, stage=STAGES[st], photo=ph.id if ph else None,
+                                          thumb=("/revisions/%d/png" % r.id) if r else ("/drawings/%d/png" % l.drawing.id) if can_view else "",
+                                          url=("/orders/%s/view/%d" % (o.source_ref, l.no)) if can_view else "/orders/%s/work" % o.source_ref))
             if (st == "completed") == (show == "completed"):
                 rows.append(dict(ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
                                  salesperson=o.salesperson, last=last, drawings=[dict(number=l.revisions[-1].number, rev=l.revisions[-1].rev, no=l.no) for l in o.lines if l.revisions]))
         known = {o.source_ref for o in s.scalars(select(db.Order))}
     samples = [r for r in getattr(SOURCE, "list_refs", lambda: [])() if r not in known]
     odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured))
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, focus=focus, items=items, focus_title=titles.get(focus, ""),
+                                                                  hide_back=not focus and show == "active"))
 
 
 @app.post("/open")
@@ -238,7 +252,51 @@ def _ready(l):
     return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes))
 
 
+def _after(request, ref):
+    """Back to the page the action was taken on: the project page or the drawing conversation."""
+    from urllib.parse import urlparse
+    came = urlparse(request.headers.get("referer", "")).path
+    return RedirectResponse("/orders/%s" % ref if came == "/orders/%s" % ref else "/orders/%s/work" % ref, status_code=303)
+
+
+FLOW = [("drawing", "Drawings"), ("issued", "Issued"), ("sent", "With client"), ("approved", "Approved"), ("production", "In production"), ("completed", "Completed")]
+
+
 @app.get("/orders/{ref}", response_class=HTMLResponse)
+def project(request: Request, ref: str, user=User):
+    """The project page: where the order stands, what needs attention, and every product with its drawing."""
+    o = load(ref)
+    todo = []
+    q = sum(l.open_count for l in o.lines)
+    if q:
+        todo.append(("%d question%s to answer before drawing" % (q, "" if q == 1 else "s"), "Answer", "/orders/%s/work" % ref))
+    asked = sum(1 for l in o.lines for c in l.changes if c.status == "asked")
+    if asked:
+        todo.append(("%d change request%s waiting for your yes or no" % (asked, "" if asked == 1 else "s"), "Confirm", "/orders/%s/work" % ref))
+    nodraw = [l.no for l in o.lines if not l.open_count and not l.drawing]
+    if nodraw:
+        todo.append(("Product %s ready to draw" % ", ".join(map(str, nodraw)), "Draw previews", "/orders/%s/work" % ref))
+    failed = [l.no for l in o.lines if l.drawing and l.drawing.status == "failed"]
+    if failed:
+        todo.append(("Product %s could not be drawn (needs an engine addition)" % ", ".join(map(str, failed)), "Open", "/orders/%s/work" % ref))
+    unissued = [l.no for l in o.lines if _ready(l) and not l.issued_current]
+    if unissued:
+        todo.append(("Product %s has a preview that is not issued" % ", ".join(map(str, unissued)), "Issue", "/orders/%s/work" % ref))
+    stale = sorted({l.no for l in o.lines for x in l.sets if l.last_rev and x.revision_id != l.last_rev.id})
+    if stale:
+        todo.append(("Production drawings of product %s are from an older revision" % ", ".join(map(str, stale)), "Make again", "#sets"))
+    with db.Session() as s:
+        er = len(s.scalars(select(db.EngineRequest).where(db.EngineRequest.order_ref == ref, db.EngineRequest.status.in_(["asked", "approved"]))).all())
+    if er:
+        todo.append(("%d engine request%s for this order not built yet" % (er, "" if er == 1 else "s"), "See", "/engine-requests"))
+    keys = [k for k, _ in FLOW]
+    flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+                              prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
+                              today=datetime.date.today().strftime("%d %b %Y").upper()))
+
+
+@app.get("/orders/{ref}/work", response_class=HTMLResponse)
 def order(request: Request, ref: str, user=User):
     o = load(ref)
     return T.TemplateResponse(request, "order.html", ctx(user, o=o, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
@@ -264,7 +322,7 @@ def answer(ref: str, qid: int, value: str = Form(...), user=User):
             raise HTTPException(404)
         q.answer, q.answered_by, q.answered_at = value, user.name, db.now()
         s.commit()
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 def make_spec(s, o, l, issue=None, edir=None):
@@ -302,11 +360,11 @@ def draw(ref: str, user=User):
     o = load(ref)
     with db.Session() as s:
         _draw_lines(o, s, user.name)
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/change")
-def change(ref: str, text: str = Form(...), line: int = Form(0), user=User):
+def change(ref: str, text: str = Form(...), line: int = Form(0), shown: str = Form(""), user=User):
     """A typed change request. It is read, said back, and applied only after the user confirms."""
     text = text.strip()
     if not text:
@@ -323,9 +381,11 @@ def change(ref: str, text: str = Form(...), line: int = Form(0), user=User):
             values, said = chg.understand(text, l.read["family"])
             if l.remake and values:
                 values, said = None, "This product is an exact remake of a past drawing, so it cannot be changed here."
-            s.add(db.Change(line_id=l.id, typed=text, understood=said, values=values or {}, status="asked" if values else "cannot", by=user.name))
+            used = [m for m in l.marks if shown and m.shown == shown and re.search(r"(?<![\w.])%d(?![\w.])" % m.no, text)]
+            typed = text + (" [Markers: %s]" % "; ".join("%d = %s" % (m.no, m.label or "marked on the drawing") for m in used) if used else "")
+            s.add(db.Change(line_id=l.id, typed=typed, understood=said, values=values or {}, status="asked" if values else "cannot", by=user.name))
         s.commit()
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/change/{cid}/{decision}")
@@ -343,7 +403,7 @@ def decide(ref: str, cid: int, decision: str, user=User):
         if decision == "yes":
             o = load(ref)
             _draw_lines(o, s, user.name, only={line.no})
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/issue")
@@ -392,7 +452,7 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
         if done:
             s.add(db.Step(order_id=o.id, kind="issued", note=", ".join(done), by=user.name))
         s.commit()
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 def _big(pdf_path):
@@ -453,11 +513,13 @@ def view(request: Request, ref: str, no: int, rev: int = 0, user=User):
     else:
         raise HTTPException(404)
     stamp = int((r.issued_at if r else l.drawing.made_at).timestamp())
-    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, src=src, title=title, shown=r, stamp=stamp))
+    key = "r%d" % r.id if r else "d%d" % stamp
+    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, src=src, title=title, shown=r, stamp=stamp, key=key, rev_q="?rev=%d" % r.id if rev else "",
+                              marks=[m for m in l.marks if m.shown == key], next_no=max([m.no for m in l.marks], default=0) + 1))
 
 
 @app.post("/orders/{ref}/step/{kind}")
-def step(ref: str, kind: str, note: str = Form(""), user=User):
+def step(request: Request, ref: str, kind: str, note: str = Form(""), user=User):
     """The steps after issue. Each is recorded with who did it and when."""
     if kind not in ("sent", "approved", "released", "completed", "reopened"):
         raise HTTPException(404)
@@ -476,7 +538,7 @@ def step(ref: str, kind: str, note: str = Form(""), user=User):
         note = "URGENT, before client approval: " + note
     with db.Session() as s:
         s.add(db.Step(order_id=o.id, kind=kind, note=note, by=user.name)); s.commit()
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return _after(request, ref)
 
 
 @app.post("/orders/{ref}/remake/{no}")
@@ -496,7 +558,7 @@ def remake(ref: str, no: int, rid: int = Form(...), user=User):
         s.commit()
         o = load(ref)
         _draw_lines(o, s, user.name, only={no})
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/photo/{no}")
@@ -510,7 +572,7 @@ async def photo_upload(ref: str, no: int, file: UploadFile = File(...), user=Use
     with db.Session() as s:
         if not _save_photo(s, l.name, data, user.name):
             raise HTTPException(400, "That file is not a photograph the desk can read (use JPG or PNG)")
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.get("/photos/{pid}")
@@ -536,7 +598,7 @@ def engine_request_new(text: str = Form(...), order_ref: str = Form(""), product
             if o:
                 s.add(db.Message(order_id=o.id, who="desk", text="Engine addition requested by %s%s: %s. It goes to the administrator for approval." % (user.name, " for " + product if product else "", text)))
         s.commit()
-    return RedirectResponse(("/orders/%s" % order_ref) if order_ref else "/engine-requests", status_code=303)
+    return RedirectResponse(("/orders/%s/work" % order_ref) if order_ref else "/engine-requests", status_code=303)
 
 
 @app.get("/engine-requests", response_class=HTMLResponse)
@@ -574,11 +636,11 @@ def move_engine(ref: str, no: int, user=User):
         s.commit()
         o = load(ref)
         _draw_lines(o, s, user.name, only={no})
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/sets/{kind}")
-def make_sets(ref: str, kind: str, job_order: str = Form(""), job_order_date: str = Form(""), deadline: str = Form(""), user=User):
+def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), job_order_date: str = Form(""), deadline: str = Form(""), user=User):
     """Production (kind PRODUCTION) or subcontractor (VENDOR) drawings for every issued product, made from the issued revision
     on the engine version that revision was issued on. Only after the order is released to production."""
     kind = kind.upper()
@@ -614,7 +676,7 @@ def make_sets(ref: str, kind: str, job_order: str = Form(""), job_order_date: st
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
         s.commit()
-    return RedirectResponse("/orders/%s" % ref, status_code=303)
+    return _after(request, ref)
 
 
 def _set_file(sid, i):
@@ -652,3 +714,32 @@ def set_page(sid: int, i: int, n: int, user=User):
         with pymupdf.open(f["pdf"]) as doc:
             doc[n].get_pixmap(dpi=200).save(out)
     return FileResponse(out)
+
+
+@app.post("/orders/{ref}/marks/{no}")
+def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y: float = Form(...), label: str = Form(""), rev: int = Form(0), user=User):
+    """A numbered marker on a drawing. The number is then used when describing a change."""
+    o = load(ref)
+    l = next((z for z in o.lines if z.no == no), None)
+    if l is None or not (0 <= x <= 100 and 0 <= y <= 100) or not re.fullmatch(r"[rd]\d+", shown):
+        raise HTTPException(400, "The marker could not be placed")
+    with db.Session() as s:
+        s.add(db.Mark(line_id=l.id, shown=shown, no=max([m.no for m in l.marks], default=0) + 1, x=round(x, 2), y=round(y, 2), label=label.strip()[:200], by=user.name))
+        s.commit()
+    return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)
+
+
+@app.post("/orders/{ref}/marks/{no}/{mid}/{what}")
+def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev: int = Form(0), user=User):
+    o = load(ref)
+    l = next((z for z in o.lines if z.no == no), None)
+    if l is None or what not in ("label", "remove") or mid not in [m.id for m in l.marks]:
+        raise HTTPException(404)
+    with db.Session() as s:
+        m = s.get(db.Mark, mid)
+        if what == "remove":
+            s.delete(m)
+        else:
+            m.label = label.strip()[:200]
+        s.commit()
+    return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)

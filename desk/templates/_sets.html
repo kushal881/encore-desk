@@ -1,0 +1,29 @@
+    {% if o.stage in ('production', 'completed') or prod_sets or vendor_sets %}
+    {% for kind, title, sets in (('production', 'Production drawings', prod_sets), ('vendor', 'Subcontractor drawings', vendor_sets)) %}
+    <div class="label">{{ title }}</div>
+    <div class="card">
+      {% for ps in sets %}{% set l = o.lines|selectattr('id', 'equalto', ps.line_id)|first %}
+      <div class="small" {% if not loop.first %}style="border-top:1px solid #E3E8EB;padding-top:6px"{% endif %}><b>Product {{ l.no }} · {{ l.name.split('(')[0] }}</b>
+        {% if l.last_rev and l.last_rev.id != ps.revision_id %}<span class="tag bad">Made from an older revision. Make again.</span>{% endif %}
+        {% for f in ps.files %}<div><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ f.title }}</a> <span class="sub">({{ f.pages }} sheet{{ '' if f.pages == 1 else 's' }})</span> · <a href="/sets/{{ ps.id }}/{{ loop.index0 }}/pdf?download=1">PDF</a></div>{% endfor %}
+        <div class="sub">Job order {{ ps.details.job_order }} · deadline {{ ps.details.deadline }} · {{ ps.made_by }}, {{ ps.made_at|when }}</div>
+      </div>
+      {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
+      {% if o.stage in ('production', 'completed') %}
+      <details {{ 'open' if not sets }}>
+        <summary>{{ 'Make again' if sets else 'Make ' + title|lower }}</summary>
+        <form class="col" method="post" action="/orders/{{ o.source_ref }}/sets/{{ kind }}" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+          <label class="small" for="jo{{ kind }}">Job order number</label>
+          <input class="sm" type="text" id="jo{{ kind }}" name="job_order" value="{{ o.job_order }}" placeholder="for example JO 26-27-10-0108">
+          <label class="small" for="jd{{ kind }}">Job order date</label>
+          <input class="sm" type="text" id="jd{{ kind }}" name="job_order_date" value="{{ today }}">
+          <label class="small" for="dl{{ kind }}">{{ 'Production deadline' if kind == 'production' else 'Required by' }}</label>
+          <input class="sm" type="text" id="dl{{ kind }}" name="deadline" placeholder="for example 10 DEC 2026">
+          <button class="sm primary">{{ 'Make again' if sets else 'Make ' + title|lower }}</button>
+        </form>
+        <div class="sub small">Made from each product's latest issued revision. No client details appear on these sheets.</div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}

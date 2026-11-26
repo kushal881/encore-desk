@@ -1,0 +1,50 @@
+    {% if o.stage != 'drawing' %}
+    <div class="card" style="border-color:#1F5A6E">
+      <div class="label">Next step</div>
+      {% if o.stage == 'issued' %}
+      <div><b>Send the issued drawings to the client for approval.</b></div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/sent">
+        <label class="sr" for="sn">How it was sent</label>
+        <input class="sm" type="text" id="sn" name="note" placeholder="How and to whom (for example: email to Mr Singh)">
+        <button class="sm primary">Mark as sent to client</button>
+      </form>
+      {% endif %}
+      {% if o.stage in ('issued', 'sent') or (o.stage == 'production' and o.approval_pending) %}
+      <div>{% if o.stage == 'sent' %}<b>Waiting for the client's approval.</b>{% elif o.stage == 'production' %}<b>In production. Client approval is still pending.</b>{% else %}Or, if the client has already approved:{% endif %}</div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/approved">
+        <label class="sr" for="an">Who approved and how</label>
+        <input class="sm" type="text" id="an" name="note" required placeholder="Who approved and how (for example: Mr Singh, by email)">
+        <button class="sm primary">Record client approval</button>
+      </form>
+      <div class="sub small">If the client asks for a change, type it as a change request and issue again. A new issue needs a new approval.</div>
+      {% endif %}
+      {% if o.stage == 'approved' %}
+      <div><b>Approved by the client. Release to production.</b></div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released">
+        <label class="sr" for="rn">Note</label>
+        <input class="sm" type="text" id="rn" name="note" placeholder="Note (optional)">
+        <button class="sm primary">Release to production</button>
+      </form>
+      {% elif o.stage in ('issued', 'sent') %}
+      <details>
+        <summary>Urgent order: release to production before approval</summary>
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released" style="margin-top:8px">
+          <label class="sr" for="un">Reason</label>
+          <input class="sm" type="text" id="un" name="note" required placeholder="Reason (recorded with your name)">
+          <button class="sm">Release now</button>
+        </form>
+      </details>
+      {% endif %}
+      {% if o.stage in ('approved', 'production') %}
+      <form method="post" action="/orders/{{ o.source_ref }}/step/completed"><button class="sm" style="width:100%">Mark project completed</button></form>
+      <div class="sub small">A completed project leaves the active list on the dashboard. Its drawings are kept.</div>
+      {% endif %}
+      {% if o.stage == 'completed' %}
+      <div><b>This project is completed.</b></div>
+      <form method="post" action="/orders/{{ o.source_ref }}/step/reopened"><button class="sm">Reopen</button></form>
+      {% endif %}
+      {% for st in o.steps|reverse %}{% if loop.first %}<div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px">History</div>{% endif %}
+      <div class="sub small">{{ {'issued':'Issued','sent':'Sent to client','approved':'Client approved','released':'Released to production','completed':'Completed','reopened':'Reopened'}[st.kind] }} · {{ st.by }} · {{ st.at|when }}{% if st.note %}<br>{{ st.note }}{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% endif %}

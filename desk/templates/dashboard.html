@@ -3,13 +3,34 @@
 {% block body %}
 <div class="page">
   <div class="tiles">
-    <div class="tile"><div class="n">{{ count.active }}</div><div class="sub">Active projects</div></div>
-    <div class="tile"><div class="n">{{ count.pending }}</div><div class="sub">Drawings pending</div></div>
-    <div class="tile"><div class="n">{{ count.with_client }}</div><div class="sub">Waiting for client approval</div></div>
-    <div class="tile"><div class="n">{{ count.approved }}</div><div class="sub">Approved, not yet released</div></div>
-    <div class="tile"><div class="n">{{ count.production }}</div><div class="sub">In production</div></div>
-    <div class="tile"><div class="n">{{ requests_waiting }}</div><div class="sub"><a href="/engine-requests">Engine requests waiting</a></div></div>
+    {% for k, n, t in (('active', count.active, 'Active projects'), ('pending', count.pending, 'Drawings pending'), ('with_client', count.with_client, 'Waiting for client approval'), ('approved', count.approved, 'Approved, not yet released'), ('production', count.production, 'In production')) %}
+    <a class="tile {{ 'on' if focus == k }}" href="/?focus={{ k }}#drawings" aria-label="{{ n }} {{ t }}. Show the drawings."><div class="n">{{ n }}</div><div class="sub">{{ t }}</div></a>
+    {% endfor %}
+    <a class="tile" href="/engine-requests"><div class="n">{{ requests_waiting }}</div><div class="sub">Engine requests waiting</div></a>
   </div>
+  {% if focus %}
+  <div class="card" id="drawings">
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+      <div style="font-weight:600;flex-grow:1">{{ focus_title }} ({{ items|length }})</div>
+      <a href="/">Close this list</a>
+    </div>
+    {% if items %}
+    <div class="grid">
+      {% for d in items %}
+      <a href="{{ d.url }}" class="card" style="color:inherit;text-decoration:none;gap:8px">
+        {% if d.thumb %}<img src="{{ d.thumb }}" alt="" style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px">
+        {% else %}<div class="nophoto" style="width:100%;height:120px">{{ d.state }}</div>{% endif %}
+        <div style="display:flex;gap:10px;align-items:center">
+          {% if d.photo %}<img class="thumb" src="/photos/{{ d.photo }}" alt="" style="width:44px;height:44px">{% endif %}
+          <div style="min-width:0"><div style="font-weight:600">{{ d.name }}</div><div class="sub small">{{ d.ref }} · {{ d.client }} · Product {{ d.no }}</div></div>
+        </div>
+        <div class="small"><b>{{ d.state }}</b> <span class="sub">· {{ d.stage }}</span></div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}<div class="sub">Nothing here right now.</div>{% endif %}
+  </div>
+  {% endif %}
   <div class="card">
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
       <div style="font-weight:600;flex-grow:1">{{ 'Completed projects' if show == 'completed' else 'Active projects' }}</div>

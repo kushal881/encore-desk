@@ -17,7 +17,7 @@ def test_more():
     c.post("/login/dev/3")                                                   # Anchal Dawar, coordinator
     h = c.get("/").text
     assert "No active projects" in h and "Q-2026-10-444" in h and "SAMPLE-REPEAT-1" in h      # offered as samples
-    c.get(A)
+    c.get(A + "/work")
     with db.Session() as s:
         qs = {q.key: q.id for q in s.query(db.Question)}
     for key, val in (("note", "Black bracket"), ("size", "L1200 D450 H750"), ("shelves", "1"), ("hinge", "Right")):
@@ -53,7 +53,7 @@ def test_more():
     assert c.post(A + "/photo/2", files={"file": ("p.png", buf.getvalue(), "image/png")}).status_code == 200
     assert c.post(A + "/photo/2", files={"file": ("p.txt", b"not a picture", "text/plain")}).status_code == 400
     # a later order of the same client: remake one product, ask for an engine addition for the other
-    h = c.get(B).text
+    h = c.get(B + "/work").text
     assert "/photos/1" in h and "Same as a past drawing" in h and "Encore-Nov-2026-06-02 Rev A" in h    # same product name -> same photograph
     with db.Session() as s:
         rid = s.query(db.Revision).filter_by(number="Encore-Nov-2026-06-02").one().id

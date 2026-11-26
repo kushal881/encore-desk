@@ -56,6 +56,7 @@ class OrderLine(Base):
     changes: Mapped[list["Change"]] = relationship(order_by="Change.id", cascade="all, delete-orphan")
     revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
     sets: Mapped[list["ProductionSet"]] = relationship(order_by="ProductionSet.id", cascade="all, delete-orphan")
+    marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -193,6 +194,20 @@ class ProductionSet(Base):
     engine_version: Mapped[str] = mapped_column(String(80), default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Mark(Base):
+    """A numbered marker a user placed on a drawing, to point at a part when describing a change. Numbers run on per product."""
+    __tablename__ = "mark"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    shown: Mapped[str] = mapped_column(String(40))                    # which sheet: r<revision id>, or d<time of the preview>
+    no: Mapped[int] = mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Float)                           # position on the sheet, per cent of its width and height
+    y: Mapped[float] = mapped_column(Float)
+    label: Mapped[str] = mapped_column(Text, default="")
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 def init():

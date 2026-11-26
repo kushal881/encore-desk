@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ o.source_ref }} · {{ o.client.name }}{% endblock %}
+{% block crumb %}<div class="dim">{{ o.source_ref }} · {{ o.client.name }}</div>{% endblock %}
+{% block body %}
+<div class="cols">
+  <div style="flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:16px">
+    <div class="card" style="gap:10px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+        <div style="flex-grow:1"><div style="font-size:18px;font-weight:600">{{ o.client.name }}</div>
+          <div class="sub">{{ o.source_ref }}{% if o.client.contact %} · {{ o.client.contact }}{% endif %} · Salesperson {{ o.salesperson or 'not given' }} · Job order {{ o.job_order or 'not given' }}</div>
+          {% if o.delivery %}<div class="sub small">Delivery: {{ o.delivery|join(', ') }}</div>{% endif %}</div>
+        <a href="/orders/{{ o.source_ref }}/work"><button class="primary" type="button">Open the drawing conversation</button></a>
+      </div>
+      <div class="steps" aria-label="Stage of this project">{% for t, c in flow %}<span class="{{ c }}">{{ t }}</span>{% endfor %}</div>
+      <div class="sub small">{{ issued }} of {{ o.lines|length }} drawings issued · engines in use: {{ latest }}</div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600">Needs attention</div>
+      {% for text, act, url in todo %}
+      <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #E9EDEF;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div><a href="{{ url }}">{{ act }}</a></div>
+      {% else %}<div class="sub">Nothing is waiting on the drawings. See Next step on the right.</div>{% endfor %}
+    </div>
+    <div class="label">Products and drawings</div>
+    <div class="grid">
+      {% for l in o.lines %}
+      <div class="card" style="gap:8px">
+        <div style="display:flex;gap:10px">
+          {% if l.photo %}<img class="thumb" src="/photos/{{ l.photo }}?v={{ l.photo_v }}" alt="Photograph of {{ l.name.split('(')[0] }}">{% else %}<div class="nophoto">No photo</div>{% endif %}
+          <div style="min-width:0"><div style="font-weight:600">{{ l.no }}. {{ l.name.split('(')[0] }}</div><div class="sub small">{{ l.size_text }}{% if l.read.area %} · {{ l.read.area }}{% endif %} · qty {{ '%g' % l.qty }}</div></div>
+        </div>
+        <div>{% if l.drawing and l.drawing.status == 'failed' %}<span class="tag bad">Could not draw</span>
+          {% elif l.issued_current %}<span class="tag ok">Issued Rev {{ l.last_rev.rev }}</span>
+          {% elif l.drawing %}<span class="tag ask">Preview, not issued</span>{% if l.last_rev %} <span class="tag dim">last issued Rev {{ l.last_rev.rev }}</span>{% endif %}
+          {% elif l.open_count %}<span class="tag ask">{{ l.open_count }} question{{ '' if l.open_count == 1 else 's' }}</span>
+          {% else %}<span class="tag info">Ready to draw</span>{% endif %}
+          {% if l.remake %}<span class="tag info">Remake</span>{% endif %}
+          {% if l.marks %}<span class="tag dim">{{ l.marks|length }} marker{{ '' if l.marks|length == 1 else 's' }}</span>{% endif %}</div>
+        {% if l.drawing and l.drawing.status == 'preview' %}
+        <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+        <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View, mark and ask for a change</b></a>{% if l.last_rev %} · {{ l.last_rev.number }} Rev {{ l.last_rev.rev }} · <a href="/revisions/{{ l.last_rev.id }}/pdf?download=1">PDF</a>{% endif %}</div>
+        {% elif l.drawing %}<div class="sub small">{{ l.drawing.error }}</div>
+        {% else %}<div class="nophoto" style="width:100%;height:110px">No drawing yet</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="right" id="sets">
+    {% include "_next.html" %}
+    {% if o.stage == 'drawing' %}<div class="card"><div class="label">Next step</div><div>Finish and issue the drawings in the <a href="/orders/{{ o.source_ref }}/work">drawing conversation</a>.</div></div>{% endif %}
+    {% include "_sets.html" %}
+  </div>
+</div>
+{% endblock %}
