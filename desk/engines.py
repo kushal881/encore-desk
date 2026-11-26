@@ -39,9 +39,35 @@ def fetch_latest():
     return v
 
 
+def ensure_fonts():
+    """The engines letter their sheets in DejaVu Sans. A bare server has no fonts at all, and every text then comes out as an
+    empty box. The plotting package carries DejaVu Sans, so copy it to this user's font folder and rebuild the font index."""
+    try:
+        import matplotlib
+        from ezdxf.fonts import fonts
+        src = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+        dst = os.path.expanduser("~/.fonts")
+        os.makedirs(dst, exist_ok=True)
+        new = False
+        for f in os.listdir(src):
+            if f.startswith("DejaVuSans") and not os.path.exists(os.path.join(dst, f)):
+                shutil.copy(os.path.join(src, f), dst); new = True
+        if new or "dejavusans.ttf" not in [os.path.basename(str(x)).lower() for x in _known_fonts(fonts)]:
+            fonts.build_system_font_cache()
+        return "DejaVuSans.ttf" in fonts.font_manager._font_cache
+    except Exception:
+        return False
+
+
+def _known_fonts(fonts):
+    fonts.load()
+    return [e.file_path for e in fonts.font_manager._font_cache._cache.values()]
+
+
 def start():
     """Called when the desk starts: use the developer's copy if one is given, otherwise fetch the newest approved version."""
     global VERSION
+    ensure_fonts()
     if ENGINES_DIR:
         VERSION = "developer copy"
         return
