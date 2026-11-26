@@ -2,6 +2,7 @@
 import os, sys, re, tempfile
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "t.sqlite3")
 os.environ["FILES_DIR"] = tempfile.mkdtemp()
+os.environ["DESK_DEV_LOGIN"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
 from desk.app import app
@@ -12,6 +13,10 @@ U = "/orders/Q-2026-10-444"
 
 
 def test_flow():
+    assert c.get(U, follow_redirects=False).headers["location"] == "/login"            # nothing without sign-in
+    assert c.post(U + "/draw", follow_redirects=False).headers["location"] == "/login"
+    assert c.get("/drawings/1/pdf", follow_redirects=False).headers["location"] == "/login"
+    c.post("/login/dev/2")                                                              # Sushil Singhal
     h = c.get(U).text
     assert "Draw previews" not in h and "Issue drawings" not in h
     with db.Session() as s:
@@ -45,6 +50,11 @@ def test_flow():
         assert first.spec["model"]["L"] == 1200 and os.path.exists(first.files["pdf"])     # the earlier revision is untouched
         est = [f.name for f in s.query(db.Finish).filter_by(source="estimate")]
         assert est == ["FESTIVAL F157"], est
+        assert last.issued_by == "Sushil Singhal"
+    h = c.get(U).text
+    assert h.index("Issued: Encore-Nov-2026-06-01 Rev A") < h.index("Line 2: make it 1500 long") < h.index("Issued: Encore-Nov-2026-06-02 Rev B")   # time order
+    c.post("/logout")
+    assert c.get(U, follow_redirects=False).headers["location"] == "/login"
 
 
 if __name__ == "__main__":

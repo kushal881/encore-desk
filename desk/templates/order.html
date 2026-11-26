@@ -36,7 +36,8 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
   <div style="font-size:16px;font-weight:600">Encore drawing desk</div>
   <div class="dim">{{ o.source_ref }} · {{ o.client.name }}</div>
   <div style="flex-grow:1"></div>
-  <div class="dim">{{ user }}</div>
+  <div class="dim">{{ user }} · {{ role }}</div>
+  <form method="post" action="/logout"><button style="min-height:36px;background:transparent;color:#fff;border-color:#C9DCE5">Sign out</button></form>
 </div>
 <div class="cols">
   <div class="side">
@@ -54,8 +55,10 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
   <div class="main">
     <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
     <div class="chat">
-      <div class="b desk">{{ o.messages[0].text }}</div>
-      {% for l in o.lines %}{% for q in l.questions %}
+      {% for e in events %}
+      {% if e.kind == 'say' %}<div class="b desk">{{ e.text }}</div>
+      {% elif e.kind == 'me' %}<div class="b me">{{ e.text }}<div style="font-size:12px;color:#C9DCE5">{{ e.by }}</div></div>
+      {% elif e.kind == 'question' %}{% set q = e.q %}{% set l = e.line %}
       <div class="b desk">
         <div><b>Line {{ l.no }}.</b> {{ q.text }}</div>
         {% if not q.answer %}
@@ -69,11 +72,7 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
         </form>
         {% endif %}
       </div>
-      {% if q.answer %}<div class="b me">{{ q.answer }}<div style="font-size:12px;color:#C9DCE5">{{ q.answered_by }}</div></div>{% endif %}
-      {% endfor %}{% endfor %}
-      {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
-      {% for l in o.lines %}{% for c in l.changes %}
-      <div class="b me">{{ c.typed }}<div style="font-size:12px;color:#C9DCE5">{{ c.by }}</div></div>
+      {% elif e.kind == 'change' %}{% set c = e.c %}{% set l = e.line %}
       {% if c.status == 'cannot' %}<div class="b desk"><b>Line {{ l.no }}.</b> {{ c.understood }}</div>
       {% else %}
       <div class="b desk"><b>Line {{ l.no }}, understood as:</b> {{ c.understood }}.
@@ -86,8 +85,9 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
         {% else %} <span class="tag" style="display:inline-block;color:#4A5A63;background:#E9EDEF">Not applied</span>{% endif %}
       </div>
       {% endif %}
-      {% endfor %}{% endfor %}
-      {% for m in o.messages[1:] %}<div class="b {{ 'desk' if m.who == 'desk' else 'me' }}">{{ m.text }}</div>{% endfor %}
+      {% endif %}
+      {% endfor %}
+      {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
     </div>
     {% if drawn %}
     <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;gap:10px;padding:14px 18px;border-top:1px solid #E3E8EB">

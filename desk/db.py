@@ -1,7 +1,7 @@
 """The desk's own database. Orders are copied in from their source with our own ids, so the records stand without Odoo.
 SQLite when run locally, Postgres on Railway (DATABASE_URL)."""
 import os, datetime
-from sqlalchemy import create_engine, ForeignKey, String, Text, Integer, Float, DateTime, JSON, UniqueConstraint
+from sqlalchemy import create_engine, ForeignKey, String, Text, Integer, Float, DateTime, JSON, UniqueConstraint, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 URL = os.environ.get("DATABASE_URL", "sqlite:///var/desk.sqlite3").replace("postgres://", "postgresql://")
@@ -87,6 +87,16 @@ class Drawing(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class User(Base):
+    """A member of staff allowed into the desk. The list is ours; Google only proves who is signing in."""
+    __tablename__ = "user_"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(20), default="drawing")      # admin | drawing | coordinator
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Finish(Base):
