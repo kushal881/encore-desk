@@ -21,6 +21,7 @@ class Client(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), unique=True)
     contact: Mapped[str] = mapped_column(String(200), default="")
+    folder_no: Mapped[str] = mapped_column(String(10), default="")     # the client's folder number in drawing numbers
 
 
 class Order(Base):
@@ -49,6 +50,8 @@ class OrderLine(Base):
     qty: Mapped[float] = mapped_column(Float, default=1)
     questions: Mapped[list["Question"]] = relationship(order_by="Question.id", cascade="all, delete-orphan")
     drawing: Mapped["Drawing | None"] = relationship(cascade="all, delete-orphan", uselist=False)
+    changes: Mapped[list["Change"]] = relationship(order_by="Change.id", cascade="all, delete-orphan")
+    revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -84,6 +87,45 @@ class Drawing(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Finish(Base):
+    """A shade in the finishes library."""
+    __tablename__ = "finish"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)       # as written on orders, upper case
+    kind: Mapped[str] = mapped_column(String(40), default="")          # laminate, fabric, edgeband, powder coat ...
+    hex: Mapped[str] = mapped_column(String(7))
+    source: Mapped[str] = mapped_column(String(40), default="")        # past drawings | catalogue | estimate | photo
+    added_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Revision(Base):
+    """An issued drawing. Never changed after it is written; a change is a new revision."""
+    __tablename__ = "revision"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    number: Mapped[str] = mapped_column(String(80))                    # Encore-Nov-2026-06-02
+    rev: Mapped[str] = mapped_column(String(4))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)
+    files: Mapped[dict] = mapped_column(JSON, default=dict)
+    issued_by: Mapped[str] = mapped_column(String(120), default="")
+    issued_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Change(Base):
+    """A change request on one line: what was typed, how it was understood, and whether the user confirmed it."""
+    __tablename__ = "change"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    typed: Mapped[str] = mapped_column(Text)
+    understood: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JSON, default=dict)           # what it sets on the specification
+    status: Mapped[str] = mapped_column(String(20), default="asked")   # asked | confirmed | rejected | cannot
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 def init():

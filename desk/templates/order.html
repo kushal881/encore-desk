@@ -54,7 +54,7 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
   <div class="main">
     <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
     <div class="chat">
-      {% for m in o.messages %}<div class="b {{ 'desk' if m.who == 'desk' else 'me' }}">{{ m.text }}</div>{% endfor %}
+      <div class="b desk">{{ o.messages[0].text }}</div>
       {% for l in o.lines %}{% for q in l.questions %}
       <div class="b desk">
         <div><b>Line {{ l.no }}.</b> {{ q.text }}</div>
@@ -72,8 +72,30 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
       {% if q.answer %}<div class="b me">{{ q.answer }}<div style="font-size:12px;color:#C9DCE5">{{ q.answered_by }}</div></div>{% endif %}
       {% endfor %}{% endfor %}
       {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
-      {% if drawn %}<div class="b desk">{{ drawn }} preview{{ '' if drawn == 1 else 's' }} ready on the right. Change requests and Issue are the next parts to be built.</div>{% endif %}
+      {% for l in o.lines %}{% for c in l.changes %}
+      <div class="b me">{{ c.typed }}<div style="font-size:12px;color:#C9DCE5">{{ c.by }}</div></div>
+      {% if c.status == 'cannot' %}<div class="b desk"><b>Line {{ l.no }}.</b> {{ c.understood }}</div>
+      {% else %}
+      <div class="b desk"><b>Line {{ l.no }}, understood as:</b> {{ c.understood }}.
+        {% if c.status == 'asked' %} Correct?
+        <div class="q" style="display:flex;gap:8px;margin-top:10px">
+          <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/yes"><button class="primary">Yes, redraw</button></form>
+          <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/no"><button>No</button></form>
+        </div>
+        {% elif c.status == 'confirmed' %} <span class="tag ok" style="display:inline-block">Applied</span>
+        {% else %} <span class="tag" style="display:inline-block;color:#4A5A63;background:#E9EDEF">Not applied</span>{% endif %}
+      </div>
+      {% endif %}
+      {% endfor %}{% endfor %}
+      {% for m in o.messages[1:] %}<div class="b {{ 'desk' if m.who == 'desk' else 'me' }}">{{ m.text }}</div>{% endfor %}
     </div>
+    {% if drawn %}
+    <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;gap:10px;padding:14px 18px;border-top:1px solid #E3E8EB">
+      <label class="sr" for="chg">Change request</label>
+      <input type="text" id="chg" name="text" required placeholder="Type a change, for example: Line 2: make it 1500 long">
+      <button class="primary">Send</button>
+    </form>
+    {% endif %}
   </div>
   <div class="right">
     <div class="label">Drawings</div>
@@ -83,14 +105,27 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
     {% for l in o.lines %}{% if l.drawing %}
     <div class="card">
       <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Line {{ l.no }}</div>
-        {% if l.drawing.status == 'failed' %}<div class="tag" style="color:#8C1D18;background:#FBE4E2">Could not draw</div>{% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
+        {% if l.drawing.status == 'failed' %}<div class="tag" style="color:#8C1D18;background:#FBE4E2">Could not draw</div>
+        {% elif l.last_rev and l.last_rev.spec.model == l.drawing.spec.model %}<div class="tag ok">Issued Rev {{ l.last_rev.rev }}</div>
+        {% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
       {% if l.drawing.status == 'failed' %}<div class="sub">{{ l.drawing.error }}</div>
       {% else %}
       <a href="/drawings/{{ l.drawing.id }}/pdf"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Preview of the drawing for line {{ l.no }}" style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
       <div class="sub" style="font-size:12px"><a href="/drawings/{{ l.drawing.id }}/pdf">Open PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
       {% endif %}
+      {% for r in l.revisions|reverse %}
+      <div class="sub" style="font-size:12px;border-top:1px solid #E3E8EB;padding-top:6px"><b>{{ r.number }} Rev {{ r.rev }}</b> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a><br>{{ r.reason }}</div>
+      {% endfor %}
     </div>
     {% endif %}{% endfor %}
+    {% if drawn and can_issue and needs_issue %}
+    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card">
+      {% if not o.client.folder_no %}<label for="fno" style="font-weight:600;font-size:13px">Folder number for {{ o.client.name }}</label>
+      <input type="text" id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">{% endif %}
+      <button class="primary">Issue drawings</button>
+      <div class="sub" style="font-size:12px">Issue gives each drawing its number and revision. An issued revision is never changed.</div>
+    </form>
+    {% endif %}
     {% if not drawn %}
     <div class="card" style="border-style:dashed;align-items:center;text-align:center;padding:28px 18px">
       <div style="font-weight:600">No drawings yet</div>

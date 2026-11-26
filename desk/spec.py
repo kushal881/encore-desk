@@ -29,8 +29,10 @@ def variant(family, name, fields):
     return ""
 
 
-def build(engines_dir, order, line, read, answers, serial):
-    """-> the specification dict. answers = {question key: answer text}."""
+def build(engines_dir, order, line, read, answers, serial, changes=None, finish=None, issue=None):
+    """-> the specification dict. answers = {question key: answer text}; changes = confirmed change values;
+    finish(text, kind) -> a shade from the finishes library; issue = dict(number folder, serial, revisions) when issuing."""
+    changes = changes or {}
     family, fields, name = read["family"], read["fields"], line.name
     key = (family, variant(family, name, fields))
     if key not in TEMPLATES:
@@ -43,7 +45,7 @@ def build(engines_dir, order, line, read, answers, serial):
         size = tuple(int(v) for v in m.groups())
     if not size:
         raise CannotDraw("No size for this line.")
-    L, D, H = size
+    L, D, H = (changes.get(k, v) for k, v in zip("LDH", size))
     spec = json.load(open(os.path.join(engines_dir, "templates", TEMPLATES[key]), encoding="utf-8"))
     spec = copy.deepcopy(spec); spec.pop("_comment", None)
     m = spec["model"]
@@ -62,6 +64,10 @@ def build(engines_dir, order, line, read, answers, serial):
         r = re.search(r"(\d+)", fields.get("raceway length", ""))
         if r and "raceway" in m:
             m["raceway"]["L"] = int(r.group(1))
+        if "screen" in m:
+            m["screen"].update({k: changes[c] for c, k in (("screen_w", "w"), ("screen_h", "h")) if c in changes})
+        if "raceway" in m and "raceway_L" in changes:
+            m["raceway"]["L"] = changes["raceway_L"]
     elif family == "storage":
         m["t"] = _mm(fields.get("material"), m.get("t", 18))
         m["shutters"] = max(2, math.ceil(L / 500))
@@ -69,10 +75,16 @@ def build(engines_dir, order, line, read, answers, serial):
             m.pop("partition_after", None)
         if answers.get("shelves", "").strip().isdigit():
             m["shelves"] = int(answers["shelves"])
+        if "shutters" in changes:
+            m["shutters"] = changes["shutters"]; m.pop("partition_after", None)
+        if "shelves" in changes:
+            m["shelves"] = changes["shelves"]
     elif family == "pedestal":
         m["t"] = _mm(fields.get("material"), m.get("t", 18))
         if answers.get("hinge"):
             m["hinge"] = answers["hinge"].strip().lower()
+        if "hinge" in changes:
+            m["hinge"] = changes["hinge"]
         if "shutter_h" in m and H != 650:
             m["shutter_h"] = H - 180
     edge = (fields.get("edge band") or fields.get("edgeband") or "").upper()
@@ -82,11 +94,22 @@ def build(engines_dir, order, line, read, answers, serial):
     fab = (fields.get("fabric") or "").upper()
     for sw in spec.get("swatches", []):
         use = sw.get("use", "").lower()
-        if lam and ("laminate" in use or "plpb" in use or "carcass" in use):
-            sw["code"] = lam
-        if fab and "fabric" in use:
-            sw["code"] = fab
+        text, kind = (lam, "laminate") if lam and ("laminate" in use or "plpb" in use or "carcass" in use) and "white" not in sw.get("code", "").lower() \
+            else (fab, "fabric") if fab and "fabric" in use else ("", "")
         sw.pop("image", None)
+        if not text:
+            continue
+        sw["code"] = text
+        f = finish(text, kind) if finish else None
+        if f is not None:
+            sw["hex"] = f.hex
+            rgb = [int(f.hex[i:i + 2], 16) for i in (1, 3, 5)]
+            if kind == "laminate" and "top_rgb" in m:
+                m["top_rgb"] = rgb
+            if kind == "fabric" and isinstance(m.get("screen"), dict):
+                m["screen"]["rgb"] = rgb
+            if f.source == "estimate":
+                sw["use"] = sw.get("use", "") + " (colour indicative)"
     for hw in spec.get("hardware", []):
         hw["image"] = None
     today = datetime.date.today().strftime("%d %b %Y").upper()
@@ -94,8 +117,14 @@ def build(engines_dir, order, line, read, answers, serial):
     spec["item"] = dict(serial="%02d" % serial, product_name=name.split("(")[0].strip(), product_code="%d x %d x %d" % (L, D, H), qty=int(line.qty))
     if read["area"]:
         spec["item"]["area"] = read["area"]
-    spec["drawing"].update(quotation=order.source_ref, date=today, rev="A", status="PREVIEW - NOT ISSUED")
-    spec["revisions"] = [dict(rev="A", date=today, desc="Preview from the drawing desk", by="")]
-    spec["numbering"] = dict(folder="DESK", serial="%02d" % serial, company_short=order.client.name)
+    if issue:
+        spec["drawing"].update(quotation=order.source_ref, date=issue["revisions"][0]["date"], rev=issue["revisions"][-1]["rev"], status="FOR APPROVAL", issued=True)
+        spec["revisions"] = issue["revisions"]
+        spec["numbering"] = dict(folder=issue["folder"], serial=issue["serial"], company_short=order.client.name)
+        spec["item"]["serial"] = issue["serial"]
+    else:
+        spec["drawing"].update(quotation=order.source_ref, date=today, rev="A", status="PREVIEW - NOT ISSUED")
+        spec["revisions"] = [dict(rev="A", date=today, desc="Preview from the drawing desk", by="")]
+        spec["numbering"] = dict(folder="DESK", serial="%02d" % serial, company_short=order.client.name)
     spec["notes_from_answers"] = {k: v for k, v in answers.items() if k == "note"}
     return spec

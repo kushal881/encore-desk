@@ -1,0 +1,200 @@
+[
+ {
+  "name": "BLACK PVC EDGEBAND",
+  "kind": "edgeband",
+  "hex": "#1E1E20",
+  "source": "past drawings"
+ },
+ {
+  "name": "BLACK POWDER COAT",
+  "kind": "powder coat",
+  "hex": "#222224",
+  "source": "past drawings"
+ },
+ {
+  "name": "LAUREL OAK DARK 3416",
+  "kind": "laminate",
+  "hex": "#78654F",
+  "source": "past drawings"
+ },
+ {
+  "name": "D RUST F5051",
+  "kind": "fabric",
+  "hex": "#461F1B",
+  "source": "past drawings"
+ },
+ {
+  "name": "WHITE LAMINATE",
+  "kind": "laminate",
+  "hex": "#EEEEEA",
+  "source": "past drawings"
+ },
+ {
+  "name": "SLATE GREY",
+  "kind": "laminate",
+  "hex": "#6C727A",
+  "source": "past drawings"
+ },
+ {
+  "name": "NATURAL WALNUT 3462",
+  "kind": "laminate",
+  "hex": "#7A5A3E",
+  "source": "past drawings"
+ },
+ {
+  "name": "NATURAL WALNUT PVC EDGEBAND",
+  "kind": "edgeband",
+  "hex": "#7A5A3E",
+  "source": "past drawings"
+ },
+ {
+  "name": "BLACK MATT POWDER COAT",
+  "kind": "powder coat",
+  "hex": "#222224",
+  "source": "past drawings"
+ },
+ {
+  "name": "LAUREL OAK LIGHT 3415",
+  "kind": "laminate",
+  "hex": "#BEAA8A",
+  "source": "past drawings"
+ },
+ {
+  "name": "GUN GREY F193",
+  "kind": "fabric",
+  "hex": "#38414A",
+  "source": "past drawings"
+ },
+ {
+  "name": "SLATE GREY POWDER COAT",
+  "kind": "powder coat",
+  "hex": "#6C727A",
+  "source": "past drawings"
+ },
+ {
+  "name": "NOIR C-1230 SHADE 16",
+  "kind": "fabric",
+  "hex": "#70303A",
+  "source": "past drawings"
+ },
+ {
+  "name": "DARK BROWN PU POLISH",
+  "kind": "polish",
+  "hex": "#4A2C1C",
+  "source": "past drawings"
+ },
+ {
+  "name": "ANTIQUE BRASS STUDS",
+  "kind": "other",
+  "hex": "#B08D48",
+  "source": "past drawings"
+ },
+ {
+  "name": "ASH VENEER",
+  "kind": "other",
+  "hex": "#56341F",
+  "source": "past drawings"
+ },
+ {
+  "name": "SOLID ASH WOOD",
+  "kind": "other",
+  "hex": "#4A2C1C",
+  "source": "past drawings"
+ },
+ {
+  "name": "PAPER VENEER, 36 MM BOARD",
+  "kind": "other",
+  "hex": "#5A3A26",
+  "source": "past drawings"
+ },
+ {
+  "name": "MS PLATE 6 MM",
+  "kind": "other",
+  "hex": "#606266",
+  "source": "past drawings"
+ },
+ {
+  "name": "ALUMINIUM PROFILE HANDLE",
+  "kind": "other",
+  "hex": "#3A3A3A",
+  "source": "past drawings"
+ },
+ {
+  "name": "DARK BROWN STAIN, HIGH GLOSS PU",
+  "kind": "polish",
+  "hex": "#4A2E1E",
+  "source": "past drawings"
+ },
+ {
+  "name": "STAINLESS STEEL (SS)",
+  "kind": "polish",
+  "hex": "#B0B4B8",
+  "source": "past drawings"
+ },
+ {
+  "name": "ALUMINIUM INLAY 10 X 1",
+  "kind": "other",
+  "hex": "#CED0D4",
+  "source": "past drawings"
+ },
+ {
+  "name": "ARCTIC WHITE 22091 MERINO",
+  "kind": "laminate",
+  "hex": "#ECECE8",
+  "source": "past drawings"
+ },
+ {
+  "name": "WHITE PVC EDGEBAND 2 MM",
+  "kind": "edgeband",
+  "hex": "#E8E8E4",
+  "source": "past drawings"
+ },
+ {
+  "name": "TRAFFIC WHITE SATIN POWDER COAT",
+  "kind": "powder coat",
+  "hex": "#F0F0EC",
+  "source": "past drawings"
+ },
+ {
+  "name": "WHITE PVC EDGEBAND",
+  "kind": "edgeband",
+  "hex": "#E6E6E2",
+  "source": "past drawings"
+ },
+ {
+  "name": "WHITE CORIAN (SOLID SURFACE)",
+  "kind": "laminate",
+  "hex": "#F6F6F3",
+  "source": "past drawings"
+ },
+ {
+  "name": "PERSIAN WALNUT 3371",
+  "kind": "laminate",
+  "hex": "#674834",
+  "source": "past drawings"
+ },
+ {
+  "name": "FROSTY WHITE 1103",
+  "kind": "laminate",
+  "hex": "#F2F2EF",
+  "source": "past drawings"
+ },
+ {
+  "name": "WHITE POWDER COAT",
+  "kind": "powder coat",
+  "hex": "#F0F0EC",
+  "source": "past drawings"
+ },
+ {
+  "name": "FROSTY WHITE",
+  "kind": "laminate",
+  "hex": "#F2F1EC",
+  "source": "past drawings"
+ },
+ {
+  "name": "PAPER VENEER, 18 MM BOARD",
+  "kind": "other",
+  "hex": "#5A3A26",
+  "source": "past drawings"
+ }
+]
