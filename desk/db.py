@@ -4,7 +4,9 @@ import os, datetime
 from sqlalchemy import create_engine, ForeignKey, String, Text, Integer, Float, DateTime, JSON, UniqueConstraint, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
-URL = os.environ.get("DATABASE_URL", "sqlite:///var/desk.sqlite3").replace("postgres://", "postgresql://")
+URL = os.environ.get("DATABASE_URL", "sqlite:///var/desk.sqlite3")
+if URL.startswith(("postgres://", "postgresql://")):          # always the psycopg (v3) driver, whatever SQLAlchemy's default is
+    URL = "postgresql+psycopg://" + URL.split("://", 1)[1]
 if URL.startswith("sqlite:///") and not URL.startswith("sqlite:////"):
     os.makedirs(os.path.dirname(URL[len("sqlite:///"):]) or ".", exist_ok=True)
 engine = create_engine(URL)
