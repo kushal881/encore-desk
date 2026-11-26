@@ -234,12 +234,17 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
                                           thumb=("/revisions/%d/png" % r.id) if r else ("/drawings/%d/png" % l.drawing.id) if can_view else "",
                                           url=("/orders/%s/view/%d" % (o.source_ref, l.no)) if can_view else "/orders/%s/work" % o.source_ref))
             if (st == "completed") == (show == "completed"):
-                rows.append(dict(ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
+                try:
+                    gd = guide(load(o.source_ref))
+                except Exception:
+                    gd = dict(title="", step=0)
+                rows.append(dict(next=gd["title"], ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
                                  salesperson=o.salesperson, last=last, drawings=[dict(number=l.revisions[-1].number, rev=l.revisions[-1].rev, no=l.no) for l in o.lines if l.revisions]))
         known = {o.source_ref for o in s.scalars(select(db.Order))}
-    samples = [r for r in getattr(SOURCE, "list_refs", lambda: [])() if r not in known]
+    samples = [r for r in SampleSource().list_refs() if r not in known]
+    quotes = [q for q in ODOO.open_quotations() if q["ref"] not in known] if ODOO.configured else []
     odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, focus=focus, items=items, focus_title=titles.get(focus, ""),
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
                                                                   hide_back=not focus and show == "active"))
 
 
@@ -250,6 +255,46 @@ def open_order(ref: str = Form(...), user=User):
 
 def _ready(l):
     return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes))
+
+
+GUIDE_STEPS = ["Questions", "Previews", "Issue", "Client approval", "Production", "Completed"]
+
+
+def guide(o):
+    """The one thing to do next on an order, in plain words. -> dict(step, title, text, label, url | post, warn)."""
+    ref, work = o.source_ref, "/orders/%s/work" % o.source_ref
+    q = sum(l.open_count for l in o.lines)
+    asked = sum(1 for l in o.lines for c in l.changes if c.status == "asked")
+    nodraw = [l.no for l in o.lines if not l.open_count and not l.drawing]
+    unissued = [l.no for l in o.lines if _ready(l) and not l.issued_current]
+    failed = [l.no for l in o.lines if l.drawing and l.drawing.status == "failed"]
+    names = lambda nos: "product " + ", ".join(map(str, nos)) if len(nos) < len(o.lines) or len(nos) == 1 else "all %d products" % len(nos)
+    g = dict(warn="Product %s cannot be drawn yet. Ask for an engine addition in the conversation; the other products can go ahead." % ", ".join(map(str, failed)) if failed else "")
+    if o.stage == "completed":
+        return dict(g, step=5, title="This project is completed", text="Its drawings are kept. Reopen it only if work has to continue.", label="", url="")
+    if q:
+        return dict(g, step=0, title="Answer %d question%s" % (q, "" if q == 1 else "s"), text="The desk needs these answers before it can draw. Pick an option or type the answer.", label="Answer the questions", url=work + "#todo")
+    if asked:
+        return dict(g, step=1, title="Confirm %d change request%s" % (asked, "" if asked == 1 else "s"), text="The desk has said how it understood each change. Say yes to redraw, or no to drop it.", label="Go to the change", url=work + "#todo")
+    if nodraw:
+        return dict(g, step=1, title="Draw the previews", text="Every question is answered for %s. Drawing a preview sends nothing to the client." % names(nodraw), label="Draw previews", post="/orders/%s/draw" % ref)
+    if unissued:
+        return dict(g, step=2, title="Check the previews, then issue", text="Open each preview of %s and check it. Issue gives the drawing its number and revision, and cannot be undone." % names(unissued), label="Check and issue", url=work + "#issue")
+    if o.stage == "drawing":
+        return dict(g, step=1, title="Nothing can be drawn yet", text="See the note below.", label="Open the conversation", url=work)
+    if o.stage == "issued":
+        return dict(g, step=3, title="Send the drawings to the client", text="Send the issued drawings for approval, then record here how they were sent.", label="Record that they were sent", url="#next")
+    if o.stage == "sent":
+        return dict(g, step=3, title="Waiting for the client's approval", text="When the client approves, record who approved and how. If they ask for a change, type it as a change request and issue again.", label="Record the approval", url="#next")
+    if o.stage == "approved":
+        return dict(g, step=4, title="Release to production", text="The client has approved. Releasing opens the production drawings.", label="Release to production", url="#next")
+    sets = [x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"]
+    stale = any(l.last_rev and x.revision_id != l.last_rev.id for l in o.lines for x in l.sets)
+    if not sets or stale:
+        return dict(g, step=4, title="Make the production drawings" if not sets else "Make the production drawings again", text="Enter the job order number and deadline. The sheets carry no client details." if not sets else "A newer revision was issued after the production drawings were made.", label="Go to production drawings", url="#sets")
+    if o.approval_pending:
+        return dict(g, step=4, title="Record the client's approval", text="This order was released before the client approved. Record the approval when it comes.", label="Record the approval", url="#next")
+    return dict(g, step=4, title="In production", text="Print the production drawings for the shop floor. Mark the project completed when the order is delivered.", label="Mark completed", url="#next")
 
 
 def _after(request, ref):
@@ -291,7 +336,7 @@ def project(request: Request, ref: str, user=User):
         todo.append(("%d engine request%s for this order not built yet" % (er, "" if er == 1 else "s"), "See", "/engine-requests"))
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
@@ -299,7 +344,20 @@ def project(request: Request, ref: str, user=User):
 @app.get("/orders/{ref}/work", response_class=HTMLResponse)
 def order(request: Request, ref: str, user=User):
     o = load(ref)
-    return T.TemplateResponse(request, "order.html", ctx(user, o=o, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
+    client_no = o.client.folder_no
+    serial0 = 0
+    if client_no:
+        with db.Session() as s:
+            serial0 = len({r.number for r in s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id))})
+    to_issue = [l for l in o.lines if _ready(l) and not l.issued_current]
+    plan = []
+    for l in to_issue:
+        if l.last_rev:
+            plan.append("Product %d: %s becomes Rev %s" % (l.no, l.last_rev.number, chr(ord(l.last_rev.rev) + 1)))
+        else:
+            serial0 += 1
+            plan.append("Product %d: new drawing %s" % (l.no, "Encore-%s-%s-%02d Rev A" % (datetime.date.today().strftime("%b-%Y"), client_no, serial0) if client_no else "number given after you enter the folder number"))
+    return T.TemplateResponse(request, "order.html", ctx(user, o=o, g=guide(o), steps=GUIDE_STEPS, tab="work", plan=plan, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
                               can_draw=any(l.open_count == 0 for l in o.lines), drawn=sum(1 for l in o.lines if l.drawing and l.drawing.status == "preview"),
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
@@ -514,7 +572,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, user=User):
         raise HTTPException(404)
     stamp = int((r.issued_at if r else l.drawing.made_at).timestamp())
     key = "r%d" % r.id if r else "d%d" % stamp
-    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, src=src, title=title, shown=r, stamp=stamp, key=key, rev_q="?rev=%d" % r.id if rev else "",
+    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, src=src, title=title, shown=r, stamp=stamp, key=key, rev_q="?rev=%d" % r.id if rev else "",
                               marks=[m for m in l.marks if m.shown == key], next_no=max([m.no for m in l.marks], default=0) + 1))
 
 
@@ -694,7 +752,7 @@ def _set_file(sid, i):
 def set_view(request: Request, sid: int, i: int, user=User):
     ps, f, line, ref, rev = _set_file(sid, i)
     o = load(ref)
-    return T.TemplateResponse(request, "set.html", ctx(user, o=o, ps=ps, f=f, i=i, line=line, rev=rev, kind="Production" if ps.kind == "PRODUCTION" else "Subcontractor"))
+    return T.TemplateResponse(request, "set.html", ctx(user, o=o, tab="", ps=ps, f=f, i=i, line=line, rev=rev, kind="Production" if ps.kind == "PRODUCTION" else "Subcontractor"))
 
 
 @app.get("/sets/{sid}/{i}/pdf")
@@ -743,3 +801,17 @@ def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev
             m.label = label.strip()[:200]
         s.commit()
     return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)
+
+
+@app.post("/orders/{ref}/remove")
+def remove_order(ref: str, user=User):
+    """Takes an order off the desk. Only the administrator, and only while nothing has been issued. Odoo is not touched;
+    the order can be opened again later."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator can remove a project")
+    o = load(ref)
+    if any(l.revisions for l in o.lines):
+        raise HTTPException(400, "This project has issued drawings and cannot be removed. Mark it completed instead.")
+    with db.Session() as s:
+        s.delete(s.get(db.Order, o.id)); s.commit()
+    return RedirectResponse("/", status_code=303)

@@ -21,7 +21,7 @@ class OdooSource:
         self.user = user or os.environ.get("ODOO_USER", "")
         self.key = key or os.environ.get("ODOO_KEY", "")
         self.http = client or httpx.Client(timeout=30)
-        self.mode, self.uid, self._status = None, None, (0, "")
+        self.mode, self.uid, self._status, self._open, self.stage_note = None, None, (0, ""), (0, []), ""
 
     @property
     def configured(self):
@@ -98,12 +98,47 @@ class OdooSource:
         return SourceOrder(source="odoo", ref=o["name"], client_name=company, client_contact=contact, delivery=delivery,
                            salesperson=o["user_id"][1] if o.get("user_id") else "", job_order="", date=str(o.get("date_order") or "")[:10], lines=lines)
 
-    def list_refs(self, limit=15):
+    def open_quotations(self, limit=20):
+        """Quotations whose opportunity is still open: not in a won stage and not lost. A quotation with no opportunity is
+        shown as well (it can be neither). -> [dict(ref, client, stage)], newest first. Kept for a minute."""
+        if time.time() - self._open[0] < 60:
+            return self._open[1]
+        out = []
         try:
-            rows = self.call("sale.order", "search_read", domain=[["state", "in", ["draft", "sent", "sale"]]], fields=["name"], limit=limit, order="id desc")
+            rows = self.call("sale.order", "search_read", domain=[["state", "in", ["draft", "sent", "sale"]]], fields=["name", "partner_id", "opportunity_id"], limit=80, order="id desc")
+            leads, stages = {}, {}
+            ids = sorted({r["opportunity_id"][0] for r in rows if r.get("opportunity_id")})
+            if ids:
+                try:
+                    for l in self.call("crm.lead", "read", ids=ids, fields=["stage_id", "active", "probability"]):
+                        leads[l["id"]] = l
+                    sids = sorted({l["stage_id"][0] for l in leads.values() if l.get("stage_id")})
+                    for st in (self.call("crm.stage", "read", ids=sids, fields=["name", "is_won"]) if sids else []):
+                        stages[st["id"]] = st
+                except OdooError:
+                    self.stage_note = "The opportunity stages could not be read with this key, so every quotation is listed."
+                    leads = None
+            for r in rows:
+                stage = ""
+                if r.get("opportunity_id") and leads is not None:
+                    l = leads.get(r["opportunity_id"][0])
+                    if l is None:
+                        continue
+                    st = stages.get(l["stage_id"][0]) if l.get("stage_id") else None
+                    stage = st["name"] if st else ""
+                    low = stage.lower()
+                    if not l.get("active", True) or (st and st.get("is_won")) or "won" in low or "lost" in low:
+                        continue                                    # won, or lost (Odoo archives a lost opportunity)
+                out.append(dict(ref=r["name"], client=r["partner_id"][1].split(",")[0] if r.get("partner_id") else "", stage=stage or "No opportunity"))
+                if len(out) >= limit:
+                    break
         except OdooError:
-            return []
-        return [r["name"] for r in rows]
+            out = []
+        self._open = (time.time(), out)
+        return out
+
+    def list_refs(self, limit=20):
+        return [q["ref"] for q in self.open_quotations(limit)]
 
     def product_image(self, product_ref):
         """-> the product's photograph as bytes, or None if Odoo has none."""

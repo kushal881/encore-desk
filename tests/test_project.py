@@ -15,17 +15,21 @@ A = "/orders/Q-2026-10-444"
 def test_project():
     c.post("/login/dev/2")
     h = c.get(A).text                                                          # the project page comes first
-    assert "Needs attention" in h and "4 questions to answer before drawing" in h and "Open the drawing conversation" in h and "Conversation</div>" not in h
+    assert "WHAT TO DO NEXT" in h and "Answer 4 questions" in h and "4 questions to answer before drawing" in h and "Conversation</div>" not in h
+    assert 'aria-current="step"><span class="dot">1</span>Questions' in h and "Remove from the desk" not in h      # Sushil is not the administrator
     assert "Back to the previous page" in h and "Back to the previous page" not in c.get("/").text
     with db.Session() as s:
         qs = {q.key: q.id for q in s.query(db.Question)}
     for key, val in (("note", "Black bracket"), ("size", "L1200 D450 H750"), ("shelves", "1"), ("hinge", "Right")):
         r = c.post("%s/answer/%d" % (A, qs[key]), data={"value": val}, follow_redirects=False)
         assert r.headers["location"] == A + "/work"
-    assert "Product 1, 2, 3 ready to draw" in c.get(A).text
+    h = c.get(A).text
+    assert "Product 1, 2, 3 ready to draw" in h and "Draw the previews" in h and 'action="/orders/Q-2026-10-444/draw"' in h
     c.post(A + "/draw")
     h = c.get(A).text
-    assert "Product 1, 2, 3 has a preview that is not issued" in h and "View, mark and ask for a change" in h
+    assert "Product 1, 2, 3 has a preview that is not issued" in h and "View, mark and ask for a change" in h and "Check the previews, then issue" in h
+    w = c.get(A + "/work").text
+    assert 'id="issue"' in w and "Product 1: new drawing number given after you enter the folder number" in w and "data-confirm=" in w
     # markers on the drawing
     v = c.get(A + "/view/2").text
     assert "Add a marker" in v and 'id="zin"' in v and 'id="zout"' in v and "None yet" in v
@@ -63,4 +67,21 @@ def test_project():
     r = c.post(A + "/step/sent", data={"note": "Email"}, headers={"referer": "http://testserver" + A}, follow_redirects=False)
     assert r.headers["location"] == A
     h = c.get(A).text
-    assert '<span class="now">With client</span>' in h and "Record client approval" in h and "Nothing is waiting on the drawings" in h
+    assert "Waiting for the client&#39;s approval" in h and "Record client approval" in h and "Nothing else is waiting on the drawings" in h
+    d = c.get("/").text
+    assert "What to do next" in d and "Waiting for the client&#39;s approval &rsaquo;" in d
+
+
+def test_remove():
+    """Only the administrator removes a project, and only while nothing is issued."""
+    B = "/orders/SAMPLE-REPEAT-1"
+    c.get(B)
+    assert c.post(B + "/remove").status_code == 403
+    c.post("/logout"); c.post("/login/dev/1")
+    assert "Remove from the desk" in c.get(B).text and "Remove from the desk" not in c.get(A).text
+    assert c.post(A + "/remove").status_code == 400                          # it has issued drawings
+    r = c.post(B + "/remove", follow_redirects=False)
+    assert r.headers["location"] == "/"
+    with db.Session() as s:
+        assert [o.source_ref for o in s.query(db.Order)] == ["Q-2026-10-444"]
+    assert c.get(B).status_code == 200                                       # it can be opened again

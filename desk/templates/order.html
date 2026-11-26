@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ o.source_ref }} · Encore drawing desk{% endblock %}
-{% block crumb %}<a href="/orders/{{ o.source_ref }}" class="dim">{{ o.source_ref }} · {{ o.client.name }}</a><span class="tag {{ 'ask' if o.stage in ('drawing','issued','sent') else 'ok' if o.stage in ('approved','production') else 'dim' }}">{{ o.stage_text }}</span>{% endblock %}
+{% block crumb %}<span class="tag {{ 'ask' if o.stage in ('drawing','issued','sent') else 'ok' if o.stage in ('approved','production') else 'dim' }}">{{ o.stage_text }}</span>{% endblock %}
 {% block body %}
+{% include "_ordernav.html" %}
+{% include "_guide.html" %}
 <div class="cols">
   <div class="side">
     <div class="label">Products in this order ({{ o.source }})</div>
@@ -37,7 +39,7 @@
             <option value="">Choose a past drawing of this client</option>
             {% for p in o.past %}<option value="{{ p.id }}" {{ 'selected' if l.remake == p.id }}>{{ p.label }}</option>{% endfor %}
           </select>
-          <button class="sm">Remake exactly</button>
+          <button class="sm" data-confirm="Make this product an exact copy of the chosen past drawing?\nIts questions will no longer apply." data-yes="Yes, remake">Remake exactly</button>
         </form>
         <div class="sub small">Makes an exact copy under a new drawing number for this order.</div>
       </details>
@@ -48,6 +50,7 @@
   </div>
   <div class="main">
     <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
+    {% set ns = namespace(marked=false) %}
     <div class="chat">
       {% for e in events %}
       {% if e.kind == 'say' %}<div class="b desk">{{ e.text }}</div>
@@ -55,8 +58,8 @@
       {% elif e.kind == 'step' %}<div class="b step"><b>{{ e.text }}</b>{% if e.note %}<br>{{ e.note }}{% endif %}<br>{{ e.by }}</div>
       {% elif e.kind == 'question' %}{% set q = e.q %}{% set l = e.line %}
       {% if not l.remake or q.answer %}
-      <div class="b desk">
-        <div><b>Product {{ l.no }}.</b> {{ q.text }}</div>
+      <div class="b desk"{% if not q.answer and not ns.marked %} id="todo"{% set ns.marked = true %}{% endif %}{% if not q.answer %} style="border:2px solid #F2B441;background:#FFF8E8"{% endif %}>
+        <div><b>Product {{ l.no }}.</b> {{ q.text }}{% if not q.answer %} <span class="tag ask">needs your answer</span>{% endif %}</div>
         {% if not q.answer %}
         <form class="q" method="post" action="/orders/{{ o.source_ref }}/answer/{{ q.id }}">
           {% for opt in q.options %}<button name="value" value="{{ opt }}">{{ opt }}</button>{% endfor %}
@@ -78,7 +81,7 @@
         </form>
       </div>
       {% else %}
-      <div class="b desk"><b>Product {{ l.no }}, understood as:</b> {{ c.understood }}.
+      <div class="b desk"{% if c.status == 'asked' and not ns.marked %} id="todo"{% set ns.marked = true %}{% endif %}{% if c.status == 'asked' %} style="border:2px solid #F2B441;background:#FFF8E8"{% endif %}><b>Product {{ l.no }}, understood as:</b> {{ c.understood }}.
         {% if c.status == 'asked' %} Correct?
         <div class="q" style="display:flex;gap:8px;margin-top:10px">
           <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/yes"><button class="primary">Yes, redraw</button></form>
@@ -124,7 +127,7 @@
         <button class="sm">Ask for an engine addition</button>
       </form>
       {% else %}
-      <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+      <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
       <div class="sub small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View full size</b></a> · <a href="/drawings/{{ l.drawing.id }}/pdf?download=1">Download PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
       {% if not l.remake %}
       <details>
@@ -141,7 +144,7 @@
       {% if l.can_update_engine and l.issued_current %}
       <form method="post" action="/orders/{{ o.source_ref }}/engine/{{ l.no }}" class="sub small" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
         <span>Issued on engines {{ l.last_rev.engine_version }} and kept on it. Latest is {{ latest }}.</span>
-        <button class="sm">Redraw on {{ latest }}</button>
+        <button class="sm" data-confirm="Redraw this issued drawing on engines {{ latest }}?\nIt becomes a preview. Issuing it will make a new revision." data-yes="Yes, redraw">Redraw on {{ latest }}</button>
       </form>
       {% endif %}
       {% for r in l.revisions|reverse %}
@@ -150,9 +153,12 @@
     </div>
     {% endif %}{% endfor %}
     {% if drawn and can_issue and needs_issue %}
-    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card">
+    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card" id="issue" style="border-color:#1F5A6E" data-confirm="Issue these drawings?\n{{ plan|join('\n') }}\n\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
+      <div class="label">Issue</div>
+      <div class="small">{% for x in plan %}{{ x }}<br>{% endfor %}</div>
       {% if not o.client.folder_no %}<label for="fno" style="font-weight:600;font-size:13px">Folder number for {{ o.client.name }}</label>
-      <input type="text" id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">{% endif %}
+      <input type="text" id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">
+      <div class="sub small">This is the client's folder number on the design server. It is asked once per client and becomes part of every drawing number.</div>{% endif %}
       <button class="primary">{{ 'Issue the ready drawings' if not_ready else 'Issue drawings' }}</button>
       {% if not_ready %}<div class="sub small">Not included, because {{ 'it is' if not_ready|length == 1 else 'they are' }} not ready: product {{ not_ready|join(', ') }}.</div>{% endif %}
       <div class="sub small">Issue gives each drawing its number and revision. An issued revision is never changed. After issue, the next step is to send them to the client.</div>

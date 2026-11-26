@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ kind }} drawings · Product {{ line.no }} · {{ o.source_ref }}{% endblock %}
-{% block crumb %}<a href="/orders/{{ o.source_ref }}" class="dim">{{ o.source_ref }} · {{ o.client.name }}</a>{% endblock %}
+{% block crumb %}{% endblock %}
 {% block body %}
+{% include "_ordernav.html" %}
 <div class="cols">
   <div class="main" style="flex:999 1 600px">
     <div style="padding:12px 18px;border-bottom:1px solid #E3E8EB;display:flex;flex-wrap:wrap;gap:12px;align-items:center">

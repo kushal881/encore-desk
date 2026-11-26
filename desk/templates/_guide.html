@@ -1,0 +1,15 @@
+<div class="guide" role="region" aria-label="Where this order stands and what to do next">
+  <ol class="stepper">
+    {% for t in steps %}<li class="{{ 'now' if loop.index0 == g.step else 'done' if loop.index0 < g.step else '' }}"{% if loop.index0 == g.step %} aria-current="step"{% endif %}><span class="dot">{% if loop.index0 < g.step %}&#10003;{% else %}{{ loop.index }}{% endif %}</span>{{ t }}</li>{% endfor %}
+  </ol>
+  <div class="nextbar">
+    <div style="flex:1 1 320px;min-width:0">
+      <div class="small" style="font-weight:600;color:#0F4C63;letter-spacing:.02em">WHAT TO DO NEXT</div>
+      <div style="font-size:18px;font-weight:600">{{ g.title }}</div>
+      <div class="sub">{{ g.text }}</div>
+    </div>
+    {% if g.post %}<form method="post" action="{{ g.post }}"><button class="primary big">{{ g.label }}</button></form>
+    {% elif g.label %}<a class="btn primary big" href="{{ g.url }}">{{ g.label }}</a>{% endif %}
+  </div>
+  {% if g.warn %}<div class="small" style="padding:8px 16px;background:#FBE4E2;color:#8C1D18;border-radius:0 0 8px 8px">{{ g.warn }}</div>{% endif %}
+</div>

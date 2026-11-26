@@ -1,6 +1,6 @@
     {% if o.stage != 'drawing' %}
-    <div class="card" style="border-color:#1F5A6E">
-      <div class="label">Next step</div>
+    <div class="card" id="next" style="border-color:#1F5A6E">
+      <div class="label">After issue: client approval and release</div>
       {% if o.stage == 'issued' %}
       <div><b>Send the issued drawings to the client for approval.</b></div>
       <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/sent">
@@ -23,7 +23,7 @@
       <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released">
         <label class="sr" for="rn">Note</label>
         <input class="sm" type="text" id="rn" name="note" placeholder="Note (optional)">
-        <button class="sm primary">Release to production</button>
+        <button class="sm primary" data-confirm="Release this order to production?\nProduction drawings can be made after this." data-yes="Yes, release">Release to production</button>
       </form>
       {% elif o.stage in ('issued', 'sent') %}
       <details>
@@ -31,12 +31,12 @@
         <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released" style="margin-top:8px">
           <label class="sr" for="un">Reason</label>
           <input class="sm" type="text" id="un" name="note" required placeholder="Reason (recorded with your name)">
-          <button class="sm">Release now</button>
+          <button class="sm danger" data-confirm="Release to production BEFORE the client has approved?\nYour name and the reason are recorded." data-yes="Yes, release now">Release now</button>
         </form>
       </details>
       {% endif %}
       {% if o.stage in ('approved', 'production') %}
-      <form method="post" action="/orders/{{ o.source_ref }}/step/completed"><button class="sm" style="width:100%">Mark project completed</button></form>
+      <form method="post" action="/orders/{{ o.source_ref }}/step/completed" data-confirm="Mark this project completed?\nIt leaves the active list. Its drawings are kept, and it can be reopened." data-yes="Yes, completed"><button class="sm" style="width:100%">Mark project completed</button></form>
       <div class="sub small">A completed project leaves the active list on the dashboard. Its drawings are kept.</div>
       {% endif %}
       {% if o.stage == 'completed' %}

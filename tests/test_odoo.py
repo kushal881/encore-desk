@@ -19,7 +19,14 @@ DATA = {
                         dict(id=73, sequence=30, name="Pedestal 1 Drawer 1 Shutter\nSize : L400 D450 H650mm\nMaterial : 18mm thick prelaminated particle board", product_id=[32, "Pedestal"], product_uom_qty=2, display_type=False),
                         dict(id=72, sequence=20, name="[ESP01] Storage ESP 01 (Size: L1200 D450 H750mm)\nSize: L1200 D450 H750mm\nMaterial: 18mm thick Prelaminated Particle Board", product_id=[31, "Storage ESP 01"], product_uom_qty=4, display_type=False)],
     "product.product": [dict(id=31, image_1024=PNG), dict(id=32, image_1024=False)],
+    "crm.lead": [dict(id=1, stage_id=[2, "Proposition"], active=True, probability=40), dict(id=2, stage_id=[4, "Won"], active=True, probability=100),
+                 dict(id=3, stage_id=[2, "Proposition"], active=False, probability=0), dict(id=4, stage_id=[5, "Order Lost"], active=True, probability=0)],
+    "crm.stage": [dict(id=2, name="Proposition", is_won=False), dict(id=4, name="Won", is_won=True), dict(id=5, name="Order Lost", is_won=False)],
 }
+for i, (name, opp) in enumerate([("Q-2026-11-901", [2, "x"]), ("Q-2026-11-902", [3, "x"]), ("Q-2026-11-903", [4, "x"]), ("Q-2026-11-904", False)]):
+    DATA["sale.order"].append(dict(id=8 + i, name=name, partner_id=[5, "Blue Sky Ltd, Ms Rao"], partner_shipping_id=False, user_id=False, date_order="2026-11-21 10:00:00",
+                                   order_line=[], client_order_ref="", state="draft", opportunity_id=opp))
+DATA["sale.order"][0]["opportunity_id"] = [1, "x"]
 
 
 def run(model, method, kw):
@@ -63,7 +70,9 @@ def test_source(json2):
     assert [(l.no, l.name, l.qty, l.product_ref) for l in r.lines] == [(1, "Storage ESP 01 (Size: L1200 D450 H750mm)", 4, "31"), (2, "Pedestal 1 Drawer 1 Shutter", 2, "32")]
     assert r.lines[0].description.startswith("Size: L1200 D450 H750mm")
     assert o.product_image("31")[:4] == b"\x89PNG" and o.product_image("32") is None
-    assert o.list_refs() == ["Q-2026-11-900"] and "Connected. 1 quotations" in o.status()
+    # only quotations whose opportunity is open: 901 is won, 902 is lost (archived), 903 is in a stage named lost; 904 has no opportunity
+    assert [(q["ref"], q["stage"]) for q in o.open_quotations()] == [("Q-2026-11-900", "Proposition"), ("Q-2026-11-904", "No opportunity")]
+    assert o.list_refs() == ["Q-2026-11-900", "Q-2026-11-904"] and "Connected. 5 quotations" in o.status()
     with pytest.raises(KeyError):
         o.get_order("NOPE")
     bad = OdooSource("encore.odoo.com", "encore", "kushal@example.com", "expired", client=stand_in(json2))
@@ -86,4 +95,4 @@ def test_in_the_desk():
         assert (ph.product, ph.by) == ("storage esp 01", "Odoo") and os.path.exists(ph.path)
     assert c.get("/orders/Q-2026-10-444").status_code == 200                      # sample orders still open
     d = c.get("/").text
-    assert "Odoo:</b> Connected" in d and "Type the quotation or order number" in d
+    assert "Odoo:</b> Connected" in d and "Start a new project" in d and "Q-2026-11-904" in d and "Q-2026-11-901" not in d and "No opportunity" in d
