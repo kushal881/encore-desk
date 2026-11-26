@@ -1,18 +1,20 @@
-"""Encore drawing desk. Built so far: open an order, show what was read, ask what is missing, record the answers,
-run the approved engine and show previews. Not built yet: sign-in, change requests, issue, Odoo source."""
+"""Encore drawing desk: dashboard, orders, questions, previews, changes, issue with numbers and revisions, the steps after
+issue, engine requests, product photographs and remakes. Not built yet: Odoo source, client portal, cloud archive."""
 import os
-from fastapi import FastAPI, Form, HTTPException, Request, Depends
+from fastapi import FastAPI, Form, HTTPException, Request, Depends, UploadFile, File
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from . import db, spec, engines, finishes, auth, changes as chg
-import datetime, secrets
+import datetime, secrets, io
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
 
 app = FastAPI(title="Encore drawing desk")
 T = Jinja2Templates(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+T.env.filters["when"] = lambda d: d.replace(tzinfo=d.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y, %H:%M") if d else ""
 SOURCE = SampleSource()                       # the Odoo source replaces this line when it is connected
 if auth.ON_SERVER and not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set on the server")
@@ -37,7 +39,8 @@ def engines_refresh(user=User):
     if user.role != "admin":
         raise HTTPException(403, "Only an administrator can do this")
     try:
-        return {"version": engines.fetch_latest()}
+        engines.fetch_latest()
+        return RedirectResponse("/", status_code=303)
     except Exception as e:
         raise HTTPException(502, "Could not fetch the approved engines: %s" % str(e)[:200])
 
@@ -45,6 +48,28 @@ def engines_refresh(user=User):
 @app.get("/health")
 def health():
     return {"ok": True, "engines": engines.version()}
+
+
+STAGES = dict(drawing="Drawings in progress", issued="Issued, to be sent to client", sent="With client for approval",
+              approved="Approved by client", production="In production", completed="Completed")
+
+
+def stage_of(steps, has_issued=False):
+    """-> (stage key, client approval still pending?) from the order's log of steps."""
+    f = dict(issued=has_issued, sent=False, approved=False, released=False, completed=False)
+    for st in steps:
+        if st.kind == "issued":
+            f.update(issued=True, sent=False, approved=False)       # a new issue needs a new approval
+        elif st.kind == "reopened":
+            f["completed"] = False
+        elif st.kind in f:
+            f[st.kind] = True
+    key = "completed" if f["completed"] else "production" if f["released"] else "approved" if f["approved"] else "sent" if f["sent"] else "issued" if f["issued"] else "drawing"
+    return key, f["issued"] and not f["approved"]
+
+
+def product_key(name):
+    return name.split("(")[0].strip().lower()[:200]
 
 
 def load(ref):
@@ -65,7 +90,7 @@ def load(ref):
                     line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"])); total += 1
                 o.lines.append(line)
             n = len(src.lines)
-            o.messages.append(db.Message(who="desk", text="I have read the %d line%s of this order. %s" % (n, "" if n == 1 else "s",
+            o.messages.append(db.Message(who="desk", text="I have read the %d product%s of this order. %s" % (n, "" if n == 1 else "s",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
         s.refresh(o)
@@ -79,8 +104,25 @@ def load(ref):
                 if c.status == "confirmed":
                     l.confirmed.update(c.values)
             l.last_rev = l.revisions[-1] if l.revisions else None
-        _ = o.client, o.messages
+            l.remake = l.confirmed.pop("remake_of", None)
+            if l.remake:
+                l.open_count = 0                                     # an exact copy of a past drawing needs no answers
+            ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
+            l.photo = ph.id if ph else None
+            l.photo_v = int(ph.at.timestamp()) if ph else 0
+        _ = o.client, o.messages, o.steps
+        o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
+        o.stage_text = STAGES[o.stage]
+        past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
+        latest = {}
+        for r in past:
+            latest[r.number] = r
+        o.past = [dict(id=r.id, label="%s Rev %s · %s · %s" % (r.number, r.rev, r.spec.get("item", {}).get("product_name", ""), r.spec.get("item", {}).get("product_code", ""))) for r in latest.values()]
         return o
+
+
+STEP_TEXT = dict(sent="Sent to the client for approval", approved="Client approval recorded", released="Released to production",
+                 completed="Project marked completed", reopened="Project reopened")
 
 
 def timeline(o):
@@ -94,23 +136,63 @@ def timeline(o):
         for c in l.changes:
             ev.append((c.at, 2 * c.id, dict(kind="me", text=c.typed, by=c.by)))
             ev.append((c.at, 2 * c.id + 1, dict(kind="change", line=l, c=c)))
+    for st in o.steps:
+        if st.kind != "issued":
+            ev.append((st.at, 10 ** 6, dict(kind="step", text=STEP_TEXT.get(st.kind, st.kind), note=st.note, by=st.by)))
     for m in o.messages[1:]:
         ev.append((m.at, 10 ** 6 + m.id, dict(kind="say" if m.who == "desk" else "me", text=m.text, by=m.who)))
     return [e for _, _, e in sorted(ev, key=lambda x: (x[0].replace(tzinfo=None), x[1]))]
 
 
+def ctx(user, **kw):
+    with db.Session() as s:
+        waiting = len(s.scalars(select(db.EngineRequest).where(db.EngineRequest.status == "asked")).all())
+    return dict(user=user.name, role=auth.ROLES.get(user.role, user.role), is_admin=user.role == "admin", engine_version=engines.version(), requests_waiting=waiting, **kw)
+
+
 @app.get("/", response_class=HTMLResponse)
-def home(user=User):
-    return RedirectResponse("/orders/Q-2026-10-444")
+def home(request: Request, show: str = "active", user=User):
+    """The dashboard: every project the desk holds, where each stands, and what is waiting."""
+    rows, count = [], dict(active=0, pending=0, with_client=0, approved=0, production=0, completed=0)
+    with db.Session() as s:
+        for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
+            st, pend = stage_of(o.steps, any(l.revisions for l in o.lines))
+            n = len(o.lines)
+            issued = sum(1 for l in o.lines if l.revisions)
+            failed = sum(1 for l in o.lines if l.drawing and l.drawing.status == "failed")
+            last = max([o.read_at] + [x.at for x in o.steps] + [r.issued_at for l in o.lines for r in l.revisions], key=lambda d: d.replace(tzinfo=None))
+            if st == "completed":
+                count["completed"] += 1
+            else:
+                count["active"] += 1
+                count["pending"] += n - issued
+                count["with_client"] += st in ("issued", "sent")
+                count["approved"] += st == "approved"
+                count["production"] += st == "production"
+            if (st == "completed") == (show == "completed"):
+                rows.append(dict(ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
+                                 salesperson=o.salesperson, last=last, drawings=[dict(number=l.revisions[-1].number, rev=l.revisions[-1].rev, no=l.no) for l in o.lines if l.revisions]))
+        known = {o.source_ref for o in s.scalars(select(db.Order))}
+    samples = [r for r in getattr(SOURCE, "list_refs", lambda: [])() if r not in known]
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples))
+
+
+@app.post("/open")
+def open_order(ref: str = Form(...), user=User):
+    return RedirectResponse("/orders/%s" % ref.strip(), status_code=303)
+
+
+def _ready(l):
+    return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes))
 
 
 @app.get("/orders/{ref}", response_class=HTMLResponse)
 def order(request: Request, ref: str, user=User):
     o = load(ref)
-    return T.TemplateResponse(request, "order.html", dict(o=o, user=user.name, role=auth.ROLES.get(user.role, user.role), events=timeline(o), open_total=sum(l.open_count for l in o.lines), engine_version=engines.version(),
+    return T.TemplateResponse(request, "order.html", ctx(user, o=o, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
                               can_draw=any(l.open_count == 0 for l in o.lines), drawn=sum(1 for l in o.lines if l.drawing and l.drawing.status == "preview"),
-                              can_issue=all(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes) for l in o.lines),
-                              needs_issue=any(not l.last_rev or (l.drawing and l.last_rev.spec.get("model") != l.drawing.spec.get("model")) for l in o.lines)))
+                              can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
+                              needs_issue=any(_ready(l) and (not l.last_rev or l.last_rev.spec.get("model") != l.drawing.spec.get("model")) for l in o.lines)))
 
 
 @app.post("/orders/{ref}/answer/{qid}")
@@ -131,6 +213,17 @@ def answer(ref: str, qid: int, value: str = Form(...), user=User):
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
+def make_spec(s, o, l, issue=None):
+    """The specification for one product: an exact copy of a past drawing when it is a remake, otherwise built from the order."""
+    if l.remake:
+        past = s.get(db.Revision, l.remake)
+        if past is None:
+            raise spec.CannotDraw("The past drawing chosen for this remake was not found.")
+        return spec.remake(o, l, past.spec, l.no, issue=issue)
+    return spec.build(engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=l.confirmed,
+                      finish=lambda text, kind: finishes.lookup(s, text, kind), issue=issue)
+
+
 def _draw_lines(o, s, who, only=None):
     """Runs the approved engine for every line whose questions are all answered. Each result is a preview."""
     for l in o.lines:
@@ -141,8 +234,7 @@ def _draw_lines(o, s, who, only=None):
         line.drawing = d
         d.engine_version, d.made_by, d.made_at, d.error, d.files = engines.version(), who, db.now(), "", {}
         try:
-            d.spec = spec.build(engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=l.confirmed,
-                                finish=lambda text, kind: finishes.lookup(s, text, kind))
+            d.spec = make_spec(s, o, l)
             d.files = engines.draw(d.spec, "%d/line%d/preview" % (o.id, l.no))
             d.status = "preview"
         except (spec.CannotDraw, RuntimeError) as e:
@@ -159,7 +251,7 @@ def draw(ref: str, user=User):
 
 
 @app.post("/orders/{ref}/change")
-def change(ref: str, text: str = Form(...), user=User):
+def change(ref: str, text: str = Form(...), line: int = Form(0), user=User):
     """A typed change request. It is read, said back, and applied only after the user confirms."""
     text = text.strip()
     if not text:
@@ -167,13 +259,15 @@ def change(ref: str, text: str = Form(...), user=User):
     o = load(ref)
     lines = [(l.no, l.read["family"]) for l in o.lines]
     with db.Session() as s:
-        no = chg.which_line(text, lines)
+        no = line if line in [n for n, _ in lines] else chg.which_line(text, lines)
         if no is None:
             s.add(db.Message(order_id=o.id, who=user.name, text=text))
-            s.add(db.Message(order_id=o.id, who="desk", text="Which line is this for? Start with the line number, for example: Line 2: " + text))
+            s.add(db.Message(order_id=o.id, who="desk", text="Which product is this for? Use the change box under the drawing of that product, or start with its number, for example: Product 2: " + text))
         else:
             l = next(x for x in o.lines if x.no == no)
             values, said = chg.understand(text, l.read["family"])
+            if l.remake and values:
+                values, said = None, "This product is an exact remake of a past drawing, so it cannot be changed here."
             s.add(db.Change(line_id=l.id, typed=text, understood=said, values=values or {}, status="asked" if values else "cannot", by=user.name))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
@@ -201,9 +295,9 @@ def decide(ref: str, cid: int, decision: str, user=User):
 def issue(ref: str, folder_no: str = Form(""), user=User):
     """Issues every previewed line whose specification differs from its last issued revision. An issued revision is never changed."""
     o = load(ref)
-    ready = [l for l in o.lines if l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)]
-    if not ready or len(ready) != len(o.lines):
-        raise HTTPException(400, "Every line needs a preview and no unanswered question or unconfirmed change before issue")
+    ready = [l for l in o.lines if _ready(l)]
+    if not ready:
+        raise HTTPException(400, "No product is ready to issue: a product needs a preview and no unanswered question or unconfirmed change")
     with db.Session() as s:
         client = s.get(db.Client, o.client.id)
         folder_no = folder_no.strip() or client.folder_no
@@ -221,45 +315,200 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
             if l.last_rev:
                 serial = l.last_rev.number.rsplit("-", 1)[1]
                 rev = chr(ord(l.last_rev.rev) + 1)
-                new = [c for c in l.changes if c.status == "confirmed" and c.at > l.last_rev.issued_at]
+                new = [c for c in l.changes if c.status == "confirmed" and c.at.replace(tzinfo=None) > l.last_rev.issued_at.replace(tzinfo=None)]
                 reason = "; ".join(c.understood for c in new) or "Reissued"
                 short = ("; ".join(chg.compact(c.values) for c in new) or "Reissued")
                 revs = l.last_rev.spec["revisions"] + [dict(rev=rev, date=today, desc=short if len(short) <= 40 else short[:37] + "...", by=user.name.split()[0])]
             else:
                 serial, nxt = "%02d" % nxt, nxt + 1
                 rev, reason = "A", "Initial issue for client approval"
-                revs = [dict(rev="A", date=today, desc=reason, by="")]
-            sp = spec.build(engines.ENGINES_DIR, o, l, l.read, answers, l.no, changes=l.confirmed, finish=lambda t, k: finishes.lookup(s, t, k),
-                            issue=dict(folder=client.folder_no, serial=serial, revisions=revs))
+                if l.remake:
+                    pr = s.get(db.Revision, l.remake)
+                    reason = "Remake of %s Rev %s" % (pr.number, pr.rev) if pr else reason
+                revs = [dict(rev="A", date=today, desc=reason if len(reason) <= 40 else reason[:37] + "...", by="")]
+            sp = make_spec(s, o, l, issue=dict(folder=client.folder_no, serial=serial, revisions=revs))
             files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev))
             number = "Encore-%s-%s-%s-%s" % (datetime.datetime.strptime(revs[0]["date"], "%d %b %Y").strftime("%b"), revs[0]["date"][-4:], client.folder_no, serial)
             s.add(db.Revision(line_id=l.id, number=number, rev=rev, reason=reason, engine_version=engines.version(), spec=sp, files=files, issued_by=user.name))
             done.append("%s Rev %s" % (number, rev))
-        s.add(db.Message(order_id=o.id, who="desk", text=("Issued: " + ", ".join(done) + ". Filing to Odoo and the cloud archive is not connected yet; the files are kept by the desk.") if done
-                         else "Nothing to issue: no line has changed since its last issued revision."))
+        s.add(db.Message(order_id=o.id, who="desk", text=("Issued: " + ", ".join(done) + ". Next step: send them to the client for approval (see Next step on the right).") if done
+                         else "Nothing to issue: no product has changed since its last issued revision."))
+        if done:
+            s.add(db.Step(order_id=o.id, kind="issued", note=", ".join(done), by=user.name))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
+def _big(pdf_path):
+    """A sharp picture of the sheet for viewing inside the desk, made from the PDF once and kept beside it."""
+    out = pdf_path[:-4] + ".view.png"
+    if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(pdf_path):
+        import pymupdf
+        with pymupdf.open(pdf_path) as doc:
+            doc[0].get_pixmap(dpi=220).save(out)
+    return out
+
+
 @app.get("/revisions/{rid}/{kind}")
-def revision_file(rid: int, kind: str, user=User):
-    if kind not in ("png", "pdf", "dxf"):
+def revision_file(rid: int, kind: str, download: int = 0, user=User):
+    if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
         r = s.get(db.Revision, rid)
-        path, name = (r.files.get(kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
+        path, name = (r.files.get("pdf" if kind == "big" else kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
     if not path or not os.path.exists(path):
         raise HTTPException(404)
-    return FileResponse(path, filename=None if kind == "png" else name)
+    if kind == "big":
+        return FileResponse(_big(path))
+    return FileResponse(path, filename=None if kind == "png" else name, content_disposition_type="attachment" if download or kind == "dxf" else "inline")
 
 
 @app.get("/drawings/{did}/{kind}")
-def drawing_file(did: int, kind: str, user=User):
-    if kind not in ("png", "pdf", "dxf"):
+def drawing_file(did: int, kind: str, download: int = 0, user=User):
+    if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
         d = s.get(db.Drawing, did)
-        path = d.files.get(kind) if d else None
+        path = d.files.get("pdf" if kind == "big" else kind) if d else None
     if not path or not os.path.exists(path):
         raise HTTPException(404)
-    return FileResponse(path, filename=None if kind == "png" else "PREVIEW-drawing-%d.%s" % (did, kind))
+    if kind == "big":
+        return FileResponse(_big(path))
+    return FileResponse(path, filename=None if kind == "png" else "PREVIEW-drawing-%d.%s" % (did, kind), content_disposition_type="attachment" if download or kind == "dxf" else "inline")
+
+
+@app.get("/orders/{ref}/view/{no}", response_class=HTMLResponse)
+def view(request: Request, ref: str, no: int, rev: int = 0, user=User):
+    """One product's drawing, full size, inside the desk: the current preview or any issued revision, with its change box."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not (l.drawing or l.revisions):
+        raise HTTPException(404)
+    r = next((x for x in l.revisions if x.id == rev), None)
+    if r:
+        src, title = "/revisions/%d" % r.id, "%s Rev %s" % (r.number, r.rev)
+    elif l.drawing and l.drawing.status == "preview":
+        current = l.last_rev and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
+        src, title = ("/revisions/%d" % l.last_rev.id, "%s Rev %s" % (l.last_rev.number, l.last_rev.rev)) if current else ("/drawings/%d" % l.drawing.id, "Preview, not issued")
+        r = l.last_rev if current else None
+    elif l.last_rev:
+        r = l.last_rev
+        src, title = "/revisions/%d" % r.id, "%s Rev %s" % (r.number, r.rev)
+    else:
+        raise HTTPException(404)
+    stamp = int((r.issued_at if r else l.drawing.made_at).timestamp())
+    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, src=src, title=title, shown=r, stamp=stamp))
+
+
+@app.post("/orders/{ref}/step/{kind}")
+def step(ref: str, kind: str, note: str = Form(""), user=User):
+    """The steps after issue. Each is recorded with who did it and when."""
+    if kind not in ("sent", "approved", "released", "completed", "reopened"):
+        raise HTTPException(404)
+    o, note = load(ref), note.strip()
+    ok = dict(sent=o.stage == "issued", approved=o.stage in ("issued", "sent") or (o.stage == "production" and o.approval_pending),
+              released=o.stage in ("issued", "sent", "approved"), completed=o.stage in ("approved", "production"), reopened=o.stage == "completed")[kind]
+    if not ok:
+        raise HTTPException(400, "This step does not apply to the order as it stands now")
+    if kind == "approved" and not note:
+        raise HTTPException(400, "Enter who approved it at the client and how (for example: Mr Singh, by email)")
+    if kind == "released" and o.stage != "approved":
+        if user.role not in ("admin", "drawing"):
+            raise HTTPException(403, "Only an administrator or a drawing user can release before the client has approved")
+        if not note:
+            raise HTTPException(400, "Enter the reason for releasing before client approval")
+        note = "URGENT, before client approval: " + note
+    with db.Session() as s:
+        s.add(db.Step(order_id=o.id, kind=kind, note=note, by=user.name)); s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/remake/{no}")
+def remake(ref: str, no: int, rid: int = Form(...), user=User):
+    """Make this product again exactly as a past issued drawing of the same client."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or rid not in [p["id"] for p in o.past] or l.revisions:
+        raise HTTPException(400, "Choose a past drawing of this client, on a product that has not been issued yet")
+    with db.Session() as s:
+        r = s.get(db.Revision, rid)
+        for c in s.scalars(select(db.Change).where(db.Change.line_id == l.id)):
+            if "remake_of" in (c.values or {}):
+                c.status = "rejected"
+        s.add(db.Change(line_id=l.id, typed="Product %d: make it the same as %s Rev %s" % (no, r.number, r.rev), understood="exact remake of %s Rev %s" % (r.number, r.rev),
+                        values={"remake_of": rid}, status="confirmed", by=user.name))
+        s.commit()
+        o = load(ref)
+        _draw_lines(o, s, user.name, only={no})
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/photo/{no}")
+async def photo_upload(ref: str, no: int, file: UploadFile = File(...), user=User):
+    """A photograph for this product. It is kept by product name, so the same product shows it on every order."""
+    from PIL import Image
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    data = await file.read(8 * 1024 * 1024 + 1)
+    if l is None or not data or len(data) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Choose a photograph up to 8 MB")
+    try:
+        im = Image.open(io.BytesIO(data)); im = im.convert("RGB"); im.thumbnail((900, 900))
+    except Exception:
+        raise HTTPException(400, "That file is not a photograph the desk can read (use JPG or PNG)")
+    with db.Session() as s:
+        key = product_key(l.name)
+        ph = s.scalar(select(db.Photo).where(db.Photo.product == key)) or db.Photo(product=key, path="")
+        s.add(ph); s.flush()
+        os.makedirs(os.path.join(engines.FILES, "photos"), exist_ok=True)
+        ph.path, ph.by, ph.at = os.path.join(engines.FILES, "photos", "%d.jpg" % ph.id), user.name, db.now()
+        im.save(ph.path, "JPEG", quality=85)
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.get("/photos/{pid}")
+def photo(pid: int, user=User):
+    with db.Session() as s:
+        ph = s.get(db.Photo, pid)
+        path = ph.path if ph else None
+    if not path or not os.path.exists(path):
+        raise HTTPException(404)
+    return FileResponse(path)
+
+
+@app.post("/engine-requests")
+def engine_request_new(text: str = Form(...), order_ref: str = Form(""), product: str = Form(""), user=User):
+    """Any user may ask for an engine addition. Nothing changes until the administrator approves and the change is built and approved."""
+    text = text.strip()
+    if not text:
+        raise HTTPException(400, "Describe what the engine should be able to draw")
+    with db.Session() as s:
+        s.add(db.EngineRequest(order_ref=order_ref[:80], product=product, text=text, asked_by=user.name))
+        if order_ref:
+            o = s.scalar(select(db.Order).where(db.Order.source_ref == order_ref))
+            if o:
+                s.add(db.Message(order_id=o.id, who="desk", text="Engine addition requested by %s%s: %s. It goes to the administrator for approval." % (user.name, " for " + product if product else "", text)))
+        s.commit()
+    return RedirectResponse(("/orders/%s" % order_ref) if order_ref else "/engine-requests", status_code=303)
+
+
+@app.get("/engine-requests", response_class=HTMLResponse)
+def engine_requests(request: Request, user=User):
+    with db.Session() as s:
+        rows = s.scalars(select(db.EngineRequest).order_by(db.EngineRequest.id.desc())).all()
+    return T.TemplateResponse(request, "engine_requests.html", ctx(user, rows=rows))
+
+
+@app.post("/engine-requests/{rid}/{decision}")
+def engine_request_decide(rid: int, decision: str, note: str = Form(""), user=User):
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator decides engine requests")
+    new = dict(approve="approved", decline="declined", built="built").get(decision)
+    with db.Session() as s:
+        r = s.get(db.EngineRequest, rid)
+        if r is None or new is None or (new == "built") != (r.status == "approved") or (new != "built" and r.status != "asked"):
+            raise HTTPException(400, "This request cannot take that decision now")
+        r.status, r.decided_by, r.decided_at, r.note = new, user.name, db.now(), (note.strip() or r.note)
+        s.commit()
+    return RedirectResponse("/engine-requests", status_code=303)

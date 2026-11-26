@@ -46,5 +46,5 @@ def read_line(name, description):
     if family == "pedestal" and "shutter" in low and "hinge" not in fields:
         qs.append(dict(key="hinge", text="Which side is the shutter hinged?", options=["Left", "Right"]))
     if family == "other":
-        qs.append(dict(key="family", text="I could not tell the product type from the name. Which product is this?", options=["Workstation", "Storage", "Pedestal"]))
+        qs.append(dict(key="family", text="I could not tell the product type from the name. Which product is this?", options=["Workstation", "Storage", "Pedestal", "None of these"]))
     return dict(family=family, size=size, fields=fields, area=loose[0] if loose else "", notes=[note] if note else [], questions=qs)

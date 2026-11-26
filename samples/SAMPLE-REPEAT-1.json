@@ -1,0 +1,15 @@
+{
+ "source": "sample",
+ "ref": "SAMPLE-REPEAT-1",
+ "job_order": "",
+ "date": "2026-11-26",
+ "salesperson": "Anchal Dawar",
+ "client": {"name": "Achiever Apparels Pvt Ltd", "contact": "Mr. Punweet Singh"},
+ "delivery": ["A-7, Infocity, Hero Honda Chowk", "Gurugram 122004, Haryana"],
+ "lines": [
+  {"no": 1, "qty": 4, "unit": "PCS", "name": "Storage ESP 01 (Size: L1200 D450 H750mm)",
+   "description": "Same as the earlier order\nSize: L1200 D450 H750mm\nMaterial: 18mm thick Prelaminated Particle Board\nEdgeband : Black\nLaminate: Laurel Oak Dark 3416"},
+  {"no": 2, "qty": 1, "unit": "PCS", "name": "Conference Table CT 01",
+   "description": "Size: L2400 D1200 H750mm\nTable Top : 25mm thick Prelaminated Particle Board\nLaminate: Laurel Oak Dark 3416"}
+ ]
+}

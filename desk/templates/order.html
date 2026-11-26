@@ -1,56 +1,50 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ o.source_ref }} · Encore drawing desk</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A2228;background:#F3F5F6;font-size:14px;line-height:1.5}
-a{color:#1F5A6E}
-.bar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:14px 24px;background:#17384A;color:#fff}
-.bar .dim{color:#C9DCE5}
-.cols{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px;align-items:flex-start}
-.side{flex:1 1 280px;max-width:340px;display:flex;flex-direction:column;gap:12px}
-.main{flex:999 1 420px;min-width:0;background:#fff;border:1px solid #D5DCE0;border-radius:8px}
-.right{flex:1 1 300px;max-width:400px;display:flex;flex-direction:column;gap:12px}
-.card{background:#fff;border:1px solid #D5DCE0;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:6px}
-.label{font-size:13px;font-weight:600;color:#4A5A63}
-.sub{font-size:13px;color:#4A5A63}
-.tag{font-size:12px;font-weight:500;border-radius:4px;padding:3px 8px;align-self:flex-start}
-.tag.ask{color:#8A4B00;background:#FCEFD9}.tag.ok{color:#1B5E20;background:#E3F1E4}
-.chat{padding:18px;display:flex;flex-direction:column;gap:14px}
-.b{max-width:560px;border-radius:8px;padding:12px 14px}
-.b.desk{align-self:flex-start;background:#EEF3F5}
-.b.me{align-self:flex-end;background:#17384A;color:#fff}
-form.q{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-button,input[type=text]{font:inherit;min-height:44px;border-radius:6px}
-button{padding:0 16px;border:1px solid #1F5A6E;background:#fff;color:#1F5A6E;cursor:pointer}
-button.primary{background:#1F5A6E;color:#fff}
-input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C4CA}
-.sr{position:absolute;left:-9999px}
-</style>
-</head>
-<body>
-<div class="bar">
-  <div style="font-size:16px;font-weight:600">Encore drawing desk</div>
-  <div class="dim">{{ o.source_ref }} · {{ o.client.name }}</div>
-  <div style="flex-grow:1"></div>
-  <div class="dim">{{ user }} · {{ role }}</div>
-  <form method="post" action="/logout"><button style="min-height:36px;background:transparent;color:#fff;border-color:#C9DCE5">Sign out</button></form>
-</div>
+{% extends "base.html" %}
+{% block title %}{{ o.source_ref }} · Encore drawing desk{% endblock %}
+{% block crumb %}<div class="dim">{{ o.source_ref }} · {{ o.client.name }}</div><span class="tag {{ 'ask' if o.stage in ('drawing','issued','sent') else 'ok' if o.stage in ('approved','production') else 'dim' }}">{{ o.stage_text }}</span>{% endblock %}
+{% block body %}
 <div class="cols">
   <div class="side">
-    <div class="label">Order lines ({{ o.source }})</div>
+    <div class="label">Products in this order ({{ o.source }})</div>
     {% for l in o.lines %}
     <div class="card">
-      <div style="font-weight:600">{{ l.no }}. {{ l.name }}</div>
-      <div class="sub">{{ l.size_text }}{% if l.read.area %} · {{ l.read.area }}{% endif %} · qty {{ '%g' % l.qty }}</div>
-      {% if l.open_count %}<div class="tag ask">{{ l.open_count }} question{{ '' if l.open_count == 1 else 's' }}</div>
+      <div style="display:flex;gap:10px">
+        {% if l.photo %}<img class="thumb" src="/photos/{{ l.photo }}?v={{ l.photo_v }}" alt="Photograph of {{ l.name.split('(')[0] }}">
+        {% else %}<div class="nophoto">No photo</div>{% endif %}
+        <div style="min-width:0">
+          <div style="font-weight:600">{{ l.no }}. {{ l.name }}</div>
+          <div class="sub">{{ l.size_text }}{% if l.read.area %} · {{ l.read.area }}{% endif %} · qty {{ '%g' % l.qty }}</div>
+        </div>
+      </div>
+      {% if l.drawing and l.drawing.status == 'failed' %}<div class="tag bad">Could not draw</div>
+      {% elif l.remake %}<div class="tag info">Remake of a past drawing</div>
+      {% elif l.open_count %}<div class="tag ask">{{ l.open_count }} question{{ '' if l.open_count == 1 else 's' }}</div>
       {% else %}<div class="tag ok">Ready to draw</div>{% endif %}
+      <details>
+        <summary>{{ 'Change photo' if l.photo else 'Add a photo' }}</summary>
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/photo/{{ l.no }}" enctype="multipart/form-data" style="margin-top:8px">
+          <label class="sr" for="ph{{ l.no }}">Photograph of product {{ l.no }}</label>
+          <input type="file" id="ph{{ l.no }}" name="file" accept="image/*" required style="flex:1 1 160px;min-width:0;font-size:13px">
+          <button class="sm">Save photo</button>
+        </form>
+        <div class="sub small">Kept for this product name, so it shows on every order that has it.</div>
+      </details>
+      {% if o.past and not l.revisions %}
+      <details>
+        <summary>Same as a past drawing</summary>
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/remake/{{ l.no }}" style="margin-top:8px">
+          <label class="sr" for="rm{{ l.no }}">Past drawing of {{ o.client.name }}</label>
+          <select id="rm{{ l.no }}" name="rid" required style="font-size:13px">
+            <option value="">Choose a past drawing of this client</option>
+            {% for p in o.past %}<option value="{{ p.id }}" {{ 'selected' if l.remake == p.id }}>{{ p.label }}</option>{% endfor %}
+          </select>
+          <button class="sm">Remake exactly</button>
+        </form>
+        <div class="sub small">Makes an exact copy under a new drawing number for this order.</div>
+      </details>
+      {% endif %}
     </div>
     {% endfor %}
-    <div class="sub" style="font-size:12px">Job order {{ o.job_order or 'not given' }} · Salesperson {{ o.salesperson or 'not given' }}</div>
+    <div class="sub small">Job order {{ o.job_order or 'not given' }} · Salesperson {{ o.salesperson or 'not given' }}</div>
   </div>
   <div class="main">
     <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
@@ -58,9 +52,11 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
       {% for e in events %}
       {% if e.kind == 'say' %}<div class="b desk">{{ e.text }}</div>
       {% elif e.kind == 'me' %}<div class="b me">{{ e.text }}<div style="font-size:12px;color:#C9DCE5">{{ e.by }}</div></div>
+      {% elif e.kind == 'step' %}<div class="b step"><b>{{ e.text }}</b>{% if e.note %}<br>{{ e.note }}{% endif %}<br>{{ e.by }}</div>
       {% elif e.kind == 'question' %}{% set q = e.q %}{% set l = e.line %}
+      {% if not l.remake or q.answer %}
       <div class="b desk">
-        <div><b>Line {{ l.no }}.</b> {{ q.text }}</div>
+        <div><b>Product {{ l.no }}.</b> {{ q.text }}</div>
         {% if not q.answer %}
         <form class="q" method="post" action="/orders/{{ o.source_ref }}/answer/{{ q.id }}">
           {% for opt in q.options %}<button name="value" value="{{ opt }}">{{ opt }}</button>{% endfor %}
@@ -72,17 +68,24 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
         </form>
         {% endif %}
       </div>
+      {% endif %}
       {% elif e.kind == 'change' %}{% set c = e.c %}{% set l = e.line %}
-      {% if c.status == 'cannot' %}<div class="b desk"><b>Line {{ l.no }}.</b> {{ c.understood }}</div>
+      {% if c.status == 'cannot' %}
+      <div class="b desk"><b>Product {{ l.no }}.</b> {{ c.understood }}
+        <form method="post" action="/engine-requests" style="margin-top:10px">
+          <input type="hidden" name="order_ref" value="{{ o.source_ref }}"><input type="hidden" name="product" value="{{ l.name.split('(')[0].strip() }}"><input type="hidden" name="text" value="{{ c.typed }}">
+          <button class="sm">Ask for this as an engine addition</button>
+        </form>
+      </div>
       {% else %}
-      <div class="b desk"><b>Line {{ l.no }}, understood as:</b> {{ c.understood }}.
+      <div class="b desk"><b>Product {{ l.no }}, understood as:</b> {{ c.understood }}.
         {% if c.status == 'asked' %} Correct?
         <div class="q" style="display:flex;gap:8px;margin-top:10px">
           <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/yes"><button class="primary">Yes, redraw</button></form>
           <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/no"><button>No</button></form>
         </div>
-        {% elif c.status == 'confirmed' %} <span class="tag ok" style="display:inline-block">Applied</span>
-        {% else %} <span class="tag" style="display:inline-block;color:#4A5A63;background:#E9EDEF">Not applied</span>{% endif %}
+        {% elif c.status == 'confirmed' %} <span class="tag ok">Applied</span>
+        {% else %} <span class="tag dim">Not applied</span>{% endif %}
       </div>
       {% endif %}
       {% endif %}
@@ -90,31 +93,102 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
       {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
     </div>
     {% if drawn %}
-    <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;gap:10px;padding:14px 18px;border-top:1px solid #E3E8EB">
+    <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 18px;border-top:1px solid #E3E8EB">
+      <label class="sr" for="chgl">Product</label>
+      <select id="chgl" name="line" style="flex:0 1 150px">
+        {% for l in o.lines %}{% if l.drawing and l.drawing.status == 'preview' and not l.remake %}<option value="{{ l.no }}">Product {{ l.no }}</option>{% endif %}{% endfor %}
+      </select>
       <label class="sr" for="chg">Change request</label>
-      <input type="text" id="chg" name="text" required placeholder="Type a change, for example: Line 2: make it 1500 long">
+      <input type="text" id="chg" name="text" required placeholder="Type a change for the chosen product, for example: make it 1500 long">
       <button class="primary">Send</button>
     </form>
     {% endif %}
   </div>
   <div class="right">
+    {% if o.stage != 'drawing' %}
+    <div class="card" style="border-color:#1F5A6E">
+      <div class="label">Next step</div>
+      {% if o.stage == 'issued' %}
+      <div><b>Send the issued drawings to the client for approval.</b></div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/sent">
+        <label class="sr" for="sn">How it was sent</label>
+        <input class="sm" type="text" id="sn" name="note" placeholder="How and to whom (for example: email to Mr Singh)">
+        <button class="sm primary">Mark as sent to client</button>
+      </form>
+      {% endif %}
+      {% if o.stage in ('issued', 'sent') or (o.stage == 'production' and o.approval_pending) %}
+      <div>{% if o.stage == 'sent' %}<b>Waiting for the client's approval.</b>{% elif o.stage == 'production' %}<b>In production. Client approval is still pending.</b>{% else %}Or, if the client has already approved:{% endif %}</div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/approved">
+        <label class="sr" for="an">Who approved and how</label>
+        <input class="sm" type="text" id="an" name="note" required placeholder="Who approved and how (for example: Mr Singh, by email)">
+        <button class="sm primary">Record client approval</button>
+      </form>
+      <div class="sub small">If the client asks for a change, type it as a change request and issue again. A new issue needs a new approval.</div>
+      {% endif %}
+      {% if o.stage == 'approved' %}
+      <div><b>Approved by the client. Release to production.</b></div>
+      <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released">
+        <label class="sr" for="rn">Note</label>
+        <input class="sm" type="text" id="rn" name="note" placeholder="Note (optional)">
+        <button class="sm primary">Release to production</button>
+      </form>
+      {% elif o.stage in ('issued', 'sent') %}
+      <details>
+        <summary>Urgent order: release to production before approval</summary>
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/step/released" style="margin-top:8px">
+          <label class="sr" for="un">Reason</label>
+          <input class="sm" type="text" id="un" name="note" required placeholder="Reason (recorded with your name)">
+          <button class="sm">Release now</button>
+        </form>
+      </details>
+      {% endif %}
+      {% if o.stage in ('approved', 'production') %}
+      <form method="post" action="/orders/{{ o.source_ref }}/step/completed"><button class="sm" style="width:100%">Mark project completed</button></form>
+      <div class="sub small">A completed project leaves the active list on the dashboard. Its drawings are kept.</div>
+      {% endif %}
+      {% if o.stage == 'completed' %}
+      <div><b>This project is completed.</b></div>
+      <form method="post" action="/orders/{{ o.source_ref }}/step/reopened"><button class="sm">Reopen</button></form>
+      {% endif %}
+      {% for st in o.steps|reverse %}{% if loop.first %}<div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px">History</div>{% endif %}
+      <div class="sub small">{{ {'issued':'Issued','sent':'Sent to client','approved':'Client approved','released':'Released to production','completed':'Completed','reopened':'Reopened'}[st.kind] }} · {{ st.by }} · {{ st.at|when }}{% if st.note %}<br>{{ st.note }}{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="label">Drawings</div>
     {% if can_draw %}
     <form method="post" action="/orders/{{ o.source_ref }}/draw"><button class="primary" style="width:100%">{{ 'Redraw previews' if drawn else 'Draw previews' }}</button></form>
     {% endif %}
     {% for l in o.lines %}{% if l.drawing %}
     <div class="card">
-      <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Line {{ l.no }}</div>
-        {% if l.drawing.status == 'failed' %}<div class="tag" style="color:#8C1D18;background:#FBE4E2">Could not draw</div>
+      <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
+        {% if l.drawing.status == 'failed' %}<div class="tag bad">Could not draw</div>
         {% elif l.last_rev and l.last_rev.spec.model == l.drawing.spec.model %}<div class="tag ok">Issued Rev {{ l.last_rev.rev }}</div>
         {% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
       {% if l.drawing.status == 'failed' %}<div class="sub">{{ l.drawing.error }}</div>
+      <form class="col" method="post" action="/engine-requests" style="display:flex;flex-direction:column;gap:6px">
+        <input type="hidden" name="order_ref" value="{{ o.source_ref }}"><input type="hidden" name="product" value="{{ l.name.split('(')[0].strip() }}">
+        <label class="sr" for="er{{ l.no }}">What the engine should draw</label>
+        <input class="sm" type="text" id="er{{ l.no }}" name="text" required value="Add {{ l.name.split('(')[0].strip() }} ({{ l.size_text }}) to the engine">
+        <button class="sm">Ask for an engine addition</button>
+      </form>
       {% else %}
-      <a href="/drawings/{{ l.drawing.id }}/pdf"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Preview of the drawing for line {{ l.no }}" style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
-      <div class="sub" style="font-size:12px"><a href="/drawings/{{ l.drawing.id }}/pdf">Open PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
+      <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+      <div class="sub small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View full size</b></a> · <a href="/drawings/{{ l.drawing.id }}/pdf?download=1">Download PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
+      {% if not l.remake %}
+      <details>
+        <summary>Ask for a change to this drawing</summary>
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/change" style="margin-top:8px">
+          <input type="hidden" name="line" value="{{ l.no }}">
+          <label class="sr" for="c{{ l.no }}">Change to product {{ l.no }}</label>
+          <input class="sm" type="text" id="c{{ l.no }}" name="text" required placeholder="For example: make it 1500 long">
+          <button class="sm primary">Send</button>
+        </form>
+      </details>
+      {% endif %}
       {% endif %}
       {% for r in l.revisions|reverse %}
-      <div class="sub" style="font-size:12px;border-top:1px solid #E3E8EB;padding-top:6px"><b>{{ r.number }} Rev {{ r.rev }}</b> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a><br>{{ r.reason }}</div>
+      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a><br>{{ r.reason }}</div>
       {% endfor %}
     </div>
     {% endif %}{% endfor %}
@@ -122,8 +196,9 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
     <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card">
       {% if not o.client.folder_no %}<label for="fno" style="font-weight:600;font-size:13px">Folder number for {{ o.client.name }}</label>
       <input type="text" id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">{% endif %}
-      <button class="primary">Issue drawings</button>
-      <div class="sub" style="font-size:12px">Issue gives each drawing its number and revision. An issued revision is never changed.</div>
+      <button class="primary">{{ 'Issue the ready drawings' if not_ready else 'Issue drawings' }}</button>
+      {% if not_ready %}<div class="sub small">Not included, because {{ 'it is' if not_ready|length == 1 else 'they are' }} not ready: product {{ not_ready|join(', ') }}.</div>{% endif %}
+      <div class="sub small">Issue gives each drawing its number and revision. An issued revision is never changed. After issue, the next step is to send them to the client.</div>
     </form>
     {% endif %}
     {% if not drawn %}
@@ -132,8 +207,7 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
       <div class="sub">{% if open_total %}{{ open_total }} question{{ '' if open_total == 1 else 's' }} left to answer.{% else %}Press Draw previews.{% endif %}</div>
     </div>
     {% endif %}
-    <div class="sub" style="font-size:12px">Engines: {{ engine_version }}, approved. Nothing here reaches the client.</div>
+    <div class="sub small">Engines: {{ engine_version }}, approved. Nothing here reaches the client.</div>
   </div>
 </div>
-</body>
-</html>
+{% endblock %}

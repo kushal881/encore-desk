@@ -31,10 +31,10 @@ def test_flow():
     assert h.count("Issued Rev A") == 3 and "Encore-Nov-2026-06-03 Rev A" in h.replace("</b>", "").replace("<b>", "") or "06-03" in h
     assert "Nothing to issue" in c.post(U + "/issue").text
     h = c.post(U + "/change", data={"text": "make it 900 high"}).text
-    assert "Which line is this for" in h
+    assert "Which product is this for" in h
     h = c.post(U + "/change", data={"text": "line 1 add a glass top"}).text
-    assert "needs an engine change" in h
-    h = c.post(U + "/change", data={"text": "Line 2: make it 1500 long with 2 shelves"}).text
+    assert "needs an engine addition" in h
+    h = c.post(U + "/change", data={"text": "Product 2: make it 1500 long with 2 shelves"}).text
     assert "length 1500 mm; 2 shelves in each compartment" in h and "Issue drawings" not in h
     with db.Session() as s:
         cid = s.query(db.Change).filter_by(status="asked").one().id
@@ -52,7 +52,7 @@ def test_flow():
         assert est == ["FESTIVAL F157"], est
         assert last.issued_by == "Sushil Singhal"
     h = c.get(U).text
-    assert h.index("Issued: Encore-Nov-2026-06-01 Rev A") < h.index("Line 2: make it 1500 long") < h.index("Issued: Encore-Nov-2026-06-02 Rev B")   # time order
+    assert h.index("Issued: Encore-Nov-2026-06-01 Rev A") < h.index("Product 2: make it 1500 long") < h.index("Issued: Encore-Nov-2026-06-02 Rev B")   # time order
     c.post("/logout")
     assert c.get(U, follow_redirects=False).headers["location"] == "/login"
 

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Product {{ l.no }} · {{ o.source_ref }}{% endblock %}
+{% block crumb %}<a href="/orders/{{ o.source_ref }}" class="dim">{{ o.source_ref }} · {{ o.client.name }}</a>{% endblock %}
+{% block body %}
+<div class="cols" style="flex-wrap:wrap">
+  <div class="main" style="flex:999 1 600px">
+    <div style="padding:12px 18px;border-bottom:1px solid #E3E8EB;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+      <div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }} · {{ title }}</div>
+      <button class="sm" id="zoom" type="button" aria-pressed="false">Zoom in</button>
+      <a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a>
+      <a href="{{ src }}/pdf?download=1">Download PDF</a>
+      <a href="{{ src }}/dxf">Download DXF</a>
+      <a href="/orders/{{ o.source_ref }}">Back to the order</a>
+    </div>
+    <div id="sheet" style="overflow:auto;max-height:calc(100vh - 150px);background:#E9EDEF">
+      <img id="img" src="{{ src }}/big?v={{ stamp }}" alt="Drawing for product {{ l.no }}, {{ title }}" style="display:block;width:100%;cursor:zoom-in;background:#fff">
+    </div>
+  </div>
+  <div class="right">
+    {% if not l.remake %}
+    <form class="card" method="post" action="/orders/{{ o.source_ref }}/change">
+      <label for="chg" style="font-weight:600">Ask for a change to this drawing</label>
+      <input type="hidden" name="line" value="{{ l.no }}">
+      <input type="text" id="chg" name="text" required placeholder="For example: make it 1500 long">
+      <button class="primary">Send</button>
+      <div class="sub small">The desk says back how it understood the change. Nothing is redrawn until you confirm.</div>
+    </form>
+    {% endif %}
+    <div class="card">
+      <div style="font-weight:600">Versions of this drawing</div>
+      {% if l.drawing and l.drawing.status == 'preview' and not (l.last_rev and l.last_rev.spec.model == l.drawing.spec.model) %}
+      <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span></div>{% endif %}
+      {% for r in l.revisions|reverse %}
+      <div class="small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
+        <div class="sub">{{ r.reason }}<br>Issued by {{ r.issued_by }}, {{ r.issued_at|when }} · engines {{ r.engine_version }}</div></div>
+      {% else %}<div class="sub small">Not issued yet.</div>{% endfor %}
+    </div>
+  </div>
+</div>
+<script>
+(function(){var i=document.getElementById('img'),b=document.getElementById('zoom'),z=false;
+function t(){z=!z;i.style.width=z?'240%':'100%';i.style.cursor=z?'zoom-out':'zoom-in';b.textContent=z?'Fit to width':'Zoom in';b.setAttribute('aria-pressed',z);}
+i.addEventListener('click',t);b.addEventListener('click',t);})();
+</script>
+{% endblock %}

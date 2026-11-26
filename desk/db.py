@@ -40,6 +40,7 @@ class Order(Base):
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
+    steps: Mapped[list["Step"]] = relationship(order_by="Step.id", cascade="all, delete-orphan")
 
 
 class OrderLine(Base):
@@ -136,6 +137,45 @@ class Change(Base):
     understood: Mapped[str] = mapped_column(Text, default="")
     values: Mapped[dict] = mapped_column(JSON, default=dict)           # what it sets on the specification
     status: Mapped[str] = mapped_column(String(20), default="asked")   # asked | confirmed | rejected | cannot
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Step(Base):
+    """What happened to an order after drawing: issued, sent to the client, approved, released to production, completed.
+    A log, never edited; the order's stage is worked out from it."""
+    __tablename__ = "step"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    kind: Mapped[str] = mapped_column(String(20))      # issued | sent | approved | released | completed | reopened
+    note: Mapped[str] = mapped_column(Text, default="")
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EngineRequest(Base):
+    """A request for an addition or change to the engines, raised by a user when the engine cannot build something.
+    The administrator approves or declines it here. Approval means "build this"; the built change is still
+    approved separately in the approved-engines repository before any drawing can use it."""
+    __tablename__ = "engine_request"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_ref: Mapped[str] = mapped_column(String(80), default="")
+    product: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="asked")   # asked | approved | declined | built
+    asked_by: Mapped[str] = mapped_column(String(120), default="")
+    asked_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    decided_by: Mapped[str] = mapped_column(String(120), default="")
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
+class Photo(Base):
+    """A photograph of a product, kept by product name so the same product shows it on every order."""
+    __tablename__ = "photo"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product: Mapped[str] = mapped_column(String(200), unique=True)     # product name, lower case
+    path: Mapped[str] = mapped_column(Text)
     by: Mapped[str] = mapped_column(String(120), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 

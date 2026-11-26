@@ -28,7 +28,7 @@ def test_refuses_what_it_cannot_draw():
     try:
         spec.build(engines.ENGINES_DIR, order, l, read_line(l.name, l.description), {}, 1)
     except spec.CannotDraw as e:
-        assert "engine change" in str(e)
+        assert "engine addition" in str(e)
     else:
         raise AssertionError("should refuse")
 

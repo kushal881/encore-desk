@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Encore drawing desk{% endblock %}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A2228;background:#F3F5F6;font-size:14px;line-height:1.5}
+a{color:#1F5A6E}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 24px;background:#17384A;color:#fff}
+.bar .dim{color:#C9DCE5}
+.bar a{color:#fff;text-decoration:none;padding:6px 10px;border-radius:6px}
+.bar a.on,.bar a:hover{background:#245369}
+.count{display:inline-block;min-width:20px;text-align:center;font-size:12px;font-weight:600;border-radius:10px;padding:1px 6px;background:#F2B441;color:#3A2A00;margin-left:4px}
+.cols{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px;align-items:flex-start}
+.side{flex:1 1 280px;max-width:340px;display:flex;flex-direction:column;gap:12px}
+.main{flex:999 1 420px;min-width:0;background:#fff;border:1px solid #D5DCE0;border-radius:8px}
+.right{flex:1 1 300px;max-width:400px;display:flex;flex-direction:column;gap:12px}
+.page{padding:16px 24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D5DCE0;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.label{font-size:13px;font-weight:600;color:#4A5A63}
+.sub{font-size:13px;color:#4A5A63}
+.small{font-size:12px}
+.tag{font-size:12px;font-weight:500;border-radius:4px;padding:3px 8px;align-self:flex-start;display:inline-block}
+.tag.ask{color:#8A4B00;background:#FCEFD9}.tag.ok{color:#1B5E20;background:#E3F1E4}.tag.bad{color:#8C1D18;background:#FBE4E2}.tag.dim{color:#4A5A63;background:#E9EDEF}.tag.info{color:#0F4C63;background:#DCEEF5}
+.chat{padding:18px;display:flex;flex-direction:column;gap:14px}
+.b{max-width:560px;border-radius:8px;padding:12px 14px}
+.b.desk{align-self:flex-start;background:#EEF3F5}
+.b.me{align-self:flex-end;background:#17384A;color:#fff}
+.b.step{align-self:center;background:#fff;border:1px dashed #B9C4CA;font-size:13px;color:#4A5A63;text-align:center}
+form.q{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+form.row{display:flex;gap:8px;flex-wrap:wrap}
+button,input[type=text],select{font:inherit;min-height:44px;border-radius:6px}
+button{padding:0 16px;border:1px solid #1F5A6E;background:#fff;color:#1F5A6E;cursor:pointer}
+button.primary{background:#1F5A6E;color:#fff}
+button.sm{min-height:34px;padding:0 10px;font-size:13px}
+input[type=text],select{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C4CA;background:#fff}
+input.sm{min-height:34px;font-size:13px}
+.card>input[type=text],.card>select,.col>input[type=text]{flex:0 0 auto}
+details>summary{cursor:pointer;color:#1F5A6E;font-size:13px}
+.sr{position:absolute;left:-9999px}
+.tiles{display:flex;flex-wrap:wrap;gap:12px}
+.tile{flex:1 1 150px;background:#fff;border:1px solid #D5DCE0;border-radius:8px;padding:14px}
+.tile .n{font-size:26px;font-weight:600;line-height:1.2}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;font-weight:600;color:#4A5A63;text-align:left;padding:8px 12px;border-bottom:1px solid #D5DCE0;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #E9EDEF;vertical-align:top}
+.scroll{overflow-x:auto}
+.thumb{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #D5DCE0;flex:none}
+.nophoto{width:64px;height:64px;border-radius:6px;border:1px dashed #B9C4CA;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6B7A83;text-align:center;line-height:1.2}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div style="font-size:16px;font-weight:600">Encore drawing desk</div>
+  <a href="/" class="{{ 'on' if nav == 'dash' }}">Dashboard</a>
+  <a href="/engine-requests" class="{{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count">{{ requests_waiting }}</span>{% endif %}</a>
+  {% block crumb %}{% endblock %}
+  <div style="flex-grow:1"></div>
+  <div class="dim">{{ user }} · {{ role }}</div>
+  <form method="post" action="/logout"><button style="min-height:36px;background:transparent;color:#fff;border-color:#C9DCE5">Sign out</button></form>
+</div>
+{% block body %}{% endblock %}
+</body>
+</html>

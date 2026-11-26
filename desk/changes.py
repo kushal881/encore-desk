@@ -9,7 +9,7 @@ FAMILY_WORDS = {"workstation": ("workstation", "table", "desk"), "storage": ("st
 def which_line(text, lines):
     """lines = [(no, family)]. -> line no, or None if the text does not say and the order has more than one line."""
     low = text.lower()
-    m = re.search(r"\b(?:line|item|sr\.?\s*no\.?)\s*(\d+)", low)
+    m = re.search(r"\b(?:product|line|item|sr\.?\s*no\.?)\s*(\d+)", low)
     if m and int(m.group(1)) in [n for n, _ in lines]:
         return int(m.group(1))
     hits = [n for n, fam in lines if any(w in low for w in FAMILY_WORDS.get(fam, ()))]
@@ -20,7 +20,7 @@ def which_line(text, lines):
 
 def understand(text, family):
     """-> (values, summary) for one line, or (None, why not)."""
-    low = re.sub(r"\b(?:line|item)\s*\d+\b", " ", text.lower())
+    low = re.sub(r"\b(?:product|line|item)\s*\d+\b", " ", text.lower())
     v, said = {}, []
     for key, words in (("L", "long|length|wide|width"), ("D", "deep|depth"), ("H", "high|height|tall")):
         m = re.search(r"\b%s\s*(\d{3,4})\b" % key.lower(), low) or re.search(r"(\d{3,4})\s*(?:mm)?\s*(?:%s)\b" % words, low) \
@@ -45,7 +45,7 @@ def understand(text, family):
     if m and family == "workstation":
         v["raceway_L"] = int(m.group(1)); said.append("raceway %d long" % v["raceway_L"])
     if not v:
-        return None, "I could not turn this into a change the engine can draw. If it is a new kind of detail, it needs an engine change."
+        return None, "I could not turn this into a change the engine can draw. If it is a new kind of detail, it needs an engine addition; you can ask for one below."
     return v, "; ".join(said)
 
 

@@ -34,9 +34,11 @@ def build(engines_dir, order, line, read, answers, serial, changes=None, finish=
     finish(text, kind) -> a shade from the finishes library; issue = dict(number folder, serial, revisions) when issuing."""
     changes = changes or {}
     family, fields, name = read["family"], read["fields"], line.name
+    if family == "other" and answers.get("family", "").strip().lower() in ("workstation", "storage", "pedestal"):
+        family = answers["family"].strip().lower()
     key = (family, variant(family, name, fields))
     if key not in TEMPLATES:
-        raise CannotDraw("No approved template for this product yet (%s). This needs an engine change." % (name.split("(")[0].strip()))
+        raise CannotDraw("No approved template for this product yet (%s). This needs an engine addition; you can ask for one below." % (name.split("(")[0].strip()))
     size = read["size"]
     if "size" in answers:
         m = re.search(r"L\s*(\d+)\D+D\s*(\d+)\D+H\s*(\d+)", answers["size"], re.I)
@@ -44,7 +46,7 @@ def build(engines_dir, order, line, read, answers, serial, changes=None, finish=
             raise CannotDraw('I could not read a size from the answer "%s". Write it as L1200 D450 H750.' % answers["size"])
         size = tuple(int(v) for v in m.groups())
     if not size:
-        raise CannotDraw("No size for this line.")
+        raise CannotDraw("No size for this product.")
     L, D, H = (changes.get(k, v) for k, v in zip("LDH", size))
     spec = json.load(open(os.path.join(engines_dir, "templates", TEMPLATES[key]), encoding="utf-8"))
     spec = copy.deepcopy(spec); spec.pop("_comment", None)
@@ -112,19 +114,36 @@ def build(engines_dir, order, line, read, answers, serial, changes=None, finish=
                 sw["use"] = sw.get("use", "") + " (colour indicative)"
     for hw in spec.get("hardware", []):
         hw["image"] = None
-    today = datetime.date.today().strftime("%d %b %Y").upper()
-    spec["client"] = dict(company=order.client.name, delivery=list(order.delivery) or [""], drawing_id=order.source_ref)
     spec["item"] = dict(serial="%02d" % serial, product_name=name.split("(")[0].strip(), product_code="%d x %d x %d" % (L, D, H), qty=int(line.qty))
     if read["area"]:
         spec["item"]["area"] = read["area"]
+    _header(spec, order, serial, issue)
+    spec["notes_from_answers"] = {k: v for k, v in answers.items() if k == "note"}
+    return spec
+
+
+def _header(spec, order, serial, issue):
+    """The parts of a specification that belong to this order and this issue, not to the product."""
+    today = datetime.date.today().strftime("%d %b %Y").upper()
+    spec["client"] = dict(company=order.client.name, delivery=list(order.delivery) or [""], drawing_id=order.source_ref)
     if issue:
         spec["drawing"].update(quotation=order.source_ref, date=issue["revisions"][0]["date"], rev=issue["revisions"][-1]["rev"], status="FOR APPROVAL", issued=True)
         spec["revisions"] = issue["revisions"]
         spec["numbering"] = dict(folder=issue["folder"], serial=issue["serial"], company_short=order.client.name)
         spec["item"]["serial"] = issue["serial"]
     else:
-        spec["drawing"].update(quotation=order.source_ref, date=today, rev="A", status="PREVIEW - NOT ISSUED")
+        spec["drawing"].update(quotation=order.source_ref, date=today, rev="A", status="PREVIEW - NOT ISSUED", issued=False)
         spec["revisions"] = [dict(rev="A", date=today, desc="Preview from the drawing desk", by="")]
         spec["numbering"] = dict(folder="DESK", serial="%02d" % serial, company_short=order.client.name)
-    spec["notes_from_answers"] = {k: v for k, v in answers.items() if k == "note"}
+
+
+def remake(order, line, past, serial, issue=None):
+    """A product made again exactly as a past issued drawing: the product part of that drawing's specification,
+    under this order's client details, quantity, number and date."""
+    spec = copy.deepcopy(past)
+    for k in ("revisions", "numbering", "notes_from_answers", "client"):
+        spec.pop(k, None)
+    spec["item"] = dict(past["item"], serial="%02d" % serial, qty=int(line.qty))
+    _header(spec, order, serial, issue)
+    spec["notes_from_answers"] = {}
     return spec

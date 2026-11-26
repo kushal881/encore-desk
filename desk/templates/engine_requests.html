@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% set nav = 'eng' %}
+{% block title %}Engine requests · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="card">
+    <div style="font-weight:600">Ask for an engine addition or change</div>
+    <div class="sub">Use this when the engine cannot draw a product or a detail. The administrator decides. Nothing changes in any drawing until the addition is built and approved.</div>
+    <form class="row" method="post" action="/engine-requests">
+      <label class="sr" for="t">What should the engine be able to draw</label>
+      <input type="text" id="t" name="text" required placeholder="For example: conference table with a wire box in the centre">
+      <button class="primary">Send request</button>
+    </form>
+  </div>
+  <div class="card">
+    <div style="font-weight:600">Requests</div>
+    {% if rows %}
+    <div class="scroll"><table>
+      <tr><th>Request</th><th>Asked by</th><th>Status</th><th>{{ 'Decision' if is_admin else 'Note' }}</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td><b>{{ r.text }}</b>{% if r.product %}<div class="sub small">Product: {{ r.product }}</div>{% endif %}{% if r.order_ref %}<div class="sub small">Order <a href="/orders/{{ r.order_ref }}">{{ r.order_ref }}</a></div>{% endif %}</td>
+        <td class="small">{{ r.asked_by }}<div class="sub">{{ r.asked_at|when }}</div></td>
+        <td><span class="tag {{ {'asked':'ask','approved':'info','built':'ok','declined':'dim'}[r.status] }}">{{ {'asked':'Waiting for decision','approved':'Approved, to be built','built':'Built and in the engine','declined':'Declined'}[r.status] }}</span>
+          {% if r.decided_by %}<div class="sub small">{{ r.decided_by }}, {{ r.decided_at|when }}</div>{% endif %}</td>
+        <td style="min-width:260px">
+          {% if is_admin and r.status == 'asked' %}
+          <form class="row" method="post">
+            <label class="sr" for="n{{ r.id }}">Note</label>
+            <input class="sm" type="text" id="n{{ r.id }}" name="note" placeholder="Note (optional)">
+            <button class="sm primary" formaction="/engine-requests/{{ r.id }}/approve">Approve</button>
+            <button class="sm" formaction="/engine-requests/{{ r.id }}/decline">Decline</button>
+          </form>
+          {% elif r.status == 'approved' %}
+          <div class="sub small">To build it, give this sentence to a Claude chat:</div>
+          <div class="small" style="background:#F3F5F6;border-radius:6px;padding:8px;user-select:all">Engine: {{ r.text }}{% if r.product %} (product: {{ r.product }}){% endif %}</div>
+          {% if is_admin %}<form method="post" action="/engine-requests/{{ r.id }}/built" style="margin-top:6px"><button class="sm">Mark as built</button></form>{% endif %}
+          {% endif %}
+          {% if r.note %}<div class="sub small">{{ r.note }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<div class="sub">No requests yet.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

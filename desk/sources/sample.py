@@ -14,3 +14,6 @@ class SampleSource:
         return SourceOrder(source=d["source"], ref=d["ref"], client_name=d["client"]["name"], client_contact=d["client"].get("contact", ""),
                            delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""),
                            lines=[SourceLine(**l) for l in d["lines"]])
+
+    def list_refs(self):
+        return sorted(f[:-5] for f in os.listdir(HERE) if f.endswith(".json"))
