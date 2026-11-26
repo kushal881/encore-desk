@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ o.source_ref }} · Encore drawing desk</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A2228;background:#F3F5F6;font-size:14px;line-height:1.5}
+a{color:#1F5A6E}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:14px 24px;background:#17384A;color:#fff}
+.bar .dim{color:#C9DCE5}
+.cols{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px;align-items:flex-start}
+.side{flex:1 1 280px;max-width:340px;display:flex;flex-direction:column;gap:12px}
+.main{flex:999 1 420px;min-width:0;background:#fff;border:1px solid #D5DCE0;border-radius:8px}
+.right{flex:1 1 300px;max-width:400px;display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;border:1px solid #D5DCE0;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.label{font-size:13px;font-weight:600;color:#4A5A63}
+.sub{font-size:13px;color:#4A5A63}
+.tag{font-size:12px;font-weight:500;border-radius:4px;padding:3px 8px;align-self:flex-start}
+.tag.ask{color:#8A4B00;background:#FCEFD9}.tag.ok{color:#1B5E20;background:#E3F1E4}
+.chat{padding:18px;display:flex;flex-direction:column;gap:14px}
+.b{max-width:560px;border-radius:8px;padding:12px 14px}
+.b.desk{align-self:flex-start;background:#EEF3F5}
+.b.me{align-self:flex-end;background:#17384A;color:#fff}
+form.q{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+button,input[type=text]{font:inherit;min-height:44px;border-radius:6px}
+button{padding:0 16px;border:1px solid #1F5A6E;background:#fff;color:#1F5A6E;cursor:pointer}
+button.primary{background:#1F5A6E;color:#fff}
+input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C4CA}
+.sr{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div style="font-size:16px;font-weight:600">Encore drawing desk</div>
+  <div class="dim">{{ o.source_ref }} · {{ o.client.name }}</div>
+  <div style="flex-grow:1"></div>
+  <div class="dim">{{ user }}</div>
+</div>
+<div class="cols">
+  <div class="side">
+    <div class="label">Order lines ({{ o.source }})</div>
+    {% for l in o.lines %}
+    <div class="card">
+      <div style="font-weight:600">{{ l.no }}. {{ l.name }}</div>
+      <div class="sub">{{ l.size_text }}{% if l.read.area %} · {{ l.read.area }}{% endif %} · qty {{ '%g' % l.qty }}</div>
+      {% if l.open_count %}<div class="tag ask">{{ l.open_count }} question{{ '' if l.open_count == 1 else 's' }}</div>
+      {% else %}<div class="tag ok">Ready to draw</div>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="sub" style="font-size:12px">Job order {{ o.job_order or 'not given' }} · Salesperson {{ o.salesperson or 'not given' }}</div>
+  </div>
+  <div class="main">
+    <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
+    <div class="chat">
+      {% for m in o.messages %}<div class="b {{ 'desk' if m.who == 'desk' else 'me' }}">{{ m.text }}</div>{% endfor %}
+      {% for l in o.lines %}{% for q in l.questions %}
+      <div class="b desk">
+        <div><b>Line {{ l.no }}.</b> {{ q.text }}</div>
+        {% if not q.answer %}
+        <form class="q" method="post" action="/orders/{{ o.source_ref }}/answer/{{ q.id }}">
+          {% for opt in q.options %}<button name="value" value="{{ opt }}">{{ opt }}</button>{% endfor %}
+        </form>
+        <form class="q" method="post" action="/orders/{{ o.source_ref }}/answer/{{ q.id }}">
+          <label class="sr" for="q{{ q.id }}">Your answer</label>
+          <input type="text" id="q{{ q.id }}" name="value" required placeholder="{{ 'Or type another answer' if q.options else 'Type your answer' }}">
+          <button class="primary">Answer</button>
+        </form>
+        {% endif %}
+      </div>
+      {% if q.answer %}<div class="b me">{{ q.answer }}<div style="font-size:12px;color:#C9DCE5">{{ q.answered_by }}</div></div>{% endif %}
+      {% endfor %}{% endfor %}
+      {% if open_total == 0 %}<div class="b desk">All questions are answered. Drawing previews are the next part of the desk to be built.</div>{% endif %}
+    </div>
+  </div>
+  <div class="right">
+    <div class="label">Drawings</div>
+    <div class="card" style="border-style:dashed;align-items:center;text-align:center;padding:28px 18px">
+      <div style="font-weight:600">No drawings yet</div>
+      <div class="sub">{% if open_total %}{{ open_total }} question{{ '' if open_total == 1 else 's' }} left to answer.{% else %}Ready for the engine run (not built yet).{% endif %}</div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600;font-size:13px">Nothing here reaches the client</div>
+      <div class="sub">This page is separate from Odoo messages.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

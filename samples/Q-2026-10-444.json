@@ -1,0 +1,20 @@
+{
+ "source": "sample",
+ "ref": "Q-2026-10-444",
+ "job_order": "JO 26-27-10-0108",
+ "date": "2026-10-28",
+ "salesperson": "Anchal Dawar",
+ "client": {"name": "Achiever Apparels Pvt Ltd", "contact": "Mr. Punweet Singh"},
+ "delivery": ["A-7, Infocity, Hero Honda Chowk", "Gurugram 122004, Haryana"],
+ "lines": [
+  {"no": 1, "qty": 1, "unit": "Nos",
+   "name": "Workstation EDS 02 (Single Seat) (Custom, Loop Leg, Fabric Magnetic Screen L900 H300mm)",
+   "description": "Size: L1350 D750 H750mm\nTable Top : 25mm thick Prelaminated Particle Board with 2mm thick PVC edgeband.\nUnder structure : MS Powder Coated 50*25mm leg\nElectrical Provision : Cable Manager Hole\nRaceway Length : L600mm\nLaminate : Laurel Oak Dark 3416\nEdge Band : Black\nFabric : Festival F157\nPowder Coating : Black Matt\nNote : Glass D in Black Colour"},
+  {"no": 2, "qty": 1, "unit": "PCS",
+   "name": "Storage ESP 01 (Size: L1200 D400 H750mm)",
+   "description": "Office Block\nSize: L1200 D450 H750mm\nMaterial: 18mm thick Prelaminated Particle Board\nHardware: Black Aluminum Handles, Lock, Soft Close Hinges\nEdgeband : Black\nLaminate: Laurel Oak Dark 3416"},
+  {"no": 3, "qty": 1, "unit": "PCS",
+   "name": "Pedestal 1 Drawer 1 Shutter",
+   "description": "Size : L400 D450 H650mm\nMaterial : 18mm thick prelaminated particle board\nLaminate: Laurel Oak Dark 3416\nEdgeband : Black\nHardware : Soft close Hinge, Normal telescopic channel, Black Aluminium Handle, lock on drawer, Buffers."}
+ ]
+}
