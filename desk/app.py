@@ -10,12 +10,15 @@ from . import db, spec, engines, finishes, auth, changes as chg
 import datetime, secrets, io
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
+from .sources.odoo import OdooSource, OdooError
+from .sources.base import Sources
 
 app = FastAPI(title="Encore drawing desk")
 T = Jinja2Templates(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 T.env.filters["when"] = lambda d: d.replace(tzinfo=d.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y, %H:%M") if d else ""
-SOURCE = SampleSource()                       # the Odoo source replaces this line when it is connected
+ODOO = OdooSource()
+SOURCE = Sources(ODOO if ODOO.configured else None, SampleSource())      # when Odoo is replaced, only this line changes
 if auth.ON_SERVER and not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set on the server")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32), https_only=auth.ON_SERVER, same_site="lax", max_age=12 * 3600)
@@ -72,6 +75,40 @@ def product_key(name):
     return name.split("(")[0].strip().lower()[:200]
 
 
+def _save_photo(s, name, data, by):
+    """Keeps a photograph for a product name. -> True if the data was a picture."""
+    from PIL import Image
+    try:
+        im = Image.open(io.BytesIO(data)); im = im.convert("RGB"); im.thumbnail((900, 900))
+    except Exception:
+        return False
+    key = product_key(name)
+    ph = s.scalar(select(db.Photo).where(db.Photo.product == key)) or db.Photo(product=key, path="")
+    s.add(ph); s.flush()
+    os.makedirs(os.path.join(engines.FILES, "photos"), exist_ok=True)
+    ph.path, ph.by, ph.at = os.path.join(engines.FILES, "photos", "%d.jpg" % ph.id), by, db.now()
+    im.save(ph.path, "JPEG", quality=85)
+    s.commit()
+    return True
+
+
+def _fetch_photos(s, src):
+    """Brings each product's photograph from the order's source (Odoo) the first time the order is opened.
+    A photograph the desk already has for that product name is kept."""
+    source = getattr(src, "_from", None)
+    if not hasattr(source, "product_image"):
+        return
+    for l in src.lines:
+        if not l.product_ref or s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name))):
+            continue
+        try:
+            data = source.product_image(l.product_ref)
+        except Exception:
+            continue                                               # a missing photograph never stops an order from opening
+        if data:
+            _save_photo(s, l.name, data, "Odoo")
+
+
 def load(ref):
     """The order from our own database; read from its source and copied in the first time it is opened."""
     with db.Session() as s:
@@ -81,6 +118,8 @@ def load(ref):
                 src = SOURCE.get_order(ref)
             except KeyError:
                 raise HTTPException(404, "Order %s was not found" % ref)
+            except OdooError as e:
+                raise HTTPException(502, "Odoo could not be read: %s" % e)
             c = s.scalar(select(db.Client).where(db.Client.name == src.client_name)) or db.Client(name=src.client_name, contact=src.client_contact)
             o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery)
             total = 0
@@ -93,6 +132,7 @@ def load(ref):
             o.messages.append(db.Message(who="desk", text="I have read the %d product%s of this order. %s" % (n, "" if n == 1 else "s",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
+            _fetch_photos(s, src)
         s.refresh(o)
         for l in o.lines:
             l.read = read_line(l.name, l.description)
@@ -174,7 +214,8 @@ def home(request: Request, show: str = "active", user=User):
                                  salesperson=o.salesperson, last=last, drawings=[dict(number=l.revisions[-1].number, rev=l.revisions[-1].rev, no=l.no) for l in o.lines if l.revisions]))
         known = {o.source_ref for o in s.scalars(select(db.Order))}
     samples = [r for r in getattr(SOURCE, "list_refs", lambda: [])() if r not in known]
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples))
+    odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured))
 
 
 @app.post("/open")
@@ -446,24 +487,14 @@ def remake(ref: str, no: int, rid: int = Form(...), user=User):
 @app.post("/orders/{ref}/photo/{no}")
 async def photo_upload(ref: str, no: int, file: UploadFile = File(...), user=User):
     """A photograph for this product. It is kept by product name, so the same product shows it on every order."""
-    from PIL import Image
     o = load(ref)
     l = next((x for x in o.lines if x.no == no), None)
     data = await file.read(8 * 1024 * 1024 + 1)
     if l is None or not data or len(data) > 8 * 1024 * 1024:
         raise HTTPException(400, "Choose a photograph up to 8 MB")
-    try:
-        im = Image.open(io.BytesIO(data)); im = im.convert("RGB"); im.thumbnail((900, 900))
-    except Exception:
-        raise HTTPException(400, "That file is not a photograph the desk can read (use JPG or PNG)")
     with db.Session() as s:
-        key = product_key(l.name)
-        ph = s.scalar(select(db.Photo).where(db.Photo.product == key)) or db.Photo(product=key, path="")
-        s.add(ph); s.flush()
-        os.makedirs(os.path.join(engines.FILES, "photos"), exist_ok=True)
-        ph.path, ph.by, ph.at = os.path.join(engines.FILES, "photos", "%d.jpg" % ph.id), user.name, db.now()
-        im.save(ph.path, "JPEG", quality=85)
-        s.commit()
+        if not _save_photo(s, l.name, data, user.name):
+            raise HTTPException(400, "That file is not a photograph the desk can read (use JPG or PNG)")
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 

@@ -39,7 +39,8 @@
         <input type="text" id="ref" name="ref" required placeholder="Order number">
         <button class="primary">Open</button>
       </form>
-      <div class="sub small">Odoo is not connected yet, so only sample orders can be opened.{% if samples %} Not opened yet: {% for r in samples %}<a href="/orders/{{ r }}">{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}.{% endif %}</div>
+      <div class="sub small">{% if odoo_on %}Type the quotation or order number as it is in Odoo.{% else %}Odoo is not connected yet, so only sample orders can be opened.{% endif %}{% if samples %} Not opened yet: {% for r in samples %}<a href="/orders/{{ r }}">{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}.{% endif %}</div>
+      {% if odoo %}<div class="sub small"><b>Odoo:</b> {{ odoo }}</div>{% endif %}
     </div>
     <div class="card" style="flex:1 1 320px">
       <div style="font-weight:600">Engines</div>
