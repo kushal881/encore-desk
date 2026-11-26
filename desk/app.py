@@ -1,11 +1,11 @@
-"""Encore drawing desk. Step 1 of the build: open an order, show what was read, ask what is missing, record the answers.
-Not built yet: sign-in, engine runs, previews, issue, Odoo source."""
+"""Encore drawing desk. Built so far: open an order, show what was read, ask what is missing, record the answers,
+run the approved engine and show previews. Not built yet: sign-in, change requests, issue, Odoo source."""
 import os
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from . import db
+from . import db, spec, engines
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
 
@@ -42,7 +42,7 @@ def load(ref):
             l.read = read_line(l.name, l.description)
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"
             l.open_count = sum(1 for q in l.questions if not q.answer)
-            _ = l.questions
+            _ = l.questions, l.drawing
         _ = o.client, o.messages
         return o
 
@@ -55,7 +55,8 @@ def home():
 @app.get("/orders/{ref}", response_class=HTMLResponse)
 def order(request: Request, ref: str):
     o = load(ref)
-    return T.TemplateResponse(request, "order.html", dict(o=o, user=USER, open_total=sum(l.open_count for l in o.lines)))
+    return T.TemplateResponse(request, "order.html", dict(o=o, user=USER, open_total=sum(l.open_count for l in o.lines), engine_version=engines.version(),
+                              can_draw=any(l.open_count == 0 for l in o.lines), drawn=sum(1 for l in o.lines if l.drawing and l.drawing.status == "preview")))
 
 
 @app.post("/orders/{ref}/answer/{qid}")
@@ -74,3 +75,37 @@ def answer(ref: str, qid: int, value: str = Form(...)):
         q.answer, q.answered_by, q.answered_at = value, USER, db.now()
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/draw")
+def draw(ref: str):
+    """Runs the approved engine for every line whose questions are all answered. Each result is a preview, never an issued drawing."""
+    o = load(ref)
+    with db.Session() as s:
+        for l in o.lines:
+            if l.open_count:
+                continue
+            line = s.get(db.OrderLine, l.id)
+            d = line.drawing or db.Drawing()
+            line.drawing = d
+            d.engine_version, d.made_by, d.made_at, d.error, d.files = engines.version(), USER, db.now(), "", {}
+            try:
+                d.spec = spec.build(engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no)
+                d.files = engines.draw(d.spec, "%d/line%d" % (o.id, l.no))
+                d.status = "preview"
+            except (spec.CannotDraw, RuntimeError) as e:
+                d.status, d.error = "failed", str(e)
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.get("/drawings/{did}/{kind}")
+def drawing_file(did: int, kind: str):
+    if kind not in ("png", "pdf", "dxf"):
+        raise HTTPException(404)
+    with db.Session() as s:
+        d = s.get(db.Drawing, did)
+        path = d.files.get(kind) if d else None
+    if not path or not os.path.exists(path):
+        raise HTTPException(404)
+    return FileResponse(path, filename=None if kind == "png" else "PREVIEW-drawing-%d.%s" % (did, kind))

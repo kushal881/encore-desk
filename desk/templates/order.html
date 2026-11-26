@@ -71,19 +71,33 @@ input[type=text]{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #B9C
       </div>
       {% if q.answer %}<div class="b me">{{ q.answer }}<div style="font-size:12px;color:#C9DCE5">{{ q.answered_by }}</div></div>{% endif %}
       {% endfor %}{% endfor %}
-      {% if open_total == 0 %}<div class="b desk">All questions are answered. Drawing previews are the next part of the desk to be built.</div>{% endif %}
+      {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
+      {% if drawn %}<div class="b desk">{{ drawn }} preview{{ '' if drawn == 1 else 's' }} ready on the right. Change requests and Issue are the next parts to be built.</div>{% endif %}
     </div>
   </div>
   <div class="right">
     <div class="label">Drawings</div>
+    {% if can_draw %}
+    <form method="post" action="/orders/{{ o.source_ref }}/draw"><button class="primary" style="width:100%">{{ 'Redraw previews' if drawn else 'Draw previews' }}</button></form>
+    {% endif %}
+    {% for l in o.lines %}{% if l.drawing %}
+    <div class="card">
+      <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Line {{ l.no }}</div>
+        {% if l.drawing.status == 'failed' %}<div class="tag" style="color:#8C1D18;background:#FBE4E2">Could not draw</div>{% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
+      {% if l.drawing.status == 'failed' %}<div class="sub">{{ l.drawing.error }}</div>
+      {% else %}
+      <a href="/drawings/{{ l.drawing.id }}/pdf"><img src="/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}" alt="Preview of the drawing for line {{ l.no }}" style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+      <div class="sub" style="font-size:12px"><a href="/drawings/{{ l.drawing.id }}/pdf">Open PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
+      {% endif %}
+    </div>
+    {% endif %}{% endfor %}
+    {% if not drawn %}
     <div class="card" style="border-style:dashed;align-items:center;text-align:center;padding:28px 18px">
       <div style="font-weight:600">No drawings yet</div>
-      <div class="sub">{% if open_total %}{{ open_total }} question{{ '' if open_total == 1 else 's' }} left to answer.{% else %}Ready for the engine run (not built yet).{% endif %}</div>
+      <div class="sub">{% if open_total %}{{ open_total }} question{{ '' if open_total == 1 else 's' }} left to answer.{% else %}Press Draw previews.{% endif %}</div>
     </div>
-    <div class="card">
-      <div style="font-weight:600;font-size:13px">Nothing here reaches the client</div>
-      <div class="sub">This page is separate from Odoo messages.</div>
-    </div>
+    {% endif %}
+    <div class="sub" style="font-size:12px">Engines: {{ engine_version }}, approved. Nothing here reaches the client.</div>
   </div>
 </div>
 </body>

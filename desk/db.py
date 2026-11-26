@@ -48,6 +48,7 @@ class OrderLine(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     qty: Mapped[float] = mapped_column(Float, default=1)
     questions: Mapped[list["Question"]] = relationship(order_by="Question.id", cascade="all, delete-orphan")
+    drawing: Mapped["Drawing | None"] = relationship(cascade="all, delete-orphan", uselist=False)
 
 
 class Question(Base):
@@ -69,6 +70,20 @@ class Message(Base):
     who: Mapped[str] = mapped_column(String(120))              # "desk" or the user's name
     text: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Drawing(Base):
+    """One drawing of one order line. A preview until it is issued; each run of the engine replaces the preview."""
+    __tablename__ = "drawing"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="preview")      # preview | failed | issued (issue is not built yet)
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)                   # the client specification the engine was given
+    files: Mapped[dict] = mapped_column(JSON, default=dict)                  # pdf / dxf / png paths
+    error: Mapped[str] = mapped_column(Text, default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 def init():
