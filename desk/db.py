@@ -55,6 +55,7 @@ class OrderLine(Base):
     drawing: Mapped["Drawing | None"] = relationship(cascade="all, delete-orphan", uselist=False)
     changes: Mapped[list["Change"]] = relationship(order_by="Change.id", cascade="all, delete-orphan")
     revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
+    sets: Mapped[list["ProductionSet"]] = relationship(order_by="ProductionSet.id", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -178,6 +179,20 @@ class Photo(Base):
     path: Mapped[str] = mapped_column(Text)
     by: Mapped[str] = mapped_column(String(120), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProductionSet(Base):
+    """The production (or subcontractor) drawings of one product, made from one issued revision."""
+    __tablename__ = "production_set"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    revision_id: Mapped[int] = mapped_column(ForeignKey("revision.id"))
+    kind: Mapped[str] = mapped_column(String(20))                      # PRODUCTION | VENDOR
+    files: Mapped[list] = mapped_column(JSON, default=list)            # [dict(title, pdf, pages, name)]
+    details: Mapped[dict] = mapped_column(JSON, default=dict)          # job order no., date, deadline
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 def init():

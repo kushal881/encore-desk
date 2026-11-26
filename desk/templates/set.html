@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ kind }} drawings · Product {{ line.no }} · {{ o.source_ref }}{% endblock %}
+{% block crumb %}<a href="/orders/{{ o.source_ref }}" class="dim">{{ o.source_ref }} · {{ o.client.name }}</a>{% endblock %}
+{% block body %}
+<div class="cols">
+  <div class="main" style="flex:999 1 600px">
+    <div style="padding:12px 18px;border-bottom:1px solid #E3E8EB;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+      <div style="font-weight:600;flex-grow:1">{{ kind }} drawings · Product {{ line.no }} · {{ line.name.split('(')[0] }} · {{ f.title }}</div>
+      <button class="sm" id="zoom" type="button" aria-pressed="false">Zoom in</button>
+      <a href="/sets/{{ ps.id }}/{{ i }}/pdf" target="_blank" rel="noopener">Open PDF to print</a>
+      <a href="/sets/{{ ps.id }}/{{ i }}/pdf?download=1">Download PDF</a>
+      <a href="/orders/{{ o.source_ref }}">Back to the order</a>
+    </div>
+    <div style="overflow:auto;max-height:calc(100vh - 150px);background:#E9EDEF;display:flex;flex-direction:column;gap:10px">
+      {% for n in range(f.pages) %}<img class="pg" src="/sets/{{ ps.id }}/{{ i }}/page/{{ n }}?v={{ ps.made_at.timestamp()|int }}" alt="{{ f.title }}, sheet {{ n + 1 }} of {{ f.pages }}" style="display:block;width:100%;background:#fff;cursor:zoom-in">{% endfor %}
+    </div>
+  </div>
+  <div class="right">
+    <div class="card">
+      <div style="font-weight:600">In this set</div>
+      {% for x in ps.files %}<div class="small"><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ x.title }}</a> <span class="sub">({{ x.pages }} sheet{{ '' if x.pages == 1 else 's' }})</span>{% if loop.index0 == i %} <span class="tag info">shown</span>{% endif %}</div>{% endfor %}
+      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px">Made from {{ rev.number }} Rev {{ rev.rev }} · engines {{ ps.engine_version }}<br>Job order {{ ps.details.job_order }} · date {{ ps.details.job_order_date }} · deadline {{ ps.details.deadline }}<br>{{ ps.made_by }}, {{ ps.made_at|when }}</div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){var b=document.getElementById('zoom'),ps=document.querySelectorAll('img.pg'),z=false;
+function t(){z=!z;ps.forEach(function(i){i.style.width=z?'240%':'100%';i.style.cursor=z?'zoom-out':'zoom-in';});b.textContent=z?'Fit to width':'Zoom in';b.setAttribute('aria-pressed',z);}
+b.addEventListener('click',t);ps.forEach(function(i){i.addEventListener('click',t);});})();
+</script>
+{% endblock %}

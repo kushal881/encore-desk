@@ -145,6 +145,17 @@ def load(ref):
                     l.confirmed.update(c.values)
             l.last_rev = l.revisions[-1] if l.revisions else None
             l.remake = l.confirmed.pop("remake_of", None)
+            l.confirmed.pop("use_engine", None)
+            # the engine version: an issued product stays on the version it was issued on, until someone moves it on purpose
+            l.engine_for = l.last_rev.engine_version if l.last_rev else None
+            for c in l.changes:
+                if c.status == "confirmed" and "use_engine" in (c.values or {}) and (not l.last_rev or c.at.replace(tzinfo=None) > l.last_rev.issued_at.replace(tzinfo=None)):
+                    l.engine_for = c.values["use_engine"]
+            l.issued_current = bool(l.last_rev and l.drawing and l.drawing.status == "preview" and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
+                                    and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
+            l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
+                                       and l.last_rev.engine_version != engines.version() and not l.remake)
+            _ = l.sets
             if l.remake:
                 l.open_count = 0                                     # an exact copy of a past drawing needs no answers
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
@@ -233,7 +244,9 @@ def order(request: Request, ref: str, user=User):
     return T.TemplateResponse(request, "order.html", ctx(user, o=o, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
                               can_draw=any(l.open_count == 0 for l in o.lines), drawn=sum(1 for l in o.lines if l.drawing and l.drawing.status == "preview"),
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
-                              needs_issue=any(_ready(l) and (not l.last_rev or l.last_rev.spec.get("model") != l.drawing.spec.get("model")) for l in o.lines)))
+                              needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
+                              prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
+                              today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
 @app.post("/orders/{ref}/answer/{qid}")
@@ -254,14 +267,14 @@ def answer(ref: str, qid: int, value: str = Form(...), user=User):
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
-def make_spec(s, o, l, issue=None):
+def make_spec(s, o, l, issue=None, edir=None):
     """The specification for one product: an exact copy of a past drawing when it is a remake, otherwise built from the order."""
     if l.remake:
         past = s.get(db.Revision, l.remake)
         if past is None:
             raise spec.CannotDraw("The past drawing chosen for this remake was not found.")
         return spec.remake(o, l, past.spec, l.no, issue=issue)
-    return spec.build(engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=l.confirmed,
+    return spec.build(edir or engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=l.confirmed,
                       finish=lambda text, kind: finishes.lookup(s, text, kind), issue=issue)
 
 
@@ -273,10 +286,11 @@ def _draw_lines(o, s, who, only=None):
         line = s.get(db.OrderLine, l.id)
         d = line.drawing or db.Drawing()
         line.drawing = d
-        d.engine_version, d.made_by, d.made_at, d.error, d.files = engines.version(), who, db.now(), "", {}
+        edir, ver = engines.dir_for(l.engine_for)
+        d.engine_version, d.made_by, d.made_at, d.error, d.files = ver, who, db.now(), "", {}
         try:
-            d.spec = make_spec(s, o, l)
-            d.files = engines.draw(d.spec, "%d/line%d/preview" % (o.id, l.no))
+            d.spec = make_spec(s, o, l, edir=edir)
+            d.files = engines.draw(d.spec, "%d/line%d/preview" % (o.id, l.no), edir)
             d.status = "preview"
         except (spec.CannotDraw, RuntimeError) as e:
             d.status, d.error = "failed", str(e)
@@ -351,8 +365,9 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
         for l in ready:
             answers = {q.key: q.answer for q in l.questions}
             model_now = l.drawing.spec.get("model")
-            if l.last_rev and l.last_rev.spec.get("model") == model_now and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches"):
+            if l.issued_current:
                 continue                                             # nothing changed since the last issue
+            edir, ver = engines.dir_for(l.engine_for)
             if l.last_rev:
                 serial = l.last_rev.number.rsplit("-", 1)[1]
                 rev = chr(ord(l.last_rev.rev) + 1)
@@ -367,10 +382,10 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
                     pr = s.get(db.Revision, l.remake)
                     reason = "Remake of %s Rev %s" % (pr.number, pr.rev) if pr else reason
                 revs = [dict(rev="A", date=today, desc=reason if len(reason) <= 40 else reason[:37] + "...", by="")]
-            sp = make_spec(s, o, l, issue=dict(folder=client.folder_no, serial=serial, revisions=revs))
-            files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev))
+            sp = make_spec(s, o, l, issue=dict(folder=client.folder_no, serial=serial, revisions=revs), edir=edir)
+            files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev), edir)
             number = "Encore-%s-%s-%s-%s" % (datetime.datetime.strptime(revs[0]["date"], "%d %b %Y").strftime("%b"), revs[0]["date"][-4:], client.folder_no, serial)
-            s.add(db.Revision(line_id=l.id, number=number, rev=rev, reason=reason, engine_version=engines.version(), spec=sp, files=files, issued_by=user.name))
+            s.add(db.Revision(line_id=l.id, number=number, rev=rev, reason=reason, engine_version=ver, spec=sp, files=files, issued_by=user.name))
             done.append("%s Rev %s" % (number, rev))
         s.add(db.Message(order_id=o.id, who="desk", text=("Issued: " + ", ".join(done) + ". Next step: send them to the client for approval (see Next step on the right).") if done
                          else "Nothing to issue: no product has changed since its last issued revision."))
@@ -429,7 +444,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, user=User):
     if r:
         src, title = "/revisions/%d" % r.id, "%s Rev %s" % (r.number, r.rev)
     elif l.drawing and l.drawing.status == "preview":
-        current = l.last_rev and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
+        current = l.issued_current
         src, title = ("/revisions/%d" % l.last_rev.id, "%s Rev %s" % (l.last_rev.number, l.last_rev.rev)) if current else ("/drawings/%d" % l.drawing.id, "Preview, not issued")
         r = l.last_rev if current else None
     elif l.last_rev:
@@ -543,3 +558,97 @@ def engine_request_decide(rid: int, decision: str, note: str = Form(""), user=Us
         r.status, r.decided_by, r.decided_at, r.note = new, user.name, db.now(), (note.strip() or r.note)
         s.commit()
     return RedirectResponse("/engine-requests", status_code=303)
+
+
+@app.post("/orders/{ref}/engine/{no}")
+def move_engine(ref: str, no: int, user=User):
+    """Redraw an issued product on the latest approved engines. It becomes a preview; issuing it makes a new revision."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not l.can_update_engine:
+        raise HTTPException(400, "This product is already on the latest engines, or is not issued")
+    v = engines.version()
+    with db.Session() as s:
+        s.add(db.Change(line_id=l.id, typed="Product %d: redraw on the latest engines (%s)" % (no, v), understood="redrawn on engines %s (was %s)" % (v, l.last_rev.engine_version),
+                        values={"use_engine": v}, status="confirmed", by=user.name))
+        s.commit()
+        o = load(ref)
+        _draw_lines(o, s, user.name, only={no})
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/sets/{kind}")
+def make_sets(ref: str, kind: str, job_order: str = Form(""), job_order_date: str = Form(""), deadline: str = Form(""), user=User):
+    """Production (kind PRODUCTION) or subcontractor (VENDOR) drawings for every issued product, made from the issued revision
+    on the engine version that revision was issued on. Only after the order is released to production."""
+    kind = kind.upper()
+    if kind not in ("PRODUCTION", "VENDOR"):
+        raise HTTPException(404)
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline.strip() or "TBC")
+    made, failed = [], []
+    ok = next((st for st in reversed(o.steps) if st.kind == "approved"), None)
+    approved_on = "" if (o.approval_pending or ok is None) else ok.at.replace(tzinfo=ok.at.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y").upper()
+    with db.Session() as s:
+        if job_order.strip():
+            s.get(db.Order, o.id).job_order = job_order.strip()[:80]
+        for l in o.lines:
+            r = l.last_rev
+            if r is None:
+                continue
+            sp = __import__("copy").deepcopy(r.spec)
+            sp["drawing_set"], sp["production"] = kind, dict(details)
+            if approved_on:                                        # the client's approval, when it has been recorded for this issue
+                sp["drawing"].update(approved="CLIENT", approval_date=approved_on)
+            edir, ver = engines.dir_for(r.engine_version)
+            try:
+                files = engines.draw_set(sp, "%d/line%d/%s/rev%s" % (o.id, l.no, kind.lower(), r.rev), edir)
+            except RuntimeError as e:
+                failed.append("product %d (%s)" % (l.no, str(e)[:120])); continue
+            for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
+                s.delete(old)
+            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name))
+            made.append("%s Rev %s" % (r.number, r.rev))
+        what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
+        s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+def _set_file(sid, i):
+    with db.Session() as s:
+        ps = s.get(db.ProductionSet, sid)
+        if ps is None or not (0 <= i < len(ps.files)) or not os.path.exists(ps.files[i]["pdf"]):
+            raise HTTPException(404)
+        line = s.get(db.OrderLine, ps.line_id)
+        order_ = s.get(db.Order, line.order_id)
+        rev = s.get(db.Revision, ps.revision_id)
+        return ps, ps.files[i], line, order_.source_ref, rev
+
+
+@app.get("/sets/{sid}/{i}", response_class=HTMLResponse)
+def set_view(request: Request, sid: int, i: int, user=User):
+    ps, f, line, ref, rev = _set_file(sid, i)
+    o = load(ref)
+    return T.TemplateResponse(request, "set.html", ctx(user, o=o, ps=ps, f=f, i=i, line=line, rev=rev, kind="Production" if ps.kind == "PRODUCTION" else "Subcontractor"))
+
+
+@app.get("/sets/{sid}/{i}/pdf")
+def set_pdf(sid: int, i: int, download: int = 0, user=User):
+    ps, f, line, ref, rev = _set_file(sid, i)
+    return FileResponse(f["pdf"], filename=f.get("name") or "drawing.pdf", content_disposition_type="attachment" if download else "inline")
+
+
+@app.get("/sets/{sid}/{i}/page/{n}")
+def set_page(sid: int, i: int, n: int, user=User):
+    ps, f, line, ref, rev = _set_file(sid, i)
+    if not (0 <= n < f["pages"]):
+        raise HTTPException(404)
+    out = f["pdf"][:-4] + ".p%d.png" % n
+    if not os.path.exists(out):
+        import pymupdf
+        with pymupdf.open(f["pdf"]) as doc:
+            doc[n].get_pixmap(dpi=200).save(out)
+    return FileResponse(out)

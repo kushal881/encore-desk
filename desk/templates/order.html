@@ -163,7 +163,7 @@
     <div class="card">
       <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
         {% if l.drawing.status == 'failed' %}<div class="tag bad">Could not draw</div>
-        {% elif l.last_rev and l.last_rev.spec.model == l.drawing.spec.model %}<div class="tag ok">Issued Rev {{ l.last_rev.rev }}</div>
+        {% elif l.issued_current %}<div class="tag ok">Issued Rev {{ l.last_rev.rev }}</div>
         {% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
       {% if l.drawing.status == 'failed' %}<div class="sub">{{ l.drawing.error }}</div>
       <form class="col" method="post" action="/engine-requests" style="display:flex;flex-direction:column;gap:6px">
@@ -187,8 +187,14 @@
       </details>
       {% endif %}
       {% endif %}
+      {% if l.can_update_engine and l.issued_current %}
+      <form method="post" action="/orders/{{ o.source_ref }}/engine/{{ l.no }}" class="sub small" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <span>Issued on engines {{ l.last_rev.engine_version }} and kept on it. Latest is {{ latest }}.</span>
+        <button class="sm">Redraw on {{ latest }}</button>
+      </form>
+      {% endif %}
       {% for r in l.revisions|reverse %}
-      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a><br>{{ r.reason }}</div>
+      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a> · engines {{ r.engine_version }}<br>{{ r.reason }}</div>
       {% endfor %}
     </div>
     {% endif %}{% endfor %}
@@ -206,6 +212,35 @@
       <div style="font-weight:600">No drawings yet</div>
       <div class="sub">{% if open_total %}{{ open_total }} question{{ '' if open_total == 1 else 's' }} left to answer.{% else %}Press Draw previews.{% endif %}</div>
     </div>
+    {% endif %}
+    {% if o.stage in ('production', 'completed') or prod_sets or vendor_sets %}
+    {% for kind, title, sets in (('production', 'Production drawings', prod_sets), ('vendor', 'Subcontractor drawings', vendor_sets)) %}
+    <div class="label">{{ title }}</div>
+    <div class="card">
+      {% for ps in sets %}{% set l = o.lines|selectattr('id', 'equalto', ps.line_id)|first %}
+      <div class="small" {% if not loop.first %}style="border-top:1px solid #E3E8EB;padding-top:6px"{% endif %}><b>Product {{ l.no }} · {{ l.name.split('(')[0] }}</b>
+        {% if l.last_rev and l.last_rev.id != ps.revision_id %}<span class="tag bad">Made from an older revision. Make again.</span>{% endif %}
+        {% for f in ps.files %}<div><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ f.title }}</a> <span class="sub">({{ f.pages }} sheet{{ '' if f.pages == 1 else 's' }})</span> · <a href="/sets/{{ ps.id }}/{{ loop.index0 }}/pdf?download=1">PDF</a></div>{% endfor %}
+        <div class="sub">Job order {{ ps.details.job_order }} · deadline {{ ps.details.deadline }} · {{ ps.made_by }}, {{ ps.made_at|when }}</div>
+      </div>
+      {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
+      {% if o.stage in ('production', 'completed') %}
+      <details {{ 'open' if not sets }}>
+        <summary>{{ 'Make again' if sets else 'Make ' + title|lower }}</summary>
+        <form class="col" method="post" action="/orders/{{ o.source_ref }}/sets/{{ kind }}" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+          <label class="small" for="jo{{ kind }}">Job order number</label>
+          <input class="sm" type="text" id="jo{{ kind }}" name="job_order" value="{{ o.job_order }}" placeholder="for example JO 26-27-10-0108">
+          <label class="small" for="jd{{ kind }}">Job order date</label>
+          <input class="sm" type="text" id="jd{{ kind }}" name="job_order_date" value="{{ today }}">
+          <label class="small" for="dl{{ kind }}">{{ 'Production deadline' if kind == 'production' else 'Required by' }}</label>
+          <input class="sm" type="text" id="dl{{ kind }}" name="deadline" placeholder="for example 10 DEC 2026">
+          <button class="sm primary">{{ 'Make again' if sets else 'Make ' + title|lower }}</button>
+        </form>
+        <div class="sub small">Made from each product's latest issued revision. No client details appear on these sheets.</div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
     <div class="sub small">Engines: {{ engine_version }}, approved. Nothing here reaches the client.</div>
   </div>

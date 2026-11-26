@@ -51,5 +51,5 @@ def understand(text, family):
 
 def compact(values):
     """A short form of a change for the revision strip on the sheet, which holds about 40 characters."""
-    names = dict(L="L", D="D", H="H", hinge="hinge", shelves="shelves", shutters="shutters", screen_w="screen W", screen_h="screen H", raceway_L="raceway")
+    names = dict(L="L", D="D", H="H", hinge="hinge", shelves="shelves", shutters="shutters", screen_w="screen W", screen_h="screen H", raceway_L="raceway", use_engine="engines")
     return ", ".join("%s %s" % (names.get(k, k), v) for k, v in values.items())
