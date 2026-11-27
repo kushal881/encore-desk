@@ -1,6 +1,7 @@
 """Which quotation lines get no drawing (decided by Kushal, 27-Nov-2026). Deterministic: no AI.
 
 - Bought-out products: in Odoo the product's route is Buy and not Manufacture (chairs and other traded items).
+- Chairs, by name, whatever Odoo's route says (Kushal 27-Nov-2026: chairs are always bought out).
 - Services: the Odoo product type is "service".
 - Installation, transport, delivery, freight and the like, recognised from the product name.
 
@@ -9,6 +10,7 @@ never get questions, drawings or engine requests.
 """
 import re
 
+CHAIR_WORDS = re.compile(r"\bchairs?\b", re.I)
 SERVICE_WORDS = re.compile(r"\b(install\w*|transport\w*|deliver\w*|freight|cartage|shipping|shipment|courier|loading|unloading|carriage)\b", re.I)
 
 
@@ -16,6 +18,8 @@ def classify(name, product_type="", routes=()):
     """-> "" when the line needs a drawing, otherwise the reason it does not."""
     routes = [r.lower() for r in routes or ()]
     if any("buy" in r for r in routes) and not any("manufactur" in r for r in routes):
+        return "Bought-out item"
+    if CHAIR_WORDS.search(name or ""):
         return "Bought-out item"
     if (product_type or "").lower() == "service":
         return "Service"

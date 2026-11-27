@@ -59,6 +59,7 @@ class OrderLine(Base):
     revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
     sets: Mapped[list["ProductionSet"]] = relationship(order_by="ProductionSet.id", cascade="all, delete-orphan")
     marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
+    keep: Mapped[bool] = mapped_column(Boolean, default=False)          # added back to the drawings on purpose: the no-drawing rule leaves it
 
 
 class NoDrawingLine(Base):

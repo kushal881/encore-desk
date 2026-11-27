@@ -77,6 +77,10 @@
       {% endfor %}
     </div>
     {% endif %}
+    <form method="post" action="/orders/{{ o.source_ref }}/recheck" class="sub small" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span>Bought-out items, chairs, services, installation and delivery are set aside each time this page opens.</span>
+      <button class="sm">Check Odoo again</button>
+    </form>
   </div>
   <div class="right" id="sets">
     {% include "_next.html" %}

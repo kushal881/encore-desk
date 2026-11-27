@@ -10,6 +10,7 @@ from sqlalchemy import select
 from . import db, spec, engines, finishes, auth, viewer, parts, assistant, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
+from .nodrawing import classify
 from .sources.sample import SampleSource
 from .sources.odoo import OdooSource, OdooError
 from .sources.base import Sources
@@ -320,8 +321,12 @@ FLOW = [("drawing", "Drawings"), ("issued", "Issued"), ("sent", "With client"), 
 @app.get("/orders/{ref}", response_class=HTMLResponse)
 def project(request: Request, ref: str, user=User):
     """The project page: where the order stands, what needs attention, and every product with its drawing."""
+    load(ref)
+    _, issued_aside = apply_no_drawing(ref)                                  # orders read before the rule existed get it too
     o = load(ref)
     todo = []
+    for n, nm, why in issued_aside:
+        todo.append(("Product %d (%s) needs no drawing (%s) but its drawing is issued. Removing it is a quotation change: Cancelled stamp and reissue." % (n, nm.split("(")[0].strip(), why.lower()), "See", "/orders/%s/view/%d" % (ref, n)))
     q = sum(l.open_count for l in o.lines)
     if q:
         todo.append(("%d question%s to answer before drawing" % (q, "" if q == 1 else "s"), "Answer", "/orders/%s/work" % ref))
@@ -1152,6 +1157,45 @@ def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev
 REMOVE_REASONS = ("Bought out after all", "Not needed by client", "Duplicate line", "Other")
 
 
+def apply_no_drawing(ref):
+    """The no-drawing rule (desk/nodrawing.py) on an order already in the desk, as it stands in Odoo now: bought-out items,
+    chairs, services, installation and delivery lines move to "No drawing needed" with their product number kept (never
+    reused). Not moved: a product with an issued drawing (that is a quotation change) or one added back on purpose.
+    Odoo not reachable: the rules that go by the name still apply. -> (moved [(no, name, reason)], kept [(no, name, reason)])"""
+    try:
+        src = SOURCE.get_order(ref)
+        why_by_name = {l.name: l.no_drawing for l in src.lines if l.no_drawing}
+    except Exception:
+        why_by_name = {}
+    moved, kept = [], []
+    with db.Session() as s:
+        o = s.scalar(select(db.Order).where(db.Order.source_ref == ref))
+        if o is None:
+            return moved, kept
+        for l in list(o.lines):
+            why = why_by_name.get(l.name) or classify(l.name)
+            if not why or l.keep:
+                continue
+            if l.revisions:
+                kept.append((l.no, l.name, why)); continue
+            o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, description=l.description, reason=why, no=l.no, by=""))
+            moved.append((l.no, l.name, why))
+            s.delete(l)
+        if moved:
+            o.messages.append(db.Message(who="desk", text="No drawing needed for %s, so %s moved to \"No drawing needed\". Product numbers are kept and not reused." % (
+                "; ".join("Product %d (%s, %s)" % (n, nm.split("(")[0].strip(), w.lower()) for n, nm, w in moved), "it was" if len(moved) == 1 else "they were")))
+        s.commit()
+    return moved, kept
+
+
+@app.post("/orders/{ref}/recheck")
+def recheck(ref: str, user=User):
+    """Check Odoo again: re-applies the no-drawing rule to this order."""
+    load(ref)
+    apply_no_drawing(ref)
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
 def _next_no(s, order_id):
     """The next product number: after every number used so far, including removed ones (numbers are never reused)."""
     used = [l.no for l in s.scalars(select(db.OrderLine).where(db.OrderLine.order_id == order_id))]
@@ -1196,7 +1240,7 @@ def add_back(ref: str, nid: int, user=User):
         no = x.no or _next_no(s, o.id)
         name, description, qty = x.name, x.description, x.qty
         s.delete(x); s.flush()
-        _new_line(s, o.id, no, name, description, qty)
+        _new_line(s, o.id, no, name, description, qty).keep = True
         s.add(db.Message(order_id=o.id, who="desk", text="%s was added to the drawings as Product %d by %s." % (name.split("(")[0].strip(), no, user.name)))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
