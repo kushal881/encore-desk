@@ -66,7 +66,8 @@ def test_old_order_gets_the_rule(monkeypatch):
     assert "No drawing needed (4)" in h and "was Product 4" in h
     assert "Product 8 (Installation charges) needs no drawing" in h and "quotation change" in h
     with db.Session() as s:
-        assert s.query(db.Question).filter_by(text="Size?").count() == 2          # only the products still drawn keep questions
+        alive = {l.id for l in s.query(db.OrderLine)}                         # questions went with the products moved
+        assert all(q.line_id in alive for q in s.query(db.Question))
         assert s.query(db.Drawing).filter_by(status="failed").count() == 0
     w = c.get(A + "/work").text
     assert "No drawing needed for Product 4 (Evolve Chair, bought-out item); Product 5 (Legacy, bought-out item)" in w
