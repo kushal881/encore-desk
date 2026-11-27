@@ -32,7 +32,7 @@
           </form>
           {% elif r.status == 'approved' %}
           <div class="sub small">To build it, give this sentence to a Claude chat:</div>
-          <div class="small" style="background:#F3F5F6;border-radius:6px;padding:8px;user-select:all">Engine: {{ r.text }}{% if r.product %} (product: {{ r.product }}){% endif %}</div>
+          <div class="small" style="background:#F4F3EF;border-radius:6px;padding:8px;user-select:all">Engine: {{ r.text }}{% if r.product %} (product: {{ r.product }}){% endif %}</div>
           {% if is_admin %}<form method="post" action="/engine-requests/{{ r.id }}/built" style="margin-top:6px"><button class="sm">Mark as built</button></form>{% endif %}
           {% endif %}
           {% if r.note %}<div class="sub small">{{ r.note }}</div>{% endif %}

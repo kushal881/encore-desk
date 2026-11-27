@@ -5,7 +5,7 @@
 {% include "_ordernav.html" %}
 <div class="cols" style="flex-wrap:wrap">
   <div class="main" style="flex:999 1 600px">
-    <div style="padding:12px 18px;border-bottom:1px solid #E3E8EB;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <div style="padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
       <div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }} · {{ title }}</div>
       <span class="zoomer" role="group" aria-label="Zoom"><button class="sm" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:44px;text-align:center" aria-live="polite">100%</span><button class="sm" id="zin" type="button" aria-label="Zoom in">+</button></span>
       <button class="sm" id="markbtn" type="button" aria-pressed="false">Add a marker</button>
@@ -14,8 +14,8 @@
       <a href="{{ src }}/dxf">Download DXF</a>
       <a href="/orders/{{ o.source_ref }}/work">Conversation</a>
     </div>
-    <div id="hint" class="small" style="display:none;padding:8px 18px;background:#DCEEF5;color:#0F4C63">Click on the drawing where marker {{ next_no }} should go. Then name it on the right and save.</div>
-    <div id="sheet" style="overflow:auto;max-height:calc(100vh - 150px);background:#E9EDEF">
+    <div id="hint" class="small" style="display:none;padding:8px 18px;background:#E6EDFB;color:#1D4ED8">Click on the drawing where marker {{ next_no }} should go. Then name it on the right and save.</div>
+    <div id="sheet" style="overflow:auto;max-height:calc(100vh - 150px);background:#F1EFE9">
       <div id="wrap" style="position:relative;width:100%">
         <img id="img" src="{{ src }}/big?v={{ stamp }}" alt="Drawing for product {{ l.no }}, {{ title }}" style="display:block;width:100%;background:#fff">
         {% for m in marks %}<span class="pin" style="left:{{ m.x }}%;top:{{ m.y }}%" title="{{ m.label }}">{{ m.no }}</span>{% endfor %}
@@ -27,7 +27,7 @@
     <div class="card">
       <div style="font-weight:600">Markers on this drawing</div>
       {% for m in marks %}
-      <div style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #E3E8EB;padding-top:6px{% endif %}">
+      <div style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #EEECE6;padding-top:6px{% endif %}">
         <span class="pin" style="position:static;transform:none;flex:none">{{ m.no }}</span>
         <form class="row" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/label" style="flex:1 1 auto;min-width:0;flex-wrap:nowrap">
           <input type="hidden" name="rev" value="{{ shown.id if shown and rev_q else 0 }}">
@@ -38,7 +38,7 @@
         </form>
       </div>
       {% else %}<div class="sub small" id="nomarks">None yet. Press <b>Add a marker</b>, then click on the part you want to point at. Each marker gets a number.</div>{% endfor %}
-      <form class="row" id="newmark" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}" style="display:none;border-top:1px solid #E3E8EB;padding-top:8px;flex-wrap:nowrap;align-items:center">
+      <form class="row" id="newmark" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}" style="display:none;border-top:1px solid #EEECE6;padding-top:8px;flex-wrap:nowrap;align-items:center">
         <input type="hidden" name="shown" value="{{ key }}"><input type="hidden" name="x" id="mx"><input type="hidden" name="y" id="my">
         <input type="hidden" name="rev" value="{{ shown.id if shown and rev_q else 0 }}">
         <span class="pin new" style="position:static;transform:none;flex:none">{{ next_no }}</span>
@@ -61,7 +61,7 @@
       {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current %}
       <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span></div>{% endif %}
       {% for r in l.revisions|reverse %}
-      <div class="small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
+      <div class="small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
         <div class="sub">{{ r.reason }}<br>Issued by {{ r.issued_by }}, {{ r.issued_at|when }} · engines {{ r.engine_version }}</div></div>
       {% else %}<div class="sub small">Not issued yet.</div>{% endfor %}
     </div>

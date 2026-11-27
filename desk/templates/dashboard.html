@@ -6,7 +6,7 @@
     {% for k, n, t in (('active', count.active, 'Active projects'), ('pending', count.pending, 'Drawings pending'), ('with_client', count.with_client, 'Waiting for client approval'), ('approved', count.approved, 'Approved, not yet released'), ('production', count.production, 'In production')) %}
     <a class="tile {{ 'on' if focus == k }}" href="/?focus={{ k }}#drawings" aria-label="{{ n }} {{ t }}. Show the drawings."><div class="n">{{ n }}</div><div class="sub">{{ t }}</div></a>
     {% endfor %}
-    <a class="tile" href="/engine-requests"><div class="n">{{ requests_waiting }}</div><div class="sub">Engine requests waiting</div></a>
+    {% if is_admin %}<a class="tile" href="/engine-requests"><div class="n">{{ requests_waiting }}</div><div class="sub">Engine requests waiting</div></a>{% endif %}
   </div>
   {% if focus %}
   <div class="card" id="drawings">
@@ -18,7 +18,7 @@
     <div class="grid">
       {% for d in items %}
       <a href="{{ d.url }}" class="card" style="color:inherit;text-decoration:none;gap:8px">
-        {% if d.thumb %}<img src="{{ d.thumb }}" alt="" style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px">
+        {% if d.thumb %}<img src="{{ d.thumb }}" alt="" style="width:100%;display:block;border:1px solid #D6D3CA;border-radius:4px">
         {% else %}<div class="nophoto" style="width:100%;height:120px">{{ d.state }}</div>{% endif %}
         <div style="display:flex;gap:10px;align-items:center">
           {% if d.photo %}<img class="thumb" src="/photos/{{ d.photo }}" alt="" style="width:44px;height:44px">{% endif %}

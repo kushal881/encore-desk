@@ -1,5 +1,5 @@
     {% if o.stage != 'drawing' %}
-    <div class="card" id="next" style="border-color:#1F5A6E">
+    <div class="card" id="next" style="border-color:#0E6B5C">
       <div class="label">After issue: client approval and release</div>
       {% if o.stage == 'issued' %}
       <div><b>Send the issued drawings to the client for approval.</b></div>
@@ -43,7 +43,7 @@
       <div><b>This project is completed.</b></div>
       <form method="post" action="/orders/{{ o.source_ref }}/step/reopened"><button class="sm">Reopen</button></form>
       {% endif %}
-      {% for st in o.steps|reverse %}{% if loop.first %}<div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px">History</div>{% endif %}
+      {% for st in o.steps|reverse %}{% if loop.first %}<div class="sub small" style="border-top:1px solid #EEECE6;padding-top:6px">History</div>{% endif %}
       <div class="sub small">{{ {'issued':'Issued','sent':'Sent to client','approved':'Client approved','released':'Released to production','completed':'Completed','reopened':'Reopened'}[st.kind] }} · {{ st.by }} · {{ st.at|when }}{% if st.note %}<br>{{ st.note }}{% endif %}</div>
       {% endfor %}
     </div>

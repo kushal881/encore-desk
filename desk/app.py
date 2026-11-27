@@ -5,6 +5,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, Depends, UploadFile, 
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from . import db, spec, engines, finishes, auth, changes as chg
 import datetime, secrets, io, re
@@ -23,6 +24,7 @@ if auth.ON_SERVER and not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set on the server")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32), https_only=auth.ON_SERVER, same_site="lax", max_age=12 * 3600)
 app.include_router(auth.router)
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")), name="static")   # logo; no client files here
 db.init()
 engines.start()
 with db.Session() as _s:

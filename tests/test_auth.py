@@ -30,7 +30,8 @@ def test_sign_in_rules():
     assert _try(dict(email="kushal@encoreprimefurniture.com", email_verified=False))[1] == "/login?error=notlisted"   # unverified address
     assert _try(dict(email="kushal@encoreprimefurniture.com", email_verified=True), tamper_state=True)[1] == "/login?error=failed"
     c, to = _try(dict(email="info@encoreprimefurniture.com", email_verified=True))
-    assert "Anchal Dawar · Sales coordinator" in c.get("/orders/Q-2026-10-444").text
+    h = c.get("/orders/Q-2026-10-444").text
+    assert "<b>Anchal Dawar</b>" in h and "Sales coordinator" in h                                 # name and role in the side menu
     with db.Session() as s:                                                                        # removing someone takes effect at once
         u = s.query(db.User).filter_by(email="info@encoreprimefurniture.com").one(); u.active = False; s.commit()
     assert c.get("/orders/Q-2026-10-444", follow_redirects=False).headers["location"] == "/login"

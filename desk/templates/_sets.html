@@ -4,7 +4,7 @@
     <div class="label">{{ title }}</div>
     <div class="card">
       {% for ps in sets %}{% set l = o.lines|selectattr('id', 'equalto', ps.line_id)|first %}
-      <div class="small" {% if not loop.first %}style="border-top:1px solid #E3E8EB;padding-top:6px"{% endif %}><b>Product {{ l.no }} · {{ l.name.split('(')[0] }}</b>
+      <div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}><b>Product {{ l.no }} · {{ l.name.split('(')[0] }}</b>
         {% if l.last_rev and l.last_rev.id != ps.revision_id %}<span class="tag bad">Made from an older revision. Make again.</span>{% endif %}
         {% for f in ps.files %}<div><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ f.title }}</a> <span class="sub">({{ f.pages }} sheet{{ '' if f.pages == 1 else 's' }})</span> · <a href="/sets/{{ ps.id }}/{{ loop.index0 }}/pdf?download=1">PDF</a></div>{% endfor %}
         <div class="sub">Job order {{ ps.details.job_order }} · deadline {{ ps.details.deadline }} · {{ ps.made_by }}, {{ ps.made_at|when }}</div>
