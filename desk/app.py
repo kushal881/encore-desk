@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
@@ -168,6 +168,9 @@ def load(ref):
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
             l.photo = ph.id if ph else None
             l.photo_v = int(ph.at.timestamp()) if ph else 0
+            d_ = l.drawing                                           # marked ready to issue in the viewer (that exact preview)
+            l.review = s.scalars(select(db.Review).where(db.Review.line_id == l.id, db.Review.shown == "d%d" % int(d_.made_at.timestamp())).order_by(db.Review.id.desc())).first() \
+                if d_ and d_.status == "preview" else None
         _ = o.client, o.messages, o.steps
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
@@ -417,15 +420,17 @@ def _draw_lines(o, s, who, only=None):
             d.status = "preview"
         except (spec.CannotDraw, RuntimeError) as e:
             d.status, d.error = "failed", str(e)
+            d.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
     s.commit()
 
 
 @app.post("/orders/{ref}/draw")
-def draw(ref: str, user=User):
+def draw(ref: str, no: int = Form(0), user=User):
+    """Draws the previews. With no = a product number (from the viewer), only that product, and back to its viewer."""
     o = load(ref)
     with db.Session() as s:
-        _draw_lines(o, s, user.name)
-    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
+        _draw_lines(o, s, user.name, only={no} if no else None)
+    return RedirectResponse("/orders/%s/view/%d" % (ref, no) if no else "/orders/%s/work" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/change")
@@ -520,18 +525,27 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
     return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
-def _big(pdf_path):
-    """A sharp picture of the sheet for viewing inside the desk, made from the PDF once and kept beside it."""
-    out = pdf_path[:-4] + ".view.png"
+def _big(pdf_path, page=0):
+    """A sharp picture of one sheet for viewing inside the desk, made from the PDF once and kept beside it."""
+    out = pdf_path[:-4] + (".view.png" if page == 0 else ".view%d.png" % page)
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(pdf_path):
         import pymupdf
         with pymupdf.open(pdf_path) as doc:
-            doc[0].get_pixmap(dpi=220).save(out)
+            if not 0 <= page < len(doc):
+                raise HTTPException(404)
+            doc[page].get_pixmap(dpi=220).save(out)
     return out
 
 
+def _pages(pdf_path):
+    """Number of sheets in a PDF."""
+    import pymupdf
+    with pymupdf.open(pdf_path) as doc:
+        return len(doc)
+
+
 @app.get("/revisions/{rid}/{kind}")
-def revision_file(rid: int, kind: str, download: int = 0, user=User):
+def revision_file(rid: int, kind: str, download: int = 0, page: int = 0, user=User):
     if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
@@ -540,12 +554,12 @@ def revision_file(rid: int, kind: str, download: int = 0, user=User):
     if not path or not os.path.exists(path):
         raise HTTPException(404)
     if kind == "big":
-        return FileResponse(_big(path))
+        return FileResponse(_big(path, page))
     return FileResponse(path, filename=None if kind == "png" else name, content_disposition_type="attachment" if download or kind == "dxf" else "inline")
 
 
 @app.get("/drawings/{did}/{kind}")
-def drawing_file(did: int, kind: str, download: int = 0, user=User):
+def drawing_file(did: int, kind: str, download: int = 0, page: int = 0, user=User):
     if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
@@ -554,33 +568,154 @@ def drawing_file(did: int, kind: str, download: int = 0, user=User):
     if not path or not os.path.exists(path):
         raise HTTPException(404)
     if kind == "big":
-        return FileResponse(_big(path))
+        return FileResponse(_big(path, page))
     return FileResponse(path, filename=None if kind == "png" else "PREVIEW-drawing-%d.%s" % (did, kind), content_disposition_type="attachment" if download or kind == "dxf" else "inline")
 
 
+def _view_url(ref, no, rev=0, sheet=1, mode="client"):
+    q = [("rev", rev), ("s", sheet if sheet > 1 else 0), ("mode", "prod" if mode == "prod" else "")]
+    q = "&".join("%s=%s" % (k, v) for k, v in q if v)
+    return "/orders/%s/view/%d%s" % (ref, no, "?" + q if q else "")
+
+
+def _shown(l, rev=0):
+    """Which drawing of a product the viewer shows. -> dict(r, src, title, key, stamp, preview, failed, pdf, checks)."""
+    r = next((x for x in l.revisions if x.id == rev), None)
+    d = l.drawing
+    if r is None and d is not None and d.status == "preview" and l.issued_current:
+        r = l.last_rev                                                   # the preview is the same as the issued drawing
+    if r is None and d is not None and d.status in ("preview", "failed"):
+        stamp = int(d.made_at.timestamp())
+        failed = d.status == "failed"
+        return dict(r=None, src="/drawings/%d" % d.id, title="Could not be drawn" if failed else "Preview, not issued", key="d%d" % stamp, stamp=stamp,
+                    preview=not failed, failed=failed, pdf=d.files.get("pdf"), checks=d.files.get("checks"), engine_version=d.engine_version)
+    r = r or l.last_rev
+    if r is None:
+        raise HTTPException(404)
+    return dict(r=r, src="/revisions/%d" % r.id, title="%s Rev %s" % (r.number, r.rev), key="r%d" % r.id, stamp=int(r.issued_at.timestamp()),
+                preview=False, failed=False, pdf=r.files.get("pdf"), checks=r.files.get("checks"), engine_version=r.engine_version)
+
+
+def _production_view(l, sh):
+    """The production drawing for the client drawing shown: the real production set when it has been made from this
+    revision, otherwise a production preview with placeholders. -> dict(kind real | preview | none, ...)."""
+    r = sh["r"]
+    real = next((x for x in reversed(l.sets) if r and x.kind == "PRODUCTION" and x.revision_id == r.id and x.files), None)
+    if real:
+        f = real.files[0]
+        return dict(kind="real", img="/sets/%d/0/page/%%d" % real.id, pages=f["pages"], pdf="/sets/%d/0/pdf" % real.id, stamp=int(real.made_at.timestamp()),
+                    text="Job order %s · deadline %s" % (real.details.get("job_order", ""), real.details.get("deadline", "")))
+    with db.Session() as s:
+        pp = s.scalars(select(db.ProdPreview).where(db.ProdPreview.line_id == l.id, db.ProdPreview.shown == sh["key"]).order_by(db.ProdPreview.id.desc())).first()
+    if pp and not pp.error and os.path.exists(pp.pdf):
+        return dict(kind="preview", img="/prodpreview/%d/page/%%d" % pp.id, pages=pp.pages, pdf="/prodpreview/%d/pdf" % pp.id, stamp=int(pp.made_at.timestamp()),
+                    text="Job order and dates are placeholders until the order is released.")
+    return dict(kind="none", error=pp.error if pp else "", pages=1)
+
+
 @app.get("/orders/{ref}/view/{no}", response_class=HTMLResponse)
-def view(request: Request, ref: str, no: int, rev: int = 0, user=User):
-    """One product's drawing, full size, inside the desk: the current preview or any issued revision, with its change box."""
+def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: str = "client", user=User):
+    """The drawing viewer: one product's drawing, every sheet, client or production drawing, numbered markers,
+    the automatic checks and the one next step."""
     o = load(ref)
     l = next((x for x in o.lines if x.no == no), None)
     if l is None or not (l.drawing or l.revisions):
         raise HTTPException(404)
-    r = next((x for x in l.revisions if x.id == rev), None)
-    if r:
-        src, title = "/revisions/%d" % r.id, "%s Rev %s" % (r.number, r.rev)
-    elif l.drawing and l.drawing.status == "preview":
-        current = l.issued_current
-        src, title = ("/revisions/%d" % l.last_rev.id, "%s Rev %s" % (l.last_rev.number, l.last_rev.rev)) if current else ("/drawings/%d" % l.drawing.id, "Preview, not issued")
-        r = l.last_rev if current else None
-    elif l.last_rev:
-        r = l.last_rev
-        src, title = "/revisions/%d" % r.id, "%s Rev %s" % (r.number, r.rev)
+    sh = _shown(l, rev)
+    mode = "prod" if mode == "prod" and not sh["failed"] else "client"
+    prod = _production_view(l, sh) if mode == "prod" else None
+    if prod:
+        pages = prod["pages"]
     else:
+        pages = _pages(sh["pdf"]) if sh["pdf"] and os.path.exists(sh["pdf"]) else 1
+    sheet = max(1, min(s, pages))
+    if prod is None:
+        img = None if sh["failed"] else "%s/big?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
+    else:
+        img = (prod["img"] % (sheet - 1)) + "?v=%d" % prod["stamp"] if prod["kind"] != "none" else None
+    skey = viewer.sheet_key(sh["key"], sheet)
+    review = None
+    if sh["preview"]:
+        with db.Session() as ss:
+            review = ss.scalars(select(db.Review).where(db.Review.line_id == l.id, db.Review.shown == sh["key"]).order_by(db.Review.id.desc())).first()
+    asked = any(c.status == "asked" for c in l.changes)
+    drawn = [x.no for x in o.lines if x.revisions or x.drawing]
+    i = drawn.index(l.no)
+    step = viewer.step_of(o.stage, l)
+    rev_q = rev if rev else 0
+    url = lambda **kw: _view_url(ref, no, kw.get("rev", rev_q), kw.get("s", sheet), kw.get("mode", mode))
+    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
+                              rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
+                              prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
+                              checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked, mode), review=review,
+                              marks=[m for m in l.marks if m.shown == skey] if mode == "client" else [], next_no=max([m.no for m in l.marks], default=0) + 1))
+
+
+@app.post("/orders/{ref}/view/{no}/ready")
+def mark_ready(ref: str, no: int, shown: str = Form(...), user=User):
+    """Marks the preview shown as checked and ready to issue. Only when every automatic check passed."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not l.drawing or l.drawing.status != "preview" or l.issued_current:
+        raise HTTPException(400, "There is no preview of this product to mark")
+    sh = _shown(l)
+    if shown != sh["key"]:
+        raise HTTPException(400, "The drawing has been redrawn since you opened it. Look at the new one first.")
+    if not viewer.all_pass(sh["checks"]):
+        raise HTTPException(400, "This drawing has not passed every automatic check, so it cannot be marked ready")
+    if any(c.status == "asked" for c in l.changes):
+        raise HTTPException(400, "Confirm or drop the change request for this product first")
+    with db.Session() as s:
+        s.add(db.Review(line_id=l.id, shown=sh["key"], by=user.name))
+        s.add(db.Message(order_id=o.id, who="desk", text="Product %d checked in the viewer and marked ready to issue by %s." % (l.no, user.name)))
+        s.commit()
+    return RedirectResponse(_view_url(ref, no), status_code=303)
+
+
+@app.post("/orders/{ref}/view/{no}/production")
+def production_preview(ref: str, no: int, rev: int = Form(0), user=User):
+    """Makes a production preview of the client drawing shown, with placeholders for the job order and deadline.
+    It is only for looking at: it is never issued and never reaches production."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not (l.drawing or l.revisions):
         raise HTTPException(404)
-    stamp = int((r.issued_at if r else l.drawing.made_at).timestamp())
-    key = "r%d" % r.id if r else "d%d" % stamp
-    return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, src=src, title=title, shown=r, stamp=stamp, key=key, rev_q="?rev=%d" % r.id if rev else "",
-                              marks=[m for m in l.marks if m.shown == key], next_no=max([m.no for m in l.marks], default=0) + 1))
+    sh = _shown(l, rev)
+    if sh["failed"]:
+        raise HTTPException(400, "This drawing could not be made, so there is no production drawing")
+    sp = __import__("copy").deepcopy(sh["r"].spec if sh["r"] else l.drawing.spec)
+    sp["drawing_set"], sp["production"] = "PRODUCTION", viewer.placeholders(o.job_order)
+    edir, ver = engines.dir_for(sh["engine_version"] or None)
+    pp = db.ProdPreview(line_id=l.id, shown=sh["key"], engine_version=ver, made_by=user.name)
+    try:
+        files = engines.draw_set(sp, "%d/line%d/prodpreview/%s" % (o.id, l.no, sh["key"]), edir)
+        pp.pdf, pp.pages = files[0]["pdf"], files[0]["pages"]
+    except RuntimeError as e:
+        pp.error = str(e)[:400]
+    with db.Session() as s:
+        s.add(pp); s.commit()
+    return RedirectResponse(_view_url(ref, no, rev, 1, "prod"), status_code=303)
+
+
+def _prodpreview(pid):
+    with db.Session() as s:
+        pp = s.get(db.ProdPreview, pid)
+    if pp is None or pp.error or not os.path.exists(pp.pdf):
+        raise HTTPException(404)
+    return pp
+
+
+@app.get("/prodpreview/{pid}/pdf")
+def prodpreview_pdf(pid: int, user=User):
+    return FileResponse(_prodpreview(pid).pdf, filename="PRODUCTION-PREVIEW-not-for-issue.pdf", content_disposition_type="inline")
+
+
+@app.get("/prodpreview/{pid}/page/{n}")
+def prodpreview_page(pid: int, n: int, user=User):
+    pp = _prodpreview(pid)
+    if not 0 <= n < pp.pages:
+        raise HTTPException(404)
+    return FileResponse(_big(pp.pdf, n))
 
 
 @app.post("/orders/{ref}/step/{kind}")
@@ -782,20 +917,20 @@ def set_page(sid: int, i: int, n: int, user=User):
 
 
 @app.post("/orders/{ref}/marks/{no}")
-def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y: float = Form(...), label: str = Form(""), rev: int = Form(0), user=User):
+def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y: float = Form(...), label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
     """A numbered marker on a drawing. The number is then used when describing a change."""
     o = load(ref)
     l = next((z for z in o.lines if z.no == no), None)
-    if l is None or not (0 <= x <= 100 and 0 <= y <= 100) or not re.fullmatch(r"[rd]\d+", shown):
+    if l is None or not (0 <= x <= 100 and 0 <= y <= 100) or not re.fullmatch(r"[rd]\d+(s\d+)?", shown):
         raise HTTPException(400, "The marker could not be placed")
     with db.Session() as s:
         s.add(db.Mark(line_id=l.id, shown=shown, no=max([m.no for m in l.marks], default=0) + 1, x=round(x, 2), y=round(y, 2), label=label.strip()[:200], by=user.name))
         s.commit()
-    return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)
+    return RedirectResponse(_view_url(ref, no, rev, sheet), status_code=303)
 
 
 @app.post("/orders/{ref}/marks/{no}/{mid}/{what}")
-def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev: int = Form(0), user=User):
+def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
     o = load(ref)
     l = next((z for z in o.lines if z.no == no), None)
     if l is None or what not in ("label", "remove") or mid not in [m.id for m in l.marks]:
@@ -807,7 +942,7 @@ def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev
         else:
             m.label = label.strip()[:200]
         s.commit()
-    return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)
+    return RedirectResponse(_view_url(ref, no, rev, sheet), status_code=303)
 
 
 # ---- choosing which quotation lines are drawn ------------------------------------------------------------------------

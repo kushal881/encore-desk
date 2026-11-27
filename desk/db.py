@@ -236,5 +236,31 @@ class Mark(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Review(Base):
+    """Someone looked at a drawing in the viewer, its automatic checks passed, and they marked it ready to issue.
+    Tied to the exact drawing shown (key d<time of the preview>): a redraw needs a new check."""
+    __tablename__ = "review"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    shown: Mapped[str] = mapped_column(String(40))
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProdPreview(Base):
+    """A production drawing made only to look at, before the real production set exists. Job order and deadline are
+    placeholders (JO-[NO.], [DATE]) until they are known. Never issued, never sent to production."""
+    __tablename__ = "prod_preview"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    shown: Mapped[str] = mapped_column(String(40))                    # the client drawing it was made from
+    pdf: Mapped[str] = mapped_column(Text, default="")
+    pages: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[str] = mapped_column(Text, default="")
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def init():
     Base.metadata.create_all(engine)

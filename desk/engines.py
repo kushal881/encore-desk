@@ -113,8 +113,40 @@ def version_label():
 version = version_label
 
 
+CHECKS = [("clash", "No clashes between parts"), ("true_view", "Isometric is a true view"), ("engine", "Engine check: approved engines")]
+
+
+class EngineFailed(RuntimeError):
+    """The engine refused to make a drawing. .checks says which automatic check stopped it."""
+    def __init__(self, msg, checks):
+        super().__init__(msg)
+        self.checks = checks
+
+
+def checks_from(output, made):
+    """The three automatic checks, read from what the engine printed. made = the engine produced a drawing.
+    The engine refuses to finish a drawing that clashes, whose isometric is not a true view, or whose engine files are
+    not the approved ones; so a finished drawing has passed all three. -> [dict(key, title, ok, note)]"""
+    low = output.lower()
+    fail = dict(clash="CLASH" in output, true_view="iso true view: fail" in low, engine="engine file not approved" in low)
+    note = dict(clash=next((l.strip() for l in output.splitlines() if "CLASH" in l), "").split("CLASH: ")[-1],
+                true_view=next((l.strip() for l in output.splitlines() if "ISO TRUE VIEW: FAIL" in l), "").split("FAIL - ")[-1],
+                engine="An engine file is not the approved one. The desk will not draw with it." if fail["engine"] else "")
+    out = []
+    for key, title in CHECKS:
+        if fail[key]:
+            ok = False
+        elif made and (key != "true_view" or "iso true view: pass" in low):
+            ok = True
+        else:
+            ok = None                                                       # not reached: an earlier step stopped the engine
+        out.append(dict(key=key, title=title, ok=ok, note=note[key][:300] if ok is False else ""))
+    return out
+
+
 def _run(spec, edir):
-    """Runs the drawing engine of folder edir on a specification. -> the work folder holding its output (the caller removes it)."""
+    """Runs the drawing engine of folder edir on a specification. -> (work folder holding its output, the checks).
+    The caller removes the folder. Raises EngineFailed when the engine made no drawing."""
     if not edir or not os.path.exists(os.path.join(edir, "tool", "encore_drawing.py")):
         raise RuntimeError("The approved engines are not available on this server (%s)." % version_label())
     work = tempfile.mkdtemp(prefix="desk_")
@@ -125,18 +157,21 @@ def _run(spec, edir):
     env = {k: v for k, v in os.environ.items() if k != "ENCORE_ENGINE_APPROVAL_RUN"}      # the lock check always applies here
     r = subprocess.run([sys.executable, "-W", "ignore", os.path.join(edir, "tool", "encore_drawing.py"), sp, "--out", work],
                        capture_output=True, text=True, timeout=300, cwd=work, env=env)
-    if r.returncode != 0 or not glob.glob(os.path.join(work, "*.pdf")):
+    output = r.stdout + "\n" + r.stderr
+    made = r.returncode == 0 and bool(glob.glob(os.path.join(work, "*.pdf")))
+    checks = checks_from(output, made)
+    if not made:
         shutil.rmtree(work, ignore_errors=True)
-        lines = [l for l in (r.stderr + "\n" + r.stdout).splitlines() if l.strip()]
-        msg = next((l for l in reversed(lines) if "Error" in l or "CLASH" in l or "STOP" in l), lines[-1] if lines else "The engine gave no output.")
-        raise RuntimeError(msg.split("Error: ")[-1].strip()[:400])
-    return work
+        lines = [l for l in output.splitlines() if l.strip()]
+        msg = next((l for l in reversed(lines) if "Error" in l or "CLASH" in l or "STOP" in l or "TRUE VIEW: FAIL" in l), lines[-1] if lines else "The engine gave no output.")
+        raise EngineFailed(msg.split("Error: ")[-1].strip()[:400], checks)
+    return work, checks
 
 
 def draw(spec, key, edir=None):
-    """Runs the drawing engine on a specification. -> dict(pdf, dxf, png) paths under FILES/key, or raises RuntimeError(message).
+    """Runs the drawing engine on a specification. -> dict(pdf, dxf, png) paths, plus pages and checks, under FILES/key, or raises RuntimeError(message).
     edir = the folder of a particular approved version (see dir_for); the version in use when not given."""
-    work = _run(spec, edir or ENGINES_DIR)
+    work, checks = _run(spec, edir or ENGINES_DIR)
     try:
         out = os.path.join(FILES, key)
         shutil.rmtree(out, ignore_errors=True); os.makedirs(out, exist_ok=True)
@@ -147,7 +182,10 @@ def draw(spec, key, edir=None):
             res["dxf"] = os.path.join(out, "drawing.dxf"); shutil.copy(dxfs[0], res["dxf"])
         import pymupdf
         res["png"] = os.path.join(out, "preview.png")
-        pymupdf.open(res["pdf"])[0].get_pixmap(dpi=110).save(res["png"])
+        with pymupdf.open(res["pdf"]) as doc:
+            doc[0].get_pixmap(dpi=110).save(res["png"])
+            res["pages"] = len(doc)
+        res["checks"] = checks
         return res
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -156,7 +194,7 @@ def draw(spec, key, edir=None):
 def draw_set(spec, key, edir=None):
     """A production or vendor set: the engine writes several PDFs (the complete product and one set per department).
     -> [dict(title, pdf, pages)] under FILES/key, the complete-product sheet first."""
-    work = _run(spec, edir or ENGINES_DIR)
+    work, _ = _run(spec, edir or ENGINES_DIR)
     try:
         import pymupdf
         out = os.path.join(FILES, key)

@@ -128,6 +128,7 @@
       </form>
       {% else %}
       <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #D6D3CA;border-radius:4px"></a>
+      {% if not l.issued_current %}<div class="small">{% if l.review %}<span class="tag ok">Checked, ready to issue</span> <span class="sub">by {{ l.review.by }}</span>{% else %}<span class="tag ask">Not checked yet</span> <span class="sub">open it in the viewer and mark it ready</span>{% endif %}</div>{% endif %}
       <div class="sub small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View full size</b></a> · <a href="/drawings/{{ l.drawing.id }}/pdf?download=1">Download PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
       {% if not l.remake %}
       <details>

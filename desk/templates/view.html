@@ -3,47 +3,109 @@
 {% block crumb %}{% endblock %}
 {% block body %}
 {% include "_ordernav.html" %}
+<style>
+.vbar{padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid #D6D3CA;border-radius:10px;overflow:hidden}
+.seg a,.seg span{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;font-weight:600;font-size:14px;text-decoration:none;color:#17191C;background:#fff}
+.seg .on{background:#17191C;color:#fff}
+.seg .off{color:#9A9DA3;cursor:not-allowed}
+.vbtn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 14px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font:600 14px Inter,sans-serif;text-decoration:none;cursor:pointer;box-sizing:border-box}
+.vbtn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.vbtn[aria-disabled=true]{color:#9A9DA3;cursor:not-allowed;pointer-events:none}
+.chk{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border-top:1px solid #EEECE6;padding-top:8px}
+.chk:first-of-type{border-top:0;padding-top:0}
+.stepbar{display:flex;flex-wrap:wrap;gap:4px;padding:10px 18px;border-bottom:1px solid #EEECE6}
+.stepbar span{font-size:12px;padding:3px 8px;border-radius:999px;color:#5B5F66;background:#F1EFE9}
+.stepbar span.done{color:#0E6B5C;background:#E3F1EE}
+.stepbar span.now{color:#fff;background:#0E6B5C;font-weight:600}
+#sheet{overflow:auto;max-height:calc(100vh - 230px);background:#F1EFE9;cursor:grab}
+#sheet.drag{cursor:grabbing}
+</style>
 <div class="cols" style="flex-wrap:wrap">
   <div class="main" style="flex:999 1 600px">
-    <div style="padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-      <div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }} · {{ title }}</div>
-      <span class="zoomer" role="group" aria-label="Zoom"><button class="sm" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:44px;text-align:center" aria-live="polite">100%</span><button class="sm" id="zin" type="button" aria-label="Zoom in">+</button></span>
-      <button class="sm" id="markbtn" type="button" aria-pressed="false">Add a marker</button>
-      <a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a>
-      <a href="{{ src }}/pdf?download=1">Download PDF</a>
-      <a href="{{ src }}/dxf">Download DXF</a>
-      <a href="/orders/{{ o.source_ref }}/work">Conversation</a>
+    <div class="vbar">
+      <div style="flex-grow:1;min-width:220px">
+        <div style="font-weight:600">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
+        <div class="sub small">Step {{ step[0] }} of 8 · {{ step[1] }} · Drawing {{ pos }} of {{ count }} · {{ title }}</div>
+      </div>
+      <nav class="seg" aria-label="Which drawing">
+        <a class="{{ 'on' if mode == 'client' }}" href="{{ url(mode='client', s=1) }}" {% if mode == 'client' %}aria-current="page"{% endif %}>Client drawing</a>
+        {% if sh.failed %}<span class="off" title="There is no drawing yet">Production drawing</span>
+        {% else %}<a class="{{ 'on' if mode == 'prod' }}" href="{{ url(mode='prod', s=1) }}" {% if mode == 'prod' %}aria-current="page"{% endif %}>Production drawing</a>{% endif %}
+      </nav>
     </div>
-    <div id="hint" class="small" style="display:none;padding:8px 18px;background:#E6EDFB;color:#1D4ED8">Click on the drawing where marker {{ next_no }} should go. Then name it on the right and save.</div>
-    <div id="sheet" style="overflow:auto;max-height:calc(100vh - 150px);background:#F1EFE9">
+    <div class="stepbar" aria-label="Stages">{% for n in steps %}<span class="{{ 'now' if loop.index == step[0] else 'done' if loop.index < step[0] }}">{{ loop.index }} {{ n }}</span>{% endfor %}</div>
+    {% if img %}
+    <div class="vbar">
+      <span class="zoomer" role="group" aria-label="Zoom"><button class="vbtn" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:48px;text-align:center" aria-live="polite">100%</span><button class="vbtn" id="zin" type="button" aria-label="Zoom in">+</button><button class="vbtn" id="zfit" type="button">Fit</button></span>
+      {% if mode == 'client' and not sh.failed %}<button class="vbtn" id="markbtn" type="button" aria-pressed="false">+ Add numbered marker</button>{% endif %}
+      <span style="flex-grow:1"></span>
+      {% if pages > 1 %}<span role="group" aria-label="Sheets" style="display:inline-flex;gap:6px;align-items:center">
+        <a class="vbtn" href="{{ url(s=sheet - 1) }}" aria-label="Previous sheet" {% if sheet == 1 %}aria-disabled="true"{% endif %}>&lsaquo;</a>
+        <span class="small">Sheet {{ sheet }} / {{ pages }}</span>
+        <a class="vbtn" href="{{ url(s=sheet + 1) }}" aria-label="Next sheet" {% if sheet == pages %}aria-disabled="true"{% endif %}>&rsaquo;</a></span>
+      {% else %}<span class="small">Sheet 1 / 1</span>{% endif %}
+      {% if mode == 'client' %}<a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a> <a href="{{ src }}/pdf?download=1">PDF</a>{% if sh.r and sh.r.files.dxf or (not sh.r and l.drawing.files.dxf) %} <a href="{{ src }}/dxf">DXF</a>{% endif %}
+      {% else %}<a href="{{ prod.pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}
+    </div>
+    {% endif %}
+    {% if mode == 'prod' and prod.kind == 'preview' %}<div class="small" role="note" style="padding:8px 18px;background:#FDF1E2;color:#9A4508;font-weight:600">Production preview — not for issue. {{ prod.text }}</div>
+    {% elif mode == 'prod' and prod.kind == 'real' %}<div class="small" style="padding:8px 18px;background:#E3F1EE;color:#0E6B5C">Production drawing made from {{ title }} · {{ prod.text }}. No client details.</div>{% endif %}
+    <div id="hint" class="small" style="display:none;padding:8px 18px;background:#E6EDFB;color:#1D4ED8">Click on the drawing where marker {{ next_no }} should go. Then write what it is about on the right and save.</div>
+    {% if img %}
+    <div id="sheet">
       <div id="wrap" style="position:relative;width:100%">
-        <img id="img" src="{{ src }}/big?v={{ stamp }}" alt="Drawing for product {{ l.no }}, {{ title }}" style="display:block;width:100%;background:#fff">
+        <img id="img" src="{{ img }}" alt="{{ 'Production' if mode == 'prod' else 'Client' }} drawing for product {{ l.no }}, {{ title }}, sheet {{ sheet }} of {{ pages }}" style="display:block;width:100%;background:#fff" draggable="false">
         {% for m in marks %}<span class="pin" style="left:{{ m.x }}%;top:{{ m.y }}%" title="{{ m.label }}">{{ m.no }}</span>{% endfor %}
         <span class="pin new" id="newpin" style="display:none">{{ next_no }}</span>
       </div>
     </div>
+    {% elif mode == 'prod' %}
+    <div style="padding:40px 18px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center">
+      <div style="font-weight:600">No production drawing yet</div>
+      <div class="sub">The real production drawing is made at step 7, with the job order and deadline. You can look at a preview now: the job order and dates show as JO-[NO.] and [DATE]. It is never issued.</div>
+      {% if prod.error %}<div class="small" style="color:#B91C1C;background:#FDE8E8;padding:8px 12px;border-radius:8px">The last try failed: {{ prod.error }}</div>{% endif %}
+      <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/production"><input type="hidden" name="rev" value="{{ rev_q }}"><button class="vbtn pri">Make a production preview</button></form>
+    </div>
+    {% else %}
+    <div style="padding:40px 18px;text-align:center"><div style="font-weight:600;color:#B91C1C">This drawing could not be made</div><div class="sub">{{ l.drawing.error }}</div></div>
+    {% endif %}
+    <div class="vbar" style="border-top:1px solid #EEECE6;border-bottom:0">
+      {% if prev_no %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ prev_no }}">&larr; Previous drawing</a>{% endif %}
+      <span style="flex-grow:1"></span>
+      {% if next_no_ %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ next_no_ }}">Next drawing &rarr;</a>{% endif %}
+    </div>
   </div>
   <div class="right">
+    <div class="card" id="checks">
+      <div style="font-weight:600">Automatic checks</div>
+      {% for c in checks %}
+      <div class="chk"><div><div class="small">{{ c.title }}</div>{% if c.note %}<div class="small" style="color:#B91C1C">{{ c.note }}</div>{% endif %}</div>
+        <span class="tag {{ 'ok' if c.state == 'pass' else 'bad' if c.state == 'fail' else 'dim' }}">{{ c.text }}</span></div>
+      {% endfor %}
+      <div class="sub small">Engines {{ sh.engine_version or engine_version }}. The engine refuses to finish a drawing that fails a check{% if mode == 'prod' %}; these are the checks of the client drawing{% endif %}.</div>
+    </div>
+    {% if mode == 'client' and not sh.failed %}
     <div class="card">
-      <div style="font-weight:600">Markers on this drawing</div>
+      <div style="font-weight:600">Markers on this sheet</div>
       {% for m in marks %}
       <div style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #EEECE6;padding-top:6px{% endif %}">
         <span class="pin" style="position:static;transform:none;flex:none">{{ m.no }}</span>
         <form class="row" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/label" style="flex:1 1 auto;min-width:0;flex-wrap:nowrap">
-          <input type="hidden" name="rev" value="{{ shown.id if shown and rev_q else 0 }}">
-          <label class="sr" for="ml{{ m.id }}">Name of marker {{ m.no }}</label>
-          <input class="sm" type="text" id="ml{{ m.id }}" name="label" value="{{ m.label }}" placeholder="What is this?">
+          <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
+          <label class="sr" for="ml{{ m.id }}">Note for marker {{ m.no }}</label>
+          <input class="sm" type="text" id="ml{{ m.id }}" name="label" value="{{ m.label }}" placeholder="What is this about?">
           <button class="sm">Save</button>
           <button class="sm" formaction="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/remove" aria-label="Remove marker {{ m.no }}">&times;</button>
         </form>
       </div>
-      {% else %}<div class="sub small" id="nomarks">None yet. Press <b>Add a marker</b>, then click on the part you want to point at. Each marker gets a number.</div>{% endfor %}
+      {% else %}<div class="sub small" id="nomarks">None on this sheet. Press <b>+ Add numbered marker</b>, then click on the part you mean. Each marker gets a number.</div>{% endfor %}
       <form class="row" id="newmark" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}" style="display:none;border-top:1px solid #EEECE6;padding-top:8px;flex-wrap:nowrap;align-items:center">
         <input type="hidden" name="shown" value="{{ key }}"><input type="hidden" name="x" id="mx"><input type="hidden" name="y" id="my">
-        <input type="hidden" name="rev" value="{{ shown.id if shown and rev_q else 0 }}">
+        <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
         <span class="pin new" style="position:static;transform:none;flex:none">{{ next_no }}</span>
-        <label class="sr" for="mlabel">Name of marker {{ next_no }}</label>
-        <input class="sm" type="text" id="mlabel" name="label" placeholder="What is this? (for example: left leg)">
+        <label class="sr" for="mlabel">Note for marker {{ next_no }}</label>
+        <input class="sm" type="text" id="mlabel" name="label" placeholder="For example: screen should be L800">
         <button class="sm primary">Save marker</button>
       </form>
     </div>
@@ -56,10 +118,24 @@
       <div class="sub small">{% if marks %}Use the marker numbers to say where. {% endif %}The desk says back how it understood the change. Nothing is redrawn until you confirm.</div>
     </form>
     {% endif %}
+    {% endif %}
+    <div class="card" id="next" style="border-color:{{ '#B91C1C' if nxt.kind in ('blocked', 'failed') else '#9A4508' if nxt.kind in ('confirm', 'redraw') else '#0E6B5C' }}">
+      <div class="label">Next step</div>
+      <div style="font-weight:600">{{ nxt.title }}</div>
+      <div class="sub small">{{ nxt.text }}</div>
+      {% if nxt.kind == 'ready' %}
+      <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ready"><input type="hidden" name="shown" value="{{ base_key }}"><button class="vbtn pri" style="width:100%">Looks right — mark ready to issue</button></form>
+      {% elif nxt.kind == 'done' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#issue">Go to issue</a>
+      {% elif nxt.kind == 'redraw' %}
+      <form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="vbtn pri" style="width:100%">Draw again and check</button></form>
+      {% elif nxt.kind in ('confirm', 'failed') %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#todo">Open questions and changes</a>
+      {% endif %}
+      <a class="small" href="/orders/{{ o.source_ref }}">Back to all drawings</a>
+    </div>
     <div class="card">
       <div style="font-weight:600">Versions of this drawing</div>
       {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current %}
-      <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span></div>{% endif %}
+      <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span>{% if not shown %} <span class="tag info">shown</span>{% endif %}</div>{% endif %}
       {% for r in l.revisions|reverse %}
       <div class="small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
         <div class="sub">{{ r.reason }}<br>Issued by {{ r.issued_by }}, {{ r.issued_at|when }} · engines {{ r.engine_version }}</div></div>
@@ -67,19 +143,29 @@
     </div>
   </div>
 </div>
+{% if img %}
 <script>
-(function(){var w=document.getElementById('wrap'),o=document.getElementById('zval'),S=[100,125,150,200,250,300,400],k=0;
-function set(i){k=Math.max(0,Math.min(S.length-1,i));w.style.width=S[k]+'%';o.textContent=S[k]+'%';}
-document.getElementById('zin').addEventListener('click',function(){set(k+1)});
-document.getElementById('zout').addEventListener('click',function(){set(k-1)});
+(function(){var w=document.getElementById('wrap'),o=document.getElementById('zval'),sh=document.getElementById('sheet'),img=document.getElementById('img'),z=100;
+function set(v){z=Math.max(25,Math.min(400,Math.round(v)));w.style.width=z+'%';o.textContent=z+'%';}
+function fit(){if(!img.naturalWidth)return set(100);var h=sh.clientHeight||window.innerHeight*0.7,fw=h*img.naturalWidth/img.naturalHeight/sh.clientWidth*100;set(Math.min(100,fw));}
+document.getElementById('zin').addEventListener('click',function(){set(z*1.25)});
+document.getElementById('zout').addEventListener('click',function(){set(z/1.25)});
+document.getElementById('zfit').addEventListener('click',fit);
+var d=null;sh.addEventListener('pointerdown',function(e){if(window.deskMarking)return;d={x:e.clientX,y:e.clientY,l:sh.scrollLeft,t:sh.scrollTop};sh.classList.add('drag');});
+window.addEventListener('pointermove',function(e){if(!d)return;sh.scrollLeft=d.l-(e.clientX-d.x);sh.scrollTop=d.t-(e.clientY-d.y);});
+window.addEventListener('pointerup',function(){d=null;sh.classList.remove('drag');});
 window.deskZoom=set;})();
 </script>
+{% if mode == 'client' %}
 <script>
-(function(){var b=document.getElementById('markbtn'),img=document.getElementById('img'),pin=document.getElementById('newpin'),f=document.getElementById('newmark'),h=document.getElementById('hint'),on=false;
-function mode(v){on=v;b.setAttribute('aria-pressed',v);b.textContent=v?'Cancel marker':'Add a marker';h.style.display=v?'block':'none';img.style.cursor=v?'crosshair':'default';if(!v){pin.style.display='none';f.style.display='none';}}
-b.addEventListener('click',function(){mode(!on)});
-img.addEventListener('click',function(e){if(!on)return;var r=img.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*100,y=(e.clientY-r.top)/r.height*100;
+(function(){var b=document.getElementById('markbtn'),img=document.getElementById('img'),pin=document.getElementById('newpin'),f=document.getElementById('newmark'),h=document.getElementById('hint');
+if(!b)return;
+function mode(v){window.deskMarking=v;b.setAttribute('aria-pressed',v);b.textContent=v?'Cancel marker':'+ Add numbered marker';h.style.display=v?'block':'none';img.style.cursor=v?'crosshair':'';if(!v){pin.style.display='none';f.style.display='none';}}
+b.addEventListener('click',function(){mode(!window.deskMarking)});
+img.addEventListener('click',function(e){if(!window.deskMarking)return;var r=img.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*100,y=(e.clientY-r.top)/r.height*100;
 pin.style.left=x+'%';pin.style.top=y+'%';pin.style.display='block';document.getElementById('mx').value=x.toFixed(2);document.getElementById('my').value=y.toFixed(2);
 f.style.display='flex';var n=document.getElementById('nomarks');if(n)n.style.display='none';document.getElementById('mlabel').focus();});})();
 </script>
+{% endif %}
+{% endif %}
 {% endblock %}
