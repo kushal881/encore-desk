@@ -101,7 +101,7 @@ def _fetch_photos(s, src):
     if not hasattr(source, "product_image"):
         return
     for l in src.lines:
-        if not l.product_ref or s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name))):
+        if l.no_drawing or not l.product_ref or s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name))):
             continue
         try:
             data = source.product_image(l.product_ref)
@@ -126,16 +126,21 @@ def load(ref):
             o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery)
             total = 0
             for l in src.lines:
+                if l.no_drawing:                                   # bought-out, service, installation, delivery: listed, never drawn
+                    o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, reason=l.no_drawing))
+                    continue
                 line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty)
                 for q in read_line(l.name, l.description)["questions"]:
                     line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"])); total += 1
                 o.lines.append(line)
-            n = len(src.lines)
-            o.messages.append(db.Message(who="desk", text="I have read the %d product%s of this order. %s" % (n, "" if n == 1 else "s",
+            n, skipped = len(o.lines), len(o.not_drawn)
+            o.messages.append(db.Message(who="desk", text="I have read the %d product%s to draw in this order%s. %s" % (n, "" if n == 1 else "s",
+                              " (%d more line%s need%s no drawing)" % (skipped, "" if skipped == 1 else "s", "s" if skipped == 1 else "") if skipped else "",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
             _fetch_photos(s, src)
         s.refresh(o)
+        _ = o.not_drawn
         for l in o.lines:
             l.read = read_line(l.name, l.description)
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"

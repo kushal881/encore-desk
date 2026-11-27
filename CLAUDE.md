@@ -16,6 +16,7 @@ The Encore Prime Furniture drawing desk (live on Railway, to be served at design
 3. **Zero-error rule.** A finalized component (e.g. a leg type) never changes unless someone asks. Drawings that fail clash, true-view isometric or engine checks cannot be issued.
 4. **No client files or secrets in git.** Drawings, client data, `.env`, keys stay out of the repo. Files go to the private Railway Storage Bucket (see brief).
 5. Wording: "Product 1, 2…", never "Line 1".
+6. **No drawing** for bought-out items (Odoo route Buy, not Manufacture), services, and installation / transportation / delivery / freight lines. The desk sets these aside before the engine (`desk/nodrawing.py`); never send them to the engine.
 
 ## How to work
 - Start every new piece of work in **plan mode**: say what exists, what changes, what is new. Wait for Kushal's OK before writing code.

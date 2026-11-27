@@ -41,6 +41,7 @@ class Order(Base):
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
     steps: Mapped[list["Step"]] = relationship(order_by="Step.id", cascade="all, delete-orphan")
+    not_drawn: Mapped[list["NoDrawingLine"]] = relationship(order_by="NoDrawingLine.id", cascade="all, delete-orphan")
 
 
 class OrderLine(Base):
@@ -57,6 +58,16 @@ class OrderLine(Base):
     revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
     sets: Mapped[list["ProductionSet"]] = relationship(order_by="ProductionSet.id", cascade="all, delete-orphan")
     marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
+
+
+class NoDrawingLine(Base):
+    """A quotation line that gets no drawing: bought-out items, services, installation, delivery (see nodrawing.py)."""
+    __tablename__ = "no_drawing_line"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    name: Mapped[str] = mapped_column(Text)
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    reason: Mapped[str] = mapped_column(String(80), default="")
 
 
 class Question(Base):

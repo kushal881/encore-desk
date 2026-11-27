@@ -44,6 +44,16 @@
       </div>
       {% endfor %}
     </div>
+    {% if o.not_drawn %}
+    <div class="card" aria-labelledby="nd" style="background:#FAFAF8">
+      <div id="nd" class="label">No drawing needed ({{ o.not_drawn|length }})</div>
+      {% for x in o.not_drawn %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:6px{% endif %}">
+        <div style="flex:1 1 240px">{{ x.name }} <span class="sub small">· qty {{ '%g' % x.qty }}</span></div><span class="tag dim">{{ x.reason }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   <div class="right" id="sets">
     {% include "_next.html" %}
