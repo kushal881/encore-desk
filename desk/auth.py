@@ -42,11 +42,11 @@ def current_user(request: Request):
 
 def _page(body):
     return HTMLResponse('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in · Encore drawing desk</title>'
-                        '<style>body{margin:0;font-family:Inter,system-ui,sans-serif;background:#F3F5F6;color:#1A2228;display:flex;min-height:100vh;align-items:center;justify-content:center}'
-                        '.c{background:#fff;border:1px solid #D5DCE0;border-radius:8px;padding:28px;width:340px;display:flex;flex-direction:column;gap:14px}'
-                        'a.b,button{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:6px;background:#1F5A6E;color:#fff;text-decoration:none;border:none;font:inherit;cursor:pointer;width:100%}'
-                        '.s{font-size:13px;color:#4A5A63;line-height:1.5}.e{font-size:13px;color:#8C1D18}</style></head><body><div class="c">'
-                        '<div style="font-size:18px;font-weight:600;color:#17384A">Encore drawing desk</div>' + body + "</div></body></html>")
+                        '<style>body{margin:0;font-family:Inter,system-ui,sans-serif;background:#F4F3EF;color:#17191C;display:flex;min-height:100vh;align-items:center;justify-content:center}'
+                        '.c{background:#fff;border:1px solid #E3E1DA;border-radius:16px;padding:32px;width:340px;display:flex;flex-direction:column;gap:14px}'
+                        'a.b,button{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:10px;background:#0E6B5C;font-weight:600;color:#fff;text-decoration:none;border:none;font:inherit;cursor:pointer;width:100%}'
+                        '.s{font-size:13px;color:#5B5F66;line-height:1.5}.e{font-size:13px;color:#B91C1C}</style></head><body><div class="c">'
+                        '<div style="display:flex;align-items:center;gap:12px"><img src="/static/encore-logo.png" alt="Encore Prime logo" style="width:48px;height:48px;border-radius:4px"><div><div style="font-size:18px;font-weight:700">Encore Prime</div><div class="s">Drawing desk</div></div></div>' + body + "</div></body></html>")
 
 
 @router.get("/login")

@@ -5,14 +5,14 @@
 {% include "_ordernav.html" %}
 <div class="cols">
   <div class="main" style="flex:999 1 600px">
-    <div style="padding:12px 18px;border-bottom:1px solid #E3E8EB;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <div style="padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
       <div style="font-weight:600;flex-grow:1">{{ kind }} drawings · Product {{ line.no }} · {{ line.name.split('(')[0] }} · {{ f.title }}</div>
       <span class="zoomer" role="group" aria-label="Zoom"><button class="sm" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:44px;text-align:center" aria-live="polite">100%</span><button class="sm" id="zin" type="button" aria-label="Zoom in">+</button></span>
       <a href="/sets/{{ ps.id }}/{{ i }}/pdf" target="_blank" rel="noopener">Open PDF to print</a>
       <a href="/sets/{{ ps.id }}/{{ i }}/pdf?download=1">Download PDF</a>
       <a href="/orders/{{ o.source_ref }}">Back to the order</a>
     </div>
-    <div style="overflow:auto;max-height:calc(100vh - 150px);background:#E9EDEF">
+    <div style="overflow:auto;max-height:calc(100vh - 150px);background:#F1EFE9">
       <div id="wrap" style="width:100%;display:flex;flex-direction:column;gap:10px">
       {% for n in range(f.pages) %}<img src="/sets/{{ ps.id }}/{{ i }}/page/{{ n }}?v={{ ps.made_at.timestamp()|int }}" alt="{{ f.title }}, sheet {{ n + 1 }} of {{ f.pages }}" style="display:block;width:100%;background:#fff">{% endfor %}
       </div>
@@ -22,7 +22,7 @@
     <div class="card">
       <div style="font-weight:600">In this set</div>
       {% for x in ps.files %}<div class="small"><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ x.title }}</a> <span class="sub">({{ x.pages }} sheet{{ '' if x.pages == 1 else 's' }})</span>{% if loop.index0 == i %} <span class="tag info">shown</span>{% endif %}</div>{% endfor %}
-      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px">Made from {{ rev.number }} Rev {{ rev.rev }} · engines {{ ps.engine_version }}<br>Job order {{ ps.details.job_order }} · date {{ ps.details.job_order_date }} · deadline {{ ps.details.deadline }}<br>{{ ps.made_by }}, {{ ps.made_at|when }}</div>
+      <div class="sub small" style="border-top:1px solid #EEECE6;padding-top:6px">Made from {{ rev.number }} Rev {{ rev.rev }} · engines {{ ps.engine_version }}<br>Job order {{ ps.details.job_order }} · date {{ ps.details.job_order_date }} · deadline {{ ps.details.deadline }}<br>{{ ps.made_by }}, {{ ps.made_at|when }}</div>
     </div>
   </div>
 </div>

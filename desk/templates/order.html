@@ -49,12 +49,12 @@
     <div class="sub small">Job order {{ o.job_order or 'not given' }} · Salesperson {{ o.salesperson or 'not given' }}</div>
   </div>
   <div class="main">
-    <div style="padding:14px 18px;border-bottom:1px solid #E3E8EB;font-weight:600">Conversation</div>
+    <div style="padding:14px 18px;border-bottom:1px solid #EEECE6;font-weight:600">Conversation</div>
     {% set ns = namespace(marked=false) %}
     <div class="chat">
       {% for e in events %}
       {% if e.kind == 'say' %}<div class="b desk">{{ e.text }}</div>
-      {% elif e.kind == 'me' %}<div class="b me">{{ e.text }}<div style="font-size:12px;color:#C9DCE5">{{ e.by }}{% if e.view %} · <a href="/orders/{{ o.source_ref }}/view/{{ e.view }}" style="color:#fff">see the markers on the drawing</a>{% endif %}</div></div>
+      {% elif e.kind == 'me' %}<div class="b me">{{ e.text }}<div style="font-size:12px;color:#D6D3CA">{{ e.by }}{% if e.view %} · <a href="/orders/{{ o.source_ref }}/view/{{ e.view }}" style="color:#fff">see the markers on the drawing</a>{% endif %}</div></div>
       {% elif e.kind == 'step' %}<div class="b step"><b>{{ e.text }}</b>{% if e.note %}<br>{{ e.note }}{% endif %}<br>{{ e.by }}</div>
       {% elif e.kind == 'question' %}{% set q = e.q %}{% set l = e.line %}
       {% if not l.remake or q.answer %}
@@ -96,7 +96,7 @@
       {% if open_total == 0 and not drawn %}<div class="b desk">All questions are answered. Press Draw previews on the right.</div>{% endif %}
     </div>
     {% if drawn %}
-    <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 18px;border-top:1px solid #E3E8EB">
+    <form method="post" action="/orders/{{ o.source_ref }}/change" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 18px;border-top:1px solid #EEECE6">
       <label class="sr" for="chgl">Product</label>
       <select id="chgl" name="line" style="flex:0 1 150px">
         {% for l in o.lines %}{% if l.drawing and l.drawing.status == 'preview' and not l.remake %}<option value="{{ l.no }}">Product {{ l.no }}</option>{% endif %}{% endfor %}
@@ -127,7 +127,7 @@
         <button class="sm">Ask for an engine addition</button>
       </form>
       {% else %}
-      <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+      <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #D6D3CA;border-radius:4px"></a>
       <div class="sub small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View full size</b></a> · <a href="/drawings/{{ l.drawing.id }}/pdf?download=1">Download PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
       {% if not l.remake %}
       <details>
@@ -148,12 +148,12 @@
       </form>
       {% endif %}
       {% for r in l.revisions|reverse %}
-      <div class="sub small" style="border-top:1px solid #E3E8EB;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a> · engines {{ r.engine_version }}<br>{{ r.reason }}</div>
+      <div class="sub small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a> · engines {{ r.engine_version }}<br>{{ r.reason }}</div>
       {% endfor %}
     </div>
     {% endif %}{% endfor %}
     {% if drawn and can_issue and needs_issue %}
-    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card" id="issue" style="border-color:#1F5A6E" data-confirm="Issue these drawings?\n{{ plan|join('\n') }}\n\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
+    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card" id="issue" style="border-color:#0E6B5C" data-confirm="Issue these drawings?\n{{ plan|join('\n') }}\n\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
       <div class="label">Issue</div>
       <div class="small">{% for x in plan %}{{ x }}<br>{% endfor %}</div>
       {% if not o.client.folder_no %}<label for="fno" style="font-weight:600;font-size:13px">Folder number for {{ o.client.name }}</label>

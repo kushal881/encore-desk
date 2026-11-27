@@ -18,7 +18,7 @@
     <div class="card">
       <div style="font-weight:600">Everything that is waiting</div>
       {% for text, act, url in todo %}
-      <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #E9EDEF;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div><a href="{{ url }}">{{ act }}</a></div>
+      <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div><a href="{{ url }}">{{ act }}</a></div>
       {% else %}<div class="sub">Nothing else is waiting on the drawings.</div>{% endfor %}
     </div>
     <div class="label">Products and drawings</div>
@@ -37,7 +37,7 @@
           {% if l.remake %}<span class="tag info">Remake</span>{% endif %}
           {% if l.marks %}<span class="tag dim">{{ l.marks|length }} marker{{ '' if l.marks|length == 1 else 's' }}</span>{% endif %}</div>
         {% if l.drawing and l.drawing.status == 'preview' %}
-        <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #B9C4CA;border-radius:4px"></a>
+        <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #D6D3CA;border-radius:4px"></a>
         <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View, mark and ask for a change</b></a>{% if l.last_rev %} · {{ l.last_rev.number }} Rev {{ l.last_rev.rev }} · <a href="/revisions/{{ l.last_rev.id }}/pdf?download=1">PDF</a>{% endif %}</div>
         {% elif l.drawing %}<div class="sub small">{{ l.drawing.error }}</div>
         {% else %}<div class="nophoto" style="width:100%;height:110px">No drawing yet</div>{% endif %}
