@@ -18,7 +18,7 @@
     <div class="card">
       <div style="font-weight:600">Everything that is waiting</div>
       {% for text, act, url in todo %}
-      <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div><a href="{{ url }}">{{ act }}</a></div>
+      <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div>{% if url.startswith('/tasks/') %}<form method="post" action="{{ url }}"><button class="sm">{{ act }}</button></form>{% else %}<a href="{{ url }}">{{ act }}</a>{% endif %}</div>
       {% else %}<div class="sub">Nothing else is waiting on the drawings.</div>{% endfor %}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">

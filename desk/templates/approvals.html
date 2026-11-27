@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Approvals · Encore drawing desk{% endblock %}
+{% block body %}
+<style>
+.atabs{display:flex;flex-wrap:wrap;gap:6px}
+.atabs a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid #D6D3CA;text-decoration:none;color:#17191C;font-weight:600}
+.atabs a.on{background:#17191C;color:#fff;border-color:#17191C}
+.req{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;text-decoration:none;color:#17191C;border:1px solid transparent}
+.req.on{border-color:#0E6B5C;background:#E3F1EE}
+.opt{border:1px solid #D6D3CA;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;flex:1 1 260px}
+</style>
+<div class="page" style="display:flex;flex-direction:column;gap:14px">
+  <div class="label">Administrators · Approvals</div>
+  <nav class="atabs" aria-label="Kind of request">{% for k, t in tabs %}<a class="{{ 'on' if k == tab }}" href="/approvals?tab={{ k }}">{{ t }}{% if counts[k] %} <span class="count">{{ counts[k] }}</span>{% endif %}</a>{% endfor %}</nav>
+  <div class="cols" style="padding:0">
+    <div class="card" style="flex:1 1 280px;max-width:380px">
+      {% for r in rows %}<a class="req {{ 'on' if sel and r.id == sel.id }}" href="/approvals?tab={{ tab }}&show={{ r.id }}">
+        <span><b>{{ r.title[:70] }}</b><span class="sub small" style="display:block">{{ r.order_ref or 'no order' }}{% if r.product %} · {{ r.product }}{% endif %} · asked by {{ r.asked_by }}</span></span>
+        <span class="tag {{ 'ask' if r.status == 'asked' else 'bad' if r.status in ('declined', 'rejected') else 'ok' }}">{{ {'asked':'Waiting for you','approved':'Approved' ~ (' · A' if r.option == 'A' else ''),'engine_work':'Engine work · B','declined':'Rejected','rejected':'Rejected','built':'Built'}[r.status] }}</span></a>
+      {% else %}<div class="sub">Nothing here.{% if tab == 'revision' %} Revision raises come from the quotation changes inbox, which is built later.{% endif %}</div>{% endfor %}
+    </div>
+    {% if sel %}
+    <div class="card" style="flex:999 1 420px;gap:10px">
+      <div style="font-size:18px;font-weight:600">{{ sel.title }}</div>
+      <div class="sub small">{% if sel.order_ref %}Project <a href="/orders/{{ sel.order_ref }}">{{ sel.order_ref }}</a> · {% endif %}{{ sel.product or '' }} · asked by {{ sel.asked_by }}, {{ sel.at|when }}</div>
+      {% if sel.status != 'asked' %}<div class="small"><span class="tag dim">Decided by {{ sel.decided_by }}</span>{% if sel.note %} · {{ sel.note }}{% endif %}</div>{% endif %}
+      {% if sel.status == 'asked' and can %}
+      <form method="post" style="display:flex;flex-direction:column;gap:10px">
+        {% if sel.kind == 'engine' %}
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div class="opt"><div style="font-weight:600">Option A · this client only</div><div class="small">The change goes in this project's product file. The engine is untouched.</div></div>
+          <div class="opt"><div style="font-weight:600">Option B · engine change (generic)</div><div class="small">A new optional setting, <b>off by default</b>; existing drawings unchanged. Built as an engine branch that must pass the engine checks, then comes to you as a proposal in encore-approved to merge.</div></div>
+        </div>
+        {% elif sel.kind == 'after_approval' %}<div class="small">Allowing it unlocks this client-approved drawing for one change. Issuing it makes a new revision, which the client approves again.</div>{% endif %}
+        <div class="small">Your decision creates a task for {{ sel.asked_by }}: approve, apply the change and regenerate; reject, keep the drawing and inform sales.</div>
+        <label for="nt" class="small">Note to {{ sel.asked_by }} (optional)</label>
+        <textarea id="nt" name="note" rows="2" style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          {% if sel.kind == 'engine' %}
+          <button class="primary" formaction="/approvals/engine/{{ sel.id }}/a">Approve option A</button>
+          <button formaction="/approvals/engine/{{ sel.id }}/b">Approve option B &amp; send to engine work</button>
+          <button formaction="/approvals/engine/{{ sel.id }}/reject">Reject</button>
+          {% else %}
+          <button class="primary" formaction="/approvals/{{ sel.kind }}/{{ sel.id }}/approve">Allow</button>
+          <button formaction="/approvals/{{ sel.kind }}/{{ sel.id }}/reject">Reject</button>
+          {% endif %}
+        </div>
+      </form>
+      {% elif sel.status == 'asked' %}<div class="small" style="background:#F1EFE9;padding:8px 10px;border-radius:8px">Only Kushal decides this (decision 8).</div>
+      {% elif sel.status == 'engine_work' %}<div class="small">To build it, give this to an engine session: <span style="background:#F4F3EF;border-radius:6px;padding:4px 8px;user-select:all">Engine: {{ sel.title }} (generic option, off by default; push an engine- branch)</span></div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <div style="font-weight:600">Tasks from decisions</div>
+    {% for t in tasks %}<div class="small" style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:6px{% endif %}"><span style="flex:1 1 auto">{{ t.assignee }}{% if t.order_ref %} · <a href="/orders/{{ t.order_ref }}">{{ t.order_ref }}</a>{% endif %} · {{ t.text }}</span><span class="tag {{ 'ok' if t.status == 'done' else 'ask' }}">{{ 'Done' if t.status == 'done' else 'Open' }}</span></div>
+    {% else %}<div class="sub small">None yet.</div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

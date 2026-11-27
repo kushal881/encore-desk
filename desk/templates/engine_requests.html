@@ -20,7 +20,7 @@
       <tr>
         <td><b>{{ r.text }}</b>{% if r.product %}<div class="sub small">Product: {{ r.product }}</div>{% endif %}{% if r.order_ref %}<div class="sub small">Order <a href="/orders/{{ r.order_ref }}">{{ r.order_ref }}</a></div>{% endif %}</td>
         <td class="small">{{ r.asked_by }}<div class="sub">{{ r.asked_at|when }}</div></td>
-        <td><span class="tag {{ {'asked':'ask','approved':'info','built':'ok','declined':'dim'}[r.status] }}">{{ {'asked':'Waiting for decision','approved':'Approved, to be built','built':'Built and in the engine','declined':'Declined'}[r.status] }}</span>
+        <td><span class="tag {{ {'asked':'ask','approved':'info','engine_work':'info','built':'ok','declined':'dim'}[r.status] }}">{{ {'asked':'Waiting for decision','approved':'Approved' ~ (', this client only' if r.option == 'A' else ', to be built'),'engine_work':'Sent to engine work','built':'Built and in the engine','declined':'Declined'}[r.status] }}</span>
           {% if r.decided_by %}<div class="sub small">{{ r.decided_by }}, {{ r.decided_at|when }}</div>{% endif %}</td>
         <td style="min-width:260px">
           {% if is_admin and r.status == 'asked' %}
@@ -30,7 +30,7 @@
             <button class="sm primary" formaction="/engine-requests/{{ r.id }}/approve">Approve</button>
             <button class="sm" formaction="/engine-requests/{{ r.id }}/decline">Decline</button>
           </form>
-          {% elif r.status == 'approved' %}
+          {% elif r.status in ('approved', 'engine_work') and r.option != 'A' %}
           <div class="sub small">To build it, give this sentence to a Claude chat:</div>
           <div class="small" style="background:#F4F3EF;border-radius:6px;padding:8px;user-select:all">Engine: {{ r.text }}{% if r.product %} (product: {{ r.product }}){% endif %}</div>
           {% if is_admin %}<form method="post" action="/engine-requests/{{ r.id }}/built" style="margin-top:6px"><button class="sm">Mark as built</button></form>{% endif %}

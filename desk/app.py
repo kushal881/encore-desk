@@ -238,7 +238,11 @@ def timeline(o):
 def ctx(user, **kw):
     with db.Session() as s:
         waiting = len(s.scalars(select(db.EngineRequest).where(db.EngineRequest.status == "asked")).all())
-    return dict(user=user.name, role=auth.ROLES.get(user.role, user.role), is_admin=user.role == "admin", engine_version=engines.version(), requests_waiting=waiting, **kw)
+        ch_waiting = len(s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")).all())
+        tasks = len(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open")).all())
+    lv = auth.level(user)
+    return dict(user=user.name, role=auth.ROLES.get(user.role, user.role) if lv != "admin2" else "Secondary administrator", is_admin=user.role == "admin",
+                is_approver=lv in ("admin", "admin2"), approvals_waiting=waiting + ch_waiting, my_tasks=tasks, engine_version=engines.version(), requests_waiting=waiting, **kw)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -368,6 +372,9 @@ def project(request: Request, ref: str, user=User):
     _, issued_aside = apply_no_drawing(ref)                                  # orders read before the rule existed get it too
     o = load(ref)
     todo = []
+    with db.Session() as s:
+        for tk in s.scalars(select(db.Task).where(db.Task.order_ref == ref, db.Task.status == "open")):
+            todo.append(("Task for %s%s: %s" % (tk.assignee, " (Product %d)" % tk.line_no if tk.line_no else "", tk.text), "Done", "/tasks/%d/done" % tk.id))
     for n, nm, why in issued_aside:
         todo.append(("Product %d (%s) needs no drawing (%s) but its drawing is issued. Removing it is a quotation change: Cancelled stamp and reissue." % (n, nm.split("(")[0].strip(), why.lower()), "See", "/orders/%s/view/%d" % (ref, n)))
     q = sum(l.open_count for l in o.lines)
@@ -767,6 +774,8 @@ def _panel_state(o, l, sh, mode):
         return "This is an older issued revision. Open the current drawing to change it."
     if l.revisions and o.stage in ("approved", "production", "completed") and not o.approval_pending:
         return "The client has approved this drawing, so it is locked. A change now needs Kushal's permission (a change after approval)."
+    if _permitted(o, l):
+        return ""
     ap = _approval_of(l.last_rev)
     if ap is not None and ap.outcome == "approved":
         return "The client approved Rev %s on %s (%s), so it is locked. A change now needs Kushal's permission (a change after approval)." % (l.last_rev.rev, ap.on, ap.name)
@@ -921,8 +930,113 @@ def ai_file(tid: int, kind: str, page: int = 0, user=User):
 
 # ---- Issue (screen 6) ---------------------------------------------------------------------------------------------------
 def _permitted(o, l):
-    """Kushal allowed a change after client approval on this product (the Approvals screen brings this rule)."""
-    return False
+    """Kushal allowed a change after client approval on this product, and it has not been issued again since."""
+    if not l.last_rev:
+        return False
+    with db.Session() as s:
+        cr = s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.order_ref == o.source_ref, db.ChangeRequest.line_no == l.no,
+                                                      db.ChangeRequest.kind == "after_approval", db.ChangeRequest.status == "approved")
+                       .order_by(db.ChangeRequest.id.desc())).first()
+    if not (cr and cr.decided_at):
+        return False
+    issued = l.last_rev.issued_at                                       # older revisions may have no issue time recorded
+    return issued is None or cr.decided_at.replace(tzinfo=None) > issued.replace(tzinfo=None)
+
+
+# ---- Approvals (screen 7) ------------------------------------------------------------------------------------------------
+APPROVAL_TABS = (("engine", "Engine changes"), ("after", "Changes after client approval"), ("revision", "Revision raises"))
+
+
+@app.get("/approvals", response_class=HTMLResponse)
+def approvals(request: Request, tab: str = "engine", show: int = 0, user=User):
+    """Administrators: every request that needs a decision. A decision creates a task for the person who asked."""
+    if auth.level(user) == "staff":
+        raise HTTPException(403, "Approvals are for the administrators")
+    tab = tab if tab in dict(APPROVAL_TABS) else "engine"
+    with db.Session() as s:
+        eng = s.scalars(select(db.EngineRequest).order_by(db.EngineRequest.id.desc())).all()
+        chg_ = s.scalars(select(db.ChangeRequest).order_by(db.ChangeRequest.id.desc())).all()
+        tasks = s.scalars(select(db.Task).order_by(db.Task.id.desc()).limit(30)).all()
+    rows = {"engine": [dict(kind="engine", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
+                            status=r.status, option=r.option, decided_by=r.decided_by, note=r.note) for r in eng],
+            "after": [dict(kind="after_approval", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
+                           status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "after_approval"],
+            "revision": [dict(kind="revision", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
+                              status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "revision"]}
+    counts = {k: sum(1 for x in v if x["status"] == "asked") for k, v in rows.items()}
+    sel = next((x for x in rows[tab] if x["id"] == show), None) or next((x for x in rows[tab] if x["status"] == "asked"), None) or (rows[tab][0] if rows[tab] else None)
+    return T.TemplateResponse(request, "approvals.html", ctx(user, nav="appr", tab=tab, tabs=APPROVAL_TABS, rows=rows[tab], counts=counts, sel=sel,
+                              can=auth.can_decide(user, sel["kind"]) if sel else False, tasks=tasks))
+
+
+@app.post("/approvals/{kind}/{rid}/{decision}")
+def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), user=User):
+    """A (this client only: the product's file) / B (send to engine work: a generic option, off by default, built as an
+    engine branch and approved in encore-approved; the desk never changes engines) / approve / reject.
+    Every decision creates a task for the person who asked."""
+    if kind not in ("engine", "after_approval", "revision") or decision not in ("a", "b", "approve", "reject"):
+        raise HTTPException(404)
+    if not auth.can_decide(user, kind):
+        raise HTTPException(403, "Only Kushal decides this" if kind != "revision" else "Only an administrator decides this")
+    note = note.strip()
+    with db.Session() as s:
+        if kind == "engine":
+            r = s.get(db.EngineRequest, rid)
+            if r is None or r.status != "asked" or decision not in ("a", "b", "reject"):
+                raise HTTPException(400, "This request cannot take that decision now")
+            r.status = {"a": "approved", "b": "engine_work", "reject": "declined"}[decision]
+            r.option = {"a": "A", "b": "B"}.get(decision, "")
+            text = {"a": "Approved, this client only: apply it in this product's file (the change panel) and redraw. %s" % r.text,
+                    "b": "Sent to engine work: it is built as a generic option, off by default, and comes back for approval. Redraw when the new engine version is approved. %s" % r.text,
+                    "reject": "Rejected: keep the drawing as it is and tell sales. %s" % r.text}[decision]
+            line_no = int((re.search(r"Product (\d+)", r.product or "") or [0, 0])[1])
+            src = "engine:%d" % r.id
+        else:
+            r = s.get(db.ChangeRequest, rid)
+            if r is None or r.kind != kind or r.status != "asked" or decision not in ("approve", "reject"):
+                raise HTTPException(400, "This request cannot take that decision now")
+            r.status = "approved" if decision == "approve" else "rejected"
+            text = ({"after_approval": "Allowed: change Product %d in the change panel; issuing it makes a new revision, which the client approves again. %s",
+                     "revision": "Revision allowed for Product %d. %s"}[kind] if decision == "approve" else "Rejected for Product %d: keep the drawing as it is. %s") % (r.line_no, r.text)
+            line_no, src = r.line_no, "change:%d" % r.id
+        r.decided_by, r.decided_at = user.name, db.now()
+        r.note = note or r.note
+        s.add(db.Task(assignee=r.asked_by, order_ref=r.order_ref, line_no=line_no, text=text + (" Note: " + note if note else ""), source=src))
+        if r.order_ref:
+            o_ = s.scalar(select(db.Order).where(db.Order.source_ref == r.order_ref))
+            if o_:
+                s.add(db.Message(order_id=o_.id, who="desk", text="%s decided by %s: %s" % ("Engine request" if kind == "engine" else "Change request", user.name, text)))
+        s.commit()
+    tab = {"engine": "engine", "after_approval": "after", "revision": "revision"}[kind]
+    return RedirectResponse("/approvals?tab=%s&show=%d" % (tab, rid), status_code=303)
+
+
+@app.post("/orders/{ref}/view/{no}/permission")
+def ask_permission(ref: str, no: int, text: str = Form(...), user=User):
+    """From a locked (client-approved) drawing: ask Kushal for permission to change it."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not text.strip():
+        raise HTTPException(400, "Say what has to change")
+    with db.Session() as s:
+        s.add(db.ChangeRequest(kind="after_approval", order_ref=ref, line_no=no, product="Product %d: %s" % (no, l.name.split("(")[0].strip()),
+                               text=text.strip()[:2000], asked_by=user.name))
+        s.add(db.Message(order_id=o.id, who="desk", text="Permission asked by %s to change Product %d after client approval: %s" % (user.name, no, text.strip())))
+        s.commit()
+    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+
+
+@app.post("/tasks/{tid}/done")
+def task_done(request: Request, tid: int, user=User):
+    with db.Session() as s:
+        t = s.get(db.Task, tid)
+        if t is None or (t.assignee != user.name and auth.level(user) != "admin"):
+            raise HTTPException(404)
+        t.status, t.done_at = "done", db.now()
+        s.commit()
+        ref = t.order_ref
+    came = request.headers.get("referer", "")
+    return RedirectResponse(came or ("/orders/%s" % ref if ref else "/"), status_code=303)
 
 
 def _approval_of(r):
@@ -1338,7 +1452,7 @@ def engine_request_decide(rid: int, decision: str, note: str = Form(""), user=Us
     new = dict(approve="approved", decline="declined", built="built").get(decision)
     with db.Session() as s:
         r = s.get(db.EngineRequest, rid)
-        if r is None or new is None or (new == "built") != (r.status == "approved") or (new != "built" and r.status != "asked"):
+        if r is None or new is None or (new == "built") != (r.status in ("approved", "engine_work")) or (new != "built" and r.status != "asked"):
             raise HTTPException(400, "This request cannot take that decision now")
         r.status, r.decided_by, r.decided_at, r.note = new, user.name, db.now(), (note.strip() or r.note)
         s.commit()
