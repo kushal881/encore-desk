@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the desk
+        uses: actions/checkout@v4
+
+      - name: Get the approved engines (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: kushal881/encore-approved
+          token: ${{ secrets.ENGINES_READ_TOKEN }}
+          path: approved_engines
+          fetch-depth: 0
+
+      - name: Use the newest approved engine version (same rule as the live desk)
+        working-directory: approved_engines
+        run: |
+          latest=$(git tag -l 'v*' | grep -E '^v[0-9]+$' | sort -V | tail -1)
+          if [ -n "$latest" ]; then git checkout -q "$latest"; fi
+          echo "Testing with engines ${latest:-default branch}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt pytest
+          if [ -f approved_engines/tool/requirements.txt ]; then pip install -r approved_engines/tool/requirements.txt; fi
+
+      - name: Run all tests
+        env:
+          ENGINES_DIR: ${{ github.workspace }}/approved_engines
+          TEST_ENGINES_SRC: ${{ github.workspace }}/approved_engines
+        run: python tests/run_all.py

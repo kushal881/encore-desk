@@ -26,9 +26,11 @@ The Encore Prime Furniture drawing desk (live on Railway, to be served at design
 - Keep answers short and plain. Kushal is not a developer: explain what to check, not how the code works.
 
 ## Known state (27-Nov-2026)
-- Generated files are written to `FILES_DIR` (default `var/files`), i.e. the app's own disk. On Railway this is wiped on redeploy unless a volume is attached. Moving files to the private Storage Bucket (see brief) is a priority step.
-- `pytest` on `main` (commit 30fe0b2): 6 passed, 7 failed, 1 skipped. Several tests predate the guided-flow change and some need engines available. First job: make the existing tests pass again without changing app behaviour.
-- No GitHub Actions workflow in this repo yet. `encore-engines` already has `engine-check.yml`, `tool/regress.py` and `tool/regress_fingerprints.json`: use these as the golden-drawing check.
+- Railway (Pro plan, project `worthy-creation`, service `web`) deploys `main` automatically. A 5 GB volume is mounted at `/data`; `FILES_DIR=/data/files`, so generated files survive redeploys. Postgres and the web volume have daily, weekly and monthly backups. Moving files to the private Storage Bucket (see brief) is still planned, for the portal and signed links.
+- **Run tests with `python tests/run_all.py`**, never a plain `pytest` over the whole folder: each test file sets up its own temporary database and must run in its own process. The drawing tests need `ENGINES_DIR` pointing at a copy of the approved engines.
+- GitHub Actions (`.github/workflows/tests.yml`) runs all tests on every pull request against the newest approved engine version from `kushal881/encore-approved` (needs the `ENGINES_READ_TOKEN` repository secret).
+- `encore-engines` already has `engine-check.yml`, `tool/regress.py` and `tool/regress_fingerprints.json`: use these as the golden-drawing check.
+- Railway project `fantastic-renewal` is the separate Field Sales App. Don't touch it while working on the desk.
 
 ## Testing
 1. **Unit tests** for rules: stage moves, quotation change matrix, revision raising (qty-only change after issue raises a revision), roles and permissions, portal access list, approval records.
