@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
@@ -452,7 +452,12 @@ def change(ref: str, text: str = Form(...), line: int = Form(0), shown: str = Fo
             if l.remake and values:
                 values, said = None, "This product is an exact remake of a past drawing, so it cannot be changed here."
             used = [m for m in l.marks if shown and m.shown == shown and re.search(r"(?<![\w.])%d(?![\w.])" % m.no, text)]
-            typed = text + (" [Markers: %s]" % "; ".join("%d = %s" % (m.no, m.label or "marked on the drawing") for m in used) if used else "")
+            cache = {}
+            def marker_text(m):
+                where = _mark_part(l, m, cache)
+                note = m.label or "marked on the drawing"
+                return "%d = %s" % (m.no, note if not where or where.split(" (")[0].lower() in note.lower() else "%s, on %s" % (note, where))
+            typed = text + (" [Markers: %s]" % "; ".join(marker_text(m) for m in used) if used else "")
             s.add(db.Change(line_id=l.id, typed=typed, understood=said, values=values or {}, status="asked" if values else "cannot", by=user.name))
         s.commit()
     return RedirectResponse("/orders/%s/work" % ref, status_code=303)
@@ -572,6 +577,27 @@ def drawing_file(did: int, kind: str, download: int = 0, page: int = 0, user=Use
     return FileResponse(path, filename=None if kind == "png" else "PREVIEW-drawing-%d.%s" % (did, kind), content_disposition_type="attachment" if download or kind == "dxf" else "inline")
 
 
+def _part_map(l, key):
+    """The engine's part map for the drawing a marker key points at (sheet 1 only). None when there is none."""
+    m = re.fullmatch(r"([rd])(\d+)", key or "")
+    if not m:
+        return None
+    if m.group(1) == "r":
+        r = next((x for x in l.revisions if x.id == int(m.group(2))), None)
+        return parts.load(r.files.get("parts")) if r else None
+    d = l.drawing
+    return parts.load(d.files.get("parts")) if d and int(d.made_at.timestamp()) == int(m.group(2)) else None
+
+
+def _mark_part(l, m, cache=None):
+    """Plain words for the part a marker sits on, e.g. 'Screen (front view)', or ''."""
+    cache = {} if cache is None else cache
+    if m.shown not in cache:
+        cache[m.shown] = _part_map(l, m.shown)
+    hit = parts.part_at(cache[m.shown], m.x / 100, m.y / 100)
+    return hit["where"] if hit else ""
+
+
 def _view_url(ref, no, rev=0, sheet=1, mode="client"):
     q = [("rev", rev), ("s", sheet if sheet > 1 else 0), ("mode", "prod" if mode == "prod" else "")]
     q = "&".join("%s=%s" % (k, v) for k, v in q if v)
@@ -644,11 +670,15 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     step = viewer.step_of(o.stage, l)
     rev_q = rev if rev else 0
     url = lambda **kw: _view_url(ref, no, kw.get("rev", rev_q), kw.get("s", sheet), kw.get("mode", mode))
+    marks = [m for m in l.marks if m.shown == skey] if mode == "client" else []
+    cache = {}
+    for m in marks:
+        m.part = _mark_part(l, m, cache)
     return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
                               rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
                               prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked, mode), review=review,
-                              marks=[m for m in l.marks if m.shown == skey] if mode == "client" else [], next_no=max([m.no for m in l.marks], default=0) + 1))
+                              marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None))
 
 
 @app.post("/orders/{ref}/view/{no}/ready")
@@ -924,7 +954,9 @@ def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y:
     if l is None or not (0 <= x <= 100 and 0 <= y <= 100) or not re.fullmatch(r"[rd]\d+(s\d+)?", shown):
         raise HTTPException(400, "The marker could not be placed")
     with db.Session() as s:
-        s.add(db.Mark(line_id=l.id, shown=shown, no=max([m.no for m in l.marks], default=0) + 1, x=round(x, 2), y=round(y, 2), label=label.strip()[:200], by=user.name))
+        m = db.Mark(line_id=l.id, shown=shown, no=max([m.no for m in l.marks], default=0) + 1, x=round(x, 2), y=round(y, 2), label=label.strip()[:200], by=user.name)
+        m.label = m.label or _mark_part(l, m)                         # no note typed: the part it sits on
+        s.add(m)
         s.commit()
     return RedirectResponse(_view_url(ref, no, rev, sheet), status_code=303)
 

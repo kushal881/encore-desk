@@ -91,13 +91,16 @@
       {% for m in marks %}
       <div style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #EEECE6;padding-top:6px{% endif %}">
         <span class="pin" style="position:static;transform:none;flex:none">{{ m.no }}</span>
-        <form class="row" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/label" style="flex:1 1 auto;min-width:0;flex-wrap:nowrap">
+        <div style="flex:1 1 auto;min-width:0">
+        {% if m.part %}<div class="small" style="color:#1D4ED8">On: {{ m.part }}</div>{% endif %}
+        <form class="row" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/label" style="flex-wrap:nowrap">
           <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
           <label class="sr" for="ml{{ m.id }}">Note for marker {{ m.no }}</label>
           <input class="sm" type="text" id="ml{{ m.id }}" name="label" value="{{ m.label }}" placeholder="What is this about?">
           <button class="sm">Save</button>
           <button class="sm" formaction="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/remove" aria-label="Remove marker {{ m.no }}">&times;</button>
         </form>
+        </div>
       </div>
       {% else %}<div class="sub small" id="nomarks">None on this sheet. Press <b>+ Add numbered marker</b>, then click on the part you mean. Each marker gets a number.</div>{% endfor %}
       <form class="row" id="newmark" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}" style="display:none;border-top:1px solid #EEECE6;padding-top:8px;flex-wrap:nowrap;align-items:center">
@@ -105,7 +108,7 @@
         <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
         <span class="pin new" style="position:static;transform:none;flex:none">{{ next_no }}</span>
         <label class="sr" for="mlabel">Note for marker {{ next_no }}</label>
-        <input class="sm" type="text" id="mlabel" name="label" placeholder="For example: screen should be L800">
+        <input class="sm" type="text" id="mlabel" name="label" placeholder="{{ 'Leave empty to use the part it sits on' if part_map else 'For example: screen should be L800' }}">
         <button class="sm primary">Save marker</button>
       </form>
     </div>

@@ -171,7 +171,7 @@ def _run(spec, edir):
 def draw(spec, key, edir=None):
     """Runs the drawing engine on a specification. -> dict(pdf, dxf, png) paths, plus pages and checks, under FILES/key, or raises RuntimeError(message).
     edir = the folder of a particular approved version (see dir_for); the version in use when not given."""
-    work, checks = _run(spec, edir or ENGINES_DIR)
+    work, checks = _run(dict(spec, part_map=True), edir or ENGINES_DIR)     # where each part sits, for the markers (engines that know it)
     try:
         out = os.path.join(FILES, key)
         shutil.rmtree(out, ignore_errors=True); os.makedirs(out, exist_ok=True)
@@ -180,6 +180,9 @@ def draw(spec, key, edir=None):
         shutil.copy(pdfs[0], res["pdf"])
         if dxfs:
             res["dxf"] = os.path.join(out, "drawing.dxf"); shutil.copy(dxfs[0], res["dxf"])
+        maps = glob.glob(os.path.join(work, "*.parts.json"))
+        if maps:
+            res["parts"] = os.path.join(out, "parts.json"); shutil.copy(maps[0], res["parts"])
         import pymupdf
         res["png"] = os.path.join(out, "preview.png")
         with pymupdf.open(res["pdf"]) as doc:
