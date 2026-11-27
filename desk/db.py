@@ -1,7 +1,7 @@
 """The desk's own database. Orders are copied in from their source with our own ids, so the records stand without Odoo.
 SQLite when run locally, Postgres on Railway (DATABASE_URL)."""
 import os, datetime
-from sqlalchemy import create_engine, ForeignKey, String, Text, Integer, Float, DateTime, JSON, UniqueConstraint, Boolean
+from sqlalchemy import create_engine, inspect, text, literal, ForeignKey, String, Text, Integer, Float, DateTime, JSON, UniqueConstraint, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 URL = os.environ.get("DATABASE_URL", "sqlite:///var/desk.sqlite3")
@@ -284,5 +284,63 @@ class AiTurn(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+def _default_sql(col, dialect):
+    """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
+    d = col.default
+    if d is None:
+        return None
+    if d.is_callable:
+        fn = getattr(d.arg, "__wrapped__", d.arg)
+        name = getattr(fn, "__name__", "")
+        if isinstance(col.type, DateTime):                           # existing rows: the time of the upgrade
+            return "CURRENT_TIMESTAMP" if dialect.name == "postgresql" else "'%s'" % now().strftime("%Y-%m-%d %H:%M:%S")
+        if name in ("dict", "list"):
+            return "'{}'" if name == "dict" else "'[]'"
+        return None
+    v = d.arg
+    if isinstance(v, (dict, list)):
+        import json
+        return "'%s'" % json.dumps(v).replace("'", "''")
+    return str(literal(v).compile(dialect=dialect, compile_kwargs={"literal_binds": True}))
+
+
+def add_column_sql(table, col, dialect):
+    """ALTER TABLE ... ADD COLUMN for one model column that the database does not have yet. Only ever adds: existing rows
+    take the column's default. Foreign keys and unique rules are not added to an existing table (the column itself is)."""
+    q = dialect.identifier_preparer.quote
+    sql = "ALTER TABLE %s ADD COLUMN %s%s %s" % (q(table.name), "IF NOT EXISTS " if dialect.name == "postgresql" else "",
+                                                 q(col.name), col.type.compile(dialect=dialect))
+    default = _default_sql(col, dialect)
+    if default is not None:
+        sql += " DEFAULT %s" % default
+        if not col.nullable:
+            sql += " NOT NULL"
+    return sql
+
+
+def upgrade(eng=None):
+    """Brings tables made by an earlier version of the desk up to date: adds every column the models have and the table
+    lacks. Never drops, renames or changes a column, and never touches the rows' existing values. -> ["table.column", ...]"""
+    eng = eng or engine
+    insp = inspect(eng)
+    added = []
+    with eng.begin() as con:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue                                              # create_all makes new tables whole
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                if col.primary_key:
+                    raise RuntimeError("Table %s has no primary key column %s; it cannot be repaired automatically" % (table.name, col.name))
+                con.execute(text(add_column_sql(table, col, eng.dialect)))
+                added.append("%s.%s" % (table.name, col.name))
+    for a in added:
+        print("Database: added column %s" % a, flush=True)
+    return added
+
+
 def init():
     Base.metadata.create_all(engine)
+    upgrade(engine)
