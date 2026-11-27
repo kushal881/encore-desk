@@ -12,6 +12,7 @@ class SourceLine:
     qty: float = 1
     unit: str = ""
     product_ref: str = ""       # the product's id in the source, used to fetch its photograph
+    no_drawing: str = ""        # why this line gets no drawing (see desk/nodrawing.py); "" = it is drawn
 
 
 @dataclass

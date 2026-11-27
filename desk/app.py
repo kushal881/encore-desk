@@ -101,7 +101,7 @@ def _fetch_photos(s, src):
     if not hasattr(source, "product_image"):
         return
     for l in src.lines:
-        if not l.product_ref or s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name))):
+        if l.no_drawing or not l.product_ref or s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name))):
             continue
         try:
             data = source.product_image(l.product_ref)
@@ -126,16 +126,21 @@ def load(ref):
             o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery)
             total = 0
             for l in src.lines:
+                if l.no_drawing:                                   # bought-out, service, installation, delivery: listed, never drawn
+                    o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, reason=l.no_drawing))
+                    continue
                 line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty)
                 for q in read_line(l.name, l.description)["questions"]:
                     line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"])); total += 1
                 o.lines.append(line)
-            n = len(src.lines)
-            o.messages.append(db.Message(who="desk", text="I have read the %d product%s of this order. %s" % (n, "" if n == 1 else "s",
+            n, skipped = len(o.lines), len(o.not_drawn)
+            o.messages.append(db.Message(who="desk", text="I have read the %d product%s to draw in this order%s. %s" % (n, "" if n == 1 else "s",
+                              " (%d more line%s need%s no drawing)" % (skipped, "" if skipped == 1 else "s", "s" if skipped == 1 else "") if skipped else "",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
             _fetch_photos(s, src)
         s.refresh(o)
+        _ = o.not_drawn, o.added
         for l in o.lines:
             l.read = read_line(l.name, l.description)
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"
@@ -338,7 +343,7 @@ def project(request: Request, ref: str, user=User):
         todo.append(("%d engine request%s for this order not built yet" % (er, "" if er == 1 else "s"), "See", "/engine-requests"))
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
@@ -803,6 +808,77 @@ def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev
             m.label = label.strip()[:200]
         s.commit()
     return RedirectResponse("/orders/%s/view/%d%s" % (ref, no, "?rev=%d" % rev if rev else ""), status_code=303)
+
+
+# ---- choosing which quotation lines are drawn ------------------------------------------------------------------------
+REMOVE_REASONS = ("Bought out after all", "Not needed by client", "Duplicate line", "Other")
+
+
+def _next_no(s, order_id):
+    """The next product number: after every number used so far, including removed ones (numbers are never reused)."""
+    used = [l.no for l in s.scalars(select(db.OrderLine).where(db.OrderLine.order_id == order_id))]
+    used += [x.no for x in s.scalars(select(db.NoDrawingLine).where(db.NoDrawingLine.order_id == order_id))]
+    return max(used + [0]) + 1
+
+
+def _new_line(s, o_id, no, name, description, qty):
+    line = db.OrderLine(order_id=o_id, no=no, name=name, description=description, qty=qty)
+    for q in read_line(name, description)["questions"]:
+        line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"]))
+    s.add(line)
+    return line
+
+
+@app.post("/orders/{ref}/lines/{no}/remove")
+def remove_line(ref: str, no: int, reason: str = Form(""), user=User):
+    """Takes one product off the drawings. It moves to "No drawing needed"; nothing is deleted and it can be added back.
+    A product whose drawing was issued is not removed here: that is a quotation change (cancelled stamp, reissue)."""
+    reason = reason if reason in REMOVE_REASONS else "Other"
+    with db.Session() as s:
+        o = s.scalar(select(db.Order).where(db.Order.source_ref == ref))
+        l = o and next((x for x in o.lines if x.no == no), None)
+        if l is None:
+            raise HTTPException(404, "Product %d was not found" % no)
+        if l.revisions:
+            raise HTTPException(400, "Product %d has an issued drawing. Removing it after issue is a quotation change: it gets a Cancelled stamp and the set is reissued." % no)
+        o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, description=l.description, reason="Removed: " + reason, no=l.no, by=user.name))
+        o.messages.append(db.Message(who="desk", text="Product %d (%s) was removed from the drawings by %s. Reason: %s. It can be added back." % (no, l.name.split("(")[0].strip(), user.name, reason)))
+        s.delete(l); s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/not-drawn/{nid}/add")
+def add_back(ref: str, nid: int, user=User):
+    """Puts a line from "No drawing needed" on the drawings. A removed product gets its old number back."""
+    with db.Session() as s:
+        o = s.scalar(select(db.Order).where(db.Order.source_ref == ref))
+        x = o and next((y for y in o.not_drawn if y.id == nid), None)
+        if x is None:
+            raise HTTPException(404, "That line was not found")
+        no = x.no or _next_no(s, o.id)
+        name, description, qty = x.name, x.description, x.qty
+        s.delete(x); s.flush()
+        _new_line(s, o.id, no, name, description, qty)
+        s.add(db.Message(order_id=o.id, who="desk", text="%s was added to the drawings as Product %d by %s." % (name.split("(")[0].strip(), no, user.name)))
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/lines/add")
+def add_line(ref: str, name: str = Form(""), qty: float = Form(1), details: str = Form(""), user=User):
+    """Adds a product that is not in the quotation. It gets the next number, and the salesperson is told to update the quotation."""
+    name = " ".join(name.split())[:200]
+    if not name or qty <= 0:
+        raise HTTPException(400, "Give the product name and a quantity above 0")
+    load(ref)
+    with db.Session() as s:
+        o = s.scalar(select(db.Order).where(db.Order.source_ref == ref))
+        no = _next_no(s, o.id)
+        _new_line(s, o.id, no, name, details.strip(), qty)
+        s.add(db.AddedLine(order_id=o.id, no=no, name=name, by=user.name))
+        s.add(db.Message(order_id=o.id, who="desk", text="Product %d (%s, qty %g) was added by %s. It is not in the quotation: the salesperson must add it to the quotation." % (no, name, qty, user.name)))
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
 @app.post("/orders/{ref}/remove")

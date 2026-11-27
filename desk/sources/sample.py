@@ -1,6 +1,7 @@
 """Orders read from files in samples/. Used for building and testing before Odoo is connected."""
 import json, os
 from .base import SourceOrder, SourceLine
+from ..nodrawing import classify
 
 HERE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "samples")
 
@@ -13,7 +14,20 @@ class SampleSource:
         d = json.load(open(path, encoding="utf-8"))
         return SourceOrder(source=d["source"], ref=d["ref"], client_name=d["client"]["name"], client_contact=d["client"].get("contact", ""),
                            delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""),
-                           lines=[SourceLine(**l) for l in d["lines"]])
+                           lines=self._lines(d["lines"]))
+
+    @staticmethod
+    def _lines(rows):
+        """Same rule as Odoo: lines that get no drawing are kept apart and not numbered. A sample line may give "type" and "routes"."""
+        out, no = [], 0
+        for r in rows:
+            r = dict(r)
+            why = classify(r.get("name", ""), r.pop("type", ""), r.pop("routes", ()))
+            r.pop("no", None)
+            if not why:
+                no += 1
+            out.append(SourceLine(no=0 if why else no, no_drawing=why, **r))
+        return out
 
     def list_refs(self):
         return sorted(f[:-5] for f in os.listdir(HERE) if f.endswith(".json"))

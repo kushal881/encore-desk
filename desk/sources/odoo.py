@@ -3,6 +3,7 @@ Settings (on the server): ODOO_URL, ODOO_DB, ODOO_USER (the login e-mail of the 
 Uses Odoo's newer JSON-2 interface when the database has it (Odoo 19, Online 18.4 onwards) and the older one otherwise."""
 import os, re, base64, time
 import httpx
+from ..nodrawing import classify
 from .base import SourceOrder, SourceLine
 
 
@@ -87,16 +88,44 @@ class OdooSource:
             delivery = [x for x in (first, second.strip(", ")) if x]
         lines, no = [], 0
         raw = self.call("sale.order.line", "read", ids=o["order_line"], fields=["sequence", "name", "product_id", "product_uom_qty", "display_type"]) if o["order_line"] else []
+        kinds = self._product_kinds(sorted({l["product_id"][0] for l in raw if l.get("product_id") and not l.get("display_type")}))
         for l in sorted(raw, key=lambda x: (x.get("sequence") or 0, x["id"])):
             if l.get("display_type") or not l.get("product_id"):
                 continue                                           # section titles and notes are not products
-            no += 1
             text = (l.get("name") or "").strip()
             text = re.sub(r"^\[[^\]]+\]\s*", "", text)             # an internal reference in front of the name
             head, _, rest = text.partition("\n")
-            lines.append(SourceLine(no=no, name=head.strip() or l["product_id"][1], description=rest.strip(), qty=l.get("product_uom_qty") or 1, product_ref=str(l["product_id"][0])))
+            name = head.strip() or l["product_id"][1]
+            ptype, routes = kinds.get(l["product_id"][0], ("", ()))
+            why = classify(name, ptype, routes)
+            if not why:
+                no += 1                                            # only products that get a drawing are numbered Product 1, 2, ...
+            lines.append(SourceLine(no=0 if why else no, name=name, description=rest.strip(), qty=l.get("product_uom_qty") or 1, product_ref=str(l["product_id"][0]), no_drawing=why))
         return SourceOrder(source="odoo", ref=o["name"], client_name=company, client_contact=contact, delivery=delivery,
                            salesperson=o["user_id"][1] if o.get("user_id") else "", job_order="", date=str(o.get("date_order") or "")[:10], lines=lines)
+
+    def _product_kinds(self, ids):
+        """-> {product id: (product type, [route names])}. Routes need Odoo's Inventory; without them only the type is used."""
+        if not ids:
+            return {}
+        out = {}
+        try:
+            rows = self.call("product.product", "read", ids=ids, fields=["type", "route_ids"])
+        except OdooError:
+            rows = self.call("product.product", "read", ids=ids, fields=["type"])
+        rids = sorted({r for x in rows for r in (x.get("route_ids") or [])})
+        names = {}
+        for model in ("stock.route", "stock.location.route"):      # the model was renamed in newer Odoo
+            if not rids:
+                break
+            try:
+                names = {r["id"]: r["name"] for r in self.call(model, "read", ids=rids, fields=["name"])}
+                break
+            except OdooError:
+                continue
+        for x in rows:
+            out[x["id"]] = (x.get("type") or "", [names.get(r, "") for r in (x.get("route_ids") or [])])
+        return out
 
     def open_quotations(self, limit=20):
         """Quotations whose opportunity is still open: not in a won stage and not lost. A quotation with no opportunity is
