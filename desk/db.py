@@ -262,5 +262,27 @@ class ProdPreview(Base):
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AiTurn(Base):
+    """One request to the AI change assistant on one product: what was typed, what it answered or proposed, and for a
+    proposed change the trial drawing the engine made from it (never shown as the drawing until someone accepts it)."""
+    __tablename__ = "ai_turn"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    shown: Mapped[str] = mapped_column(String(40), default="")          # the drawing it was asked on (d<time> / r<id>)
+    typed: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(20))                       # change | answer | cannot
+    said: Mapped[str] = mapped_column(Text, default="")                  # the change in plain words
+    answer: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JSON, default=dict)             # what it sets in the product file
+    status: Mapped[str] = mapped_column(String(20), default="")         # answer | cannot | trial | failed | accepted | undone | withdrawn
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)               # the trial specification
+    files: Mapped[dict] = mapped_column(JSON, default=dict)              # the trial drawing (pdf, png, parts, checks)
+    error: Mapped[str] = mapped_column(Text, default="")                 # why the engine refused the trial
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    change_id: Mapped[int] = mapped_column(Integer, default=0)           # the confirmed change made on Accept
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def init():
     Base.metadata.create_all(engine)

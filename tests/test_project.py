@@ -1,5 +1,5 @@
 """The project page, numbered markers on a drawing, and the dashboard numbers that open their drawings. Needs ENGINES_DIR."""
-import os, sys, tempfile
+import os, sys, re, tempfile
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "t.sqlite3")
 os.environ["FILES_DIR"] = tempfile.mkdtemp()
 os.environ["DESK_DEV_LOGIN"] = "1"
@@ -37,12 +37,12 @@ def test_project():
     assert c.post(A + "/marks/2", data={"shown": shown, "x": "140", "y": "10"}).status_code == 400
     c.post(A + "/marks/2", data={"shown": shown, "x": "31.5", "y": "42", "label": "left shutter"})
     v = c.post(A + "/marks/2", data={"shown": shown, "x": "60", "y": "20", "label": ""}).text
-    assert v.count('class="pin" style="left:') == 2 and "left shutter" in v and "at 1, make it 1500 long" in v
+    assert v.count('class="pin" style="left:') == 2 and "left shutter" in v and "Change this drawing" in v and '<option value="1">1</option>' in v
     with db.Session() as s:
         m2 = s.query(db.Mark).filter_by(no=2).one().id
     c.post("%s/marks/2/%d/label" % (A, m2), data={"label": "top"})
     h = c.post(A + "/change", data={"text": "At 1 and 2 make it 1500 long", "line": "2", "shown": shown}).text
-    assert "At 1 and 2 make it 1500 long [Markers: 1 = left shutter; 2 = top]" in h and "length 1500 mm" in h and "see the markers on the drawing" in h
+    assert re.search(r"At 1 and 2 make it 1500 long \[Markers: 1 = left shutter[^;\]]*; 2 = top[^\]]*\]", h) and "length 1500 mm" in h and "see the markers on the drawing" in h
     v = c.post("%s/marks/2/%d/remove" % (A, m2)).text
     assert v.count('class="pin" style="left:') == 1
     with db.Session() as s:

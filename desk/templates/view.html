@@ -53,6 +53,18 @@
     {% elif mode == 'prod' and prod.kind == 'real' %}<div class="small" style="padding:8px 18px;background:#E3F1EE;color:#0E6B5C">Production drawing made from {{ title }} · {{ prod.text }}. No client details.</div>{% endif %}
     <div id="hint" class="small" style="display:none;padding:8px 18px;background:#E6EDFB;color:#1D4ED8">Click on the drawing where marker {{ next_no }} should go. Then write what it is about on the right and save.</div>
     {% if img %}
+    {% if cmp %}
+    <div id="compare" style="padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600">Compare: {{ cmp.said }}</div><a href="{{ url(s=1) }}#panel">Close compare</a></div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px">
+        <figure style="flex:1 1 300px;margin:0"><figcaption class="small sub">Before · current</figcaption><img src="{{ src }}/big?page=0&v={{ sh.stamp }}" alt="Before: current drawing" style="width:100%;background:#fff;border:1px solid #D6D3CA"></figure>
+        <figure style="flex:1 1 300px;margin:0;position:relative"><figcaption class="small sub">After · proposed{% if box %}, changed area outlined{% endif %}</figcaption>
+          <div style="position:relative"><img src="/ai/{{ cmp.id }}/big?page=0" alt="After: proposed drawing" style="width:100%;display:block;background:#fff;border:1px solid #D6D3CA">
+          {% if box %}<span aria-hidden="true" style="position:absolute;left:{{ box.x }}%;top:{{ box.y }}%;width:{{ box.w }}%;height:{{ box.h }}%;border:3px solid #1D4ED8;border-radius:6px;background:rgba(29,78,216,.08)"></span>{% endif %}</div></figure>
+      </div>
+      {% if not box %}<div class="small sub">No visible difference on sheet 1.</div>{% endif %}
+    </div>
+    {% endif %}
     <div id="sheet">
       <div id="wrap" style="position:relative;width:100%">
         <img id="img" src="{{ img }}" alt="{{ 'Production' if mode == 'prod' else 'Client' }} drawing for product {{ l.no }}, {{ title }}, sheet {{ sheet }} of {{ pages }}" style="display:block;width:100%;background:#fff" draggable="false">
@@ -112,15 +124,46 @@
         <button class="sm primary">Save marker</button>
       </form>
     </div>
-    {% if not l.remake %}
-    <form class="card" method="post" action="/orders/{{ o.source_ref }}/change">
-      <label for="chg" style="font-weight:600">Ask for a change to this drawing</label>
-      <input type="hidden" name="line" value="{{ l.no }}"><input type="hidden" name="shown" value="{{ key }}">
-      <input type="text" id="chg" name="text" required placeholder="{{ 'For example: at ' ~ marks[0].no ~ ', make it 1500 long' if marks else 'For example: make it 1500 long' }}">
-      <button class="primary">Send</button>
-      <div class="sub small">{% if marks %}Use the marker numbers to say where. {% endif %}The desk says back how it understood the change. Nothing is redrawn until you confirm.</div>
-    </form>
-    {% endif %}
+    <div class="card" id="panel" style="border-color:#1D4ED8">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600">Change this drawing</div><span class="tag info">AI assistant</span></div>
+      {% if panel %}<div class="small" style="background:#F1EFE9;padding:8px 10px;border-radius:8px">{{ panel }}</div>
+      {% else %}
+      <div class="sub small">{% if l.revisions %}Issued as Rev {{ l.last_rev.rev }} · an accepted change makes a new revision when issued{% else %}Not issued yet · changes keep Rev A{% endif %}</div>
+      {% for tr in turns %}
+      <div style="border-top:1px solid #EEECE6;padding-top:8px;display:flex;flex-direction:column;gap:6px">
+        <div class="small" style="align-self:flex-end;background:#F1EFE9;padding:6px 10px;border-radius:10px;max-width:90%">{{ tr.typed }}</div>
+        {% if tr.kind == 'answer' or tr.kind == 'cannot' %}
+        <div class="small" style="background:#E6EDFB;color:#17191C;padding:6px 10px;border-radius:10px;max-width:95%">{{ tr.answer }}</div>
+        {% else %}
+        <div class="small" style="border:1px solid #D6D3CA;padding:8px 10px;border-radius:10px">
+          <div class="label">Proposed change · product file</div>
+          <div style="font-weight:600">{{ tr.said }}</div>
+          {% if tr.answer %}<div class="sub">{{ tr.answer }}</div>{% endif %}
+          {% if tr.status == 'failed' %}<div style="color:#B91C1C">The engine refused it: {{ tr.error }}</div>
+          {% elif tr.status in ('trial', 'accepted') %}<div class="sub">Engine redrew it · {% if tr.rows|selectattr('state', 'ne', 'pass')|list %}{% for c in tr.rows %}{{ c.title|lower }}: {{ c.text|lower }}{{ ', ' if not loop.last }}{% endfor %}{% else %}all automatic checks pass{% endif %}</div>{% endif %}
+          {% if tr.status == 'trial' %}
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            {% if tr.can_accept %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/accept"{% if l.revisions %} data-confirm="This drawing is issued as Rev {{ l.last_rev.rev }}.\nAccepting changes it; issuing it again makes a new revision." data-yes="Yes, accept"{% endif %}><button class="sm primary">Accept</button></form>
+            {% elif tr.shown != base_key %}<span class="sub">The drawing changed since; ask again.</span>{% endif %}
+            <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form>
+            <a class="sm" style="align-self:center" href="{{ url(s=1) }}{{ '&' if '?' in url(s=1) else '?' }}compare={{ tr.id }}#compare">Compare</a>
+          </div>
+          {% elif tr.status == 'accepted' %}<div><span class="tag ok">Accepted</span> <form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form></div>
+          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai" style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EEECE6;padding-top:8px">
+        <div style="display:flex;gap:6px;align-items:center"><label class="small" for="aimk">Marker</label>
+          <select id="aimk" name="marker" class="sm"><option value="0">None</option>{% for m in marks %}<option value="{{ m.no }}">{{ m.no }}</option>{% endfor %}</select></div>
+        <label class="sr" for="aitext">Ask or change</label>
+        <textarea id="aitext" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px" placeholder="Ask or change, for example: make the screen 800 wide"></textarea>
+        <button class="primary">Send</button>
+      </form>
+      <div class="sub small">The AI only changes values in the product file. The locked engine does all drawing. After client approval this panel is off on client drawings.{% if not ai_on %} The AI is not switched on yet: size, shelf, hinge, screen and raceway changes work; questions need the API key.{% endif %}</div>
+      {% endif %}
+    </div>
     {% endif %}
     <div class="card" id="next" style="border-color:{{ '#B91C1C' if nxt.kind in ('blocked', 'failed') else '#9A4508' if nxt.kind in ('confirm', 'redraw') else '#0E6B5C' }}">
       <div class="label">Next step</div>

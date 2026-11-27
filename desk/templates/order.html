@@ -88,6 +88,7 @@
           <form method="post" action="/orders/{{ o.source_ref }}/change/{{ c.id }}/no"><button>No</button></form>
         </div>
         {% elif c.status == 'confirmed' %} <span class="tag ok">Applied</span>
+        {% elif c.status == 'withdrawn' %} <span class="tag dim">Undone</span>
         {% else %} <span class="tag dim">Not applied</span>{% endif %}
       </div>
       {% endif %}

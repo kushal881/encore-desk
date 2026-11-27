@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .sources.sample import SampleSource
@@ -393,15 +393,18 @@ def answer(ref: str, qid: int, value: str = Form(...), user=User):
     return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
-def make_spec(s, o, l, issue=None, edir=None):
-    """The specification for one product: an exact copy of a past drawing when it is a remake, otherwise built from the order."""
+def make_spec(s, o, l, issue=None, edir=None, extra=None):
+    """The specification for one product: an exact copy of a past drawing when it is a remake, otherwise built from the order.
+    extra = values not confirmed yet (an assistant's trial). Values named model.* go straight into the product file's model."""
     if l.remake:
         past = s.get(db.Revision, l.remake)
         if past is None:
             raise spec.CannotDraw("The past drawing chosen for this remake was not found.")
         return spec.remake(o, l, past.spec, l.no, issue=issue)
-    return spec.build(edir or engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=l.confirmed,
-                      finish=lambda text, kind: finishes.lookup(s, text, kind), issue=issue)
+    values = dict(l.confirmed, **(extra or {}))
+    sp = spec.build(edir or engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=values,
+                    finish=lambda text, kind: finishes.lookup(s, text, kind), issue=issue)
+    return assistant.apply(sp, {k: v for k, v in values.items() if k.startswith("model.")})
 
 
 def _draw_lines(o, s, who, only=None):
@@ -640,7 +643,7 @@ def _production_view(l, sh):
 
 
 @app.get("/orders/{ref}/view/{no}", response_class=HTMLResponse)
-def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: str = "client", user=User):
+def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: str = "client", compare: int = 0, user=User):
     """The drawing viewer: one product's drawing, every sheet, client or production drawing, numbered markers,
     the automatic checks and the one next step."""
     o = load(ref)
@@ -674,11 +677,179 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     cache = {}
     for m in marks:
         m.part = _mark_part(l, m, cache)
+    with db.Session() as ss:
+        turns = ss.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id.desc()).limit(12)).all()[::-1]
+    for tr in turns:
+        tr.rows = viewer.check_rows(tr.files.get("checks")) if tr.status in ("trial", "failed") else []
+        tr.can_accept = tr.status == "trial" and viewer.all_pass(tr.files.get("checks")) and tr.shown == sh["key"]
+    cmp_ = next((tr for tr in turns if tr.id == compare and tr.files.get("pdf")), None)
+    box = _changed_box(sh, cmp_) if cmp_ else None
     return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
+                              panel=_panel_state(o, l, sh, mode), turns=turns, cmp=cmp_, box=box, ai_on=assistant.configured(),
                               rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
                               prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked, mode), review=review,
                               marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None))
+
+
+# ---- the AI change panel ---------------------------------------------------------------------------------------------
+def _panel_state(o, l, sh, mode):
+    """Whether the change panel is open on the drawing shown. -> "" when it is, otherwise the reason in plain words."""
+    if mode == "prod":
+        return "Construction changes are made on the production screen."
+    if l.remake:
+        return "This product is an exact remake of a past drawing, so it is not changed here."
+    if sh["r"] is not None and not l.issued_current and l.drawing and l.drawing.status == "preview":
+        return "This is an older issued revision. Open the current drawing to change it."
+    if l.revisions and o.stage in ("approved", "production", "completed") and not o.approval_pending:
+        return "The client has approved this drawing, so it is locked. A change now needs Kushal's permission (a change after approval)."
+    return ""
+
+
+def _changed_box(sh, tr):
+    """Where the trial differs from the drawing shown: per cent box on the sheet, or None. Compares sheet 1 pictures."""
+    try:
+        from PIL import Image, ImageChops
+        a = Image.open(_big(sh["pdf"], 0)).convert("L")
+        b = Image.open(_big(tr.files["pdf"], 0)).convert("L")
+        if a.size != b.size:
+            return None
+        bb = ImageChops.difference(a, b).point(lambda v: 255 if v > 40 else 0).getbbox()
+    except Exception:
+        return None
+    if not bb:
+        return None
+    W, H = a.size
+    pad = 0.01
+    return dict(x=max(0, bb[0] / W - pad) * 100, y=max(0, bb[1] / H - pad) * 100, w=min(1, (bb[2] - bb[0]) / W + 2 * pad) * 100, h=min(1, (bb[3] - bb[1]) / H + 2 * pad) * 100)
+
+
+@app.post("/orders/{ref}/view/{no}/ai")
+def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user=User):
+    """The user asks the assistant about this product. A change is drawn as a trial; the drawing stays as it is until
+    someone presses Accept."""
+    text = text.strip()
+    if not text:
+        raise HTTPException(400, "Type the change or the question first")
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None or not (l.drawing or l.revisions):
+        raise HTTPException(404)
+    sh = _shown(l)
+    why = _panel_state(o, l, sh, "client")
+    if why or sh["failed"]:
+        raise HTTPException(400, why or "This drawing could not be made. Ask for an engine addition in Questions and changes.")
+    cache, marks = {}, []
+    for m in l.marks:
+        if m.shown.split("s")[0] == sh["key"]:
+            where = _mark_part(l, m, cache)
+            marks.append("%d = %s%s" % (m.no, m.label or "marked on the drawing", ", on " + where if where and where.split(" (")[0].lower() not in (m.label or "").lower() else ""))
+    if marker:
+        text = "At marker %d: %s" % (marker, text)
+    current = (sh["r"].spec if sh["r"] else l.drawing.spec) or {}
+    edir, ver = engines.dir_for(l.engine_for)
+    with db.Session() as s:
+        history = [(t.typed, t.said or t.answer) for t in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
+    product = dict(product="Product %d" % l.no, name=l.name.split("(")[0].strip(), family=l.read["family"], qty=l.qty,
+                   issued=("Rev %s" % l.last_rev.rev) if l.last_rev else "not issued")
+    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history)
+    tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=text, kind=reply["kind"], said=reply["said"], values=reply["values"], by=user.name,
+                   answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""))
+    tr.status = reply["kind"] if reply["kind"] != "change" else "trial"
+    if reply["kind"] == "change":
+        with db.Session() as s:
+            try:
+                tr.spec = make_spec(s, o, l, edir=edir, extra=reply["values"])
+                s.add(tr); s.commit()                                         # an id for the trial's folder
+                tr.files = engines.draw(tr.spec, "%d/line%d/trial/%d" % (o.id, l.no, tr.id), edir)
+                tr.engine_version = ver
+            except (spec.CannotDraw, RuntimeError) as e:
+                tr.status, tr.error = "failed", str(e)
+                tr.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
+            s.merge(tr); s.commit()
+    else:
+        with db.Session() as s:
+            s.add(tr); s.commit()
+    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+
+
+def _turn(o, no, tid):
+    l = next((x for x in o.lines if x.no == no), None)
+    with db.Session() as s:
+        tr = s.get(db.AiTurn, tid)
+    if l is None or tr is None or tr.line_id != l.id:
+        raise HTTPException(404)
+    return l, tr
+
+
+@app.post("/orders/{ref}/view/{no}/ai/{tid}/accept")
+def ai_accept(ref: str, no: int, tid: int, user=User):
+    """Accept a trial: it becomes this product's drawing and the change is recorded as confirmed. On an issued drawing,
+    the next issue makes a new revision (the usual rule)."""
+    o = load(ref)
+    l, tr = _turn(o, no, tid)
+    sh = _shown(l)
+    if tr.status != "trial":
+        raise HTTPException(400, "This proposal is not waiting for a decision")
+    if _panel_state(o, l, sh, "client"):
+        raise HTTPException(400, _panel_state(o, l, sh, "client"))
+    if tr.shown != sh["key"]:
+        raise HTTPException(400, "The drawing has changed since this was proposed. Ask again.")
+    if not viewer.all_pass(tr.files.get("checks")):
+        raise HTTPException(400, "The trial drawing has not passed every automatic check, so it cannot be accepted")
+    with db.Session() as s:
+        c = db.Change(line_id=l.id, typed=tr.typed, understood=tr.said or chg.compact(tr.values), values=tr.values, status="confirmed", by=user.name)
+        s.add(c); s.flush()
+        line = s.get(db.OrderLine, l.id)
+        d = line.drawing or db.Drawing()
+        line.drawing = d
+        d.status, d.error, d.spec, d.files, d.engine_version, d.made_by, d.made_at = "preview", "", tr.spec, tr.files, tr.engine_version, user.name, db.now()
+        t_ = s.get(db.AiTurn, tr.id)
+        t_.status, t_.change_id = "accepted", c.id
+        s.add(db.Message(order_id=o.id, who="desk", text="Product %d: %s. Accepted by %s from the change panel%s." % (
+            l.no, tr.said or chg.compact(tr.values), user.name, "; issuing it will make a new revision" if l.revisions else "")))
+        s.commit()
+    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+
+
+@app.post("/orders/{ref}/view/{no}/ai/{tid}/undo")
+def ai_undo(ref: str, no: int, tid: int, user=User):
+    """Undo: drop a trial, or take back an accepted change that has not been issued yet (the product is drawn again without it)."""
+    o = load(ref)
+    l, tr = _turn(o, no, tid)
+    if tr.status == "trial":
+        with db.Session() as s:
+            s.get(db.AiTurn, tr.id).status = "undone"; s.commit()
+        return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+    if tr.status != "accepted":
+        raise HTTPException(400, "There is nothing to undo here")
+    c = next((x for x in l.changes if x.id == tr.change_id), None)
+    if c is None or (l.last_rev and c.at.replace(tzinfo=None) < l.last_rev.issued_at.replace(tzinfo=None)) or l.issued_current:
+        raise HTTPException(400, "This change has been issued already. A further change makes a new revision instead.")
+    if _panel_state(o, l, _shown(l), "client"):
+        raise HTTPException(400, _panel_state(o, l, _shown(l), "client"))
+    with db.Session() as s:
+        s.get(db.Change, c.id).status = "withdrawn"
+        s.get(db.AiTurn, tr.id).status = "withdrawn"
+        s.add(db.Message(order_id=o.id, who="desk", text="Product %d: %s. Undone by %s." % (l.no, tr.said or chg.compact(tr.values), user.name)))
+        s.commit()
+    o = load(ref)
+    with db.Session() as s:
+        _draw_lines(o, s, user.name, only={no})
+    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+
+
+@app.get("/ai/{tid}/{kind}")
+def ai_file(tid: int, kind: str, page: int = 0, user=User):
+    """The trial drawing of a proposal (picture or PDF)."""
+    with db.Session() as s:
+        tr = s.get(db.AiTurn, tid)
+    path = (tr.files or {}).get("pdf") if tr else None
+    if kind not in ("big", "pdf") or not path or not os.path.exists(path):
+        raise HTTPException(404)
+    if kind == "big":
+        return FileResponse(_big(path, page))
+    return FileResponse(path, filename="TRIAL-not-for-issue.pdf", content_disposition_type="inline")
 
 
 @app.post("/orders/{ref}/view/{no}/ready")

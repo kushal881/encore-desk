@@ -1,7 +1,7 @@
 """Turns a typed change request into values for the specification, and says back how it was understood.
 Rule-based for now, for the common requests. Anything it cannot read is refused plainly, never guessed;
 Claude takes over this reading later, behind the same function."""
-import re
+import re, json
 
 FAMILY_WORDS = {"workstation": ("workstation", "table", "desk"), "storage": ("storage", "cabinet"), "pedestal": ("pedestal",)}
 
@@ -52,4 +52,4 @@ def understand(text, family):
 def compact(values):
     """A short form of a change for the revision strip on the sheet, which holds about 40 characters."""
     names = dict(L="L", D="D", H="H", hinge="hinge", shelves="shelves", shutters="shutters", screen_w="screen W", screen_h="screen H", raceway_L="raceway", use_engine="engines")
-    return ", ".join("%s %s" % (names.get(k, k), v) for k, v in values.items())
+    return ", ".join("%s %s" % (names.get(k, k[6:] if k.startswith("model.") else k), json.dumps(v) if isinstance(v, (dict, list)) else v) for k, v in values.items())
