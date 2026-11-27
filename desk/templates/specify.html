@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Specify product {{ l.no }} · {{ o.source_ref }}{% endblock %}
+{% block crumb %}{% endblock %}
+{% block body %}
+{% include "_ordernav.html" %}
+<style>
+.plist{display:flex;flex-direction:column;gap:4px}
+.plist a{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;padding:0 12px;border-radius:10px;text-decoration:none;color:#17191C;border:1px solid transparent}
+.plist a.now{border-color:#0E6B5C;background:#E3F1EE;font-weight:600}
+.arow{display:flex;gap:8px;align-items:center}
+.arow input{min-height:44px;box-sizing:border-box;border:1px solid #D6D3CA;border-radius:10px;padding:0 12px;font:inherit}
+.arow input[name=area]{flex:1 1 auto;min-width:0}.arow input[name=qty]{width:90px}
+.sbtn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font-weight:600;text-decoration:none}
+.sbtn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.kv{display:grid;grid-template-columns:minmax(120px,40%) 1fr;gap:4px 12px;font-size:14px}
+.kv div:nth-child(odd){color:#5B5F66}
+</style>
+<div class="cols">
+  <div class="right" style="max-width:260px;flex:1 1 220px">
+    <div class="card">
+      <div class="label">{{ o.client.name }} · Step 2 of 8 · Specify</div>
+      <div style="font-weight:600">Product {{ pos }} of {{ o.lines|length }}</div>
+      <div class="sub small">{{ done }} of {{ o.lines|length }} specified</div>
+      <nav class="plist" aria-label="Products">
+        {% for x in o.lines %}<a class="{{ 'now' if x.no == l.no }}" href="/orders/{{ o.source_ref }}/specify/{{ x.no }}" {% if x.no == l.no %}aria-current="page"{% endif %}>
+          <span>Product {{ x.no }}</span>
+          {% if x.no == l.no %}<span class="tag info">Now</span>{% elif statuses[x.no] == 'done' %}<span class="tag ok">Done</span>{% else %}<span class="tag ask">To do</span>{% endif %}</a>{% endfor %}
+      </nav>
+    </div>
+  </div>
+  <div class="main" style="flex:999 1 420px;padding:18px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      {% if l.photo %}<img class="thumb" style="width:140px;height:140px" src="/photos/{{ l.photo }}?v={{ l.photo_v }}" alt="Photograph of {{ l.name.split('(')[0] }}, from Odoo">{% else %}<div class="nophoto" style="width:140px;height:140px">No photo</div>{% endif %}
+      <div style="flex:1 1 260px;display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:18px;font-weight:600">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
+        <div class="label">From the quotation line</div>
+        <div class="kv">
+          <div>Quantity</div><div>{{ '%g' % l.qty }}</div>
+          <div>Size</div><div>{{ l.size_text }}</div>
+          {% for k, v in l.read.fields.items() %}{% if k != 'size' %}<div>{{ k|capitalize }}</div><div>{{ v }}</div>{% endif %}{% endfor %}
+        </div>
+        <div class="small">{% if template %}Engine template: <b>{{ template[5:-5] if template.startswith('item_') else template }}</b> <span class="tag ok">approved</span>{% else %}<span class="tag ask">No approved template for this product yet</span>{% endif %}</div>
+      </div>
+    </div>
+
+    <form class="card" id="areas" method="post" action="/orders/{{ o.source_ref }}/specify/{{ l.no }}/areas">
+      <div style="font-weight:600">Area on drawing <span class="sub small">(optional)</span></div>
+      {% if area_error %}<div class="small" role="alert" style="color:#B91C1C;background:#FDE8E8;padding:8px 10px;border-radius:8px">{{ area_error }}</div>{% endif %}
+      <div id="arows" style="display:flex;flex-direction:column;gap:6px">
+        {% for a, n in (areas or [('', '')]) %}
+        <div class="arow"><label class="sr" for="ar{{ loop.index }}">Area {{ loop.index }}</label><input id="ar{{ loop.index }}" name="area" value="{{ a }}" placeholder="Area, for example: Office Block">
+          <label class="sr" for="aq{{ loop.index }}">Quantity {{ loop.index }}</label><input id="aq{{ loop.index }}" name="qty" value="{{ n }}" inputmode="numeric" placeholder="Qty"></div>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sm" id="addarea">+ Add area</button>{% if not l.issued_current %}<button class="sm primary">Save areas</button>{% endif %}</div>
+      <div class="sub small">Left blank, the Area field stays blank on the sheet. Area quantities must add up to the product quantity ({{ '%g' % l.qty }}).</div>
+    </form>
+
+    <div class="card" style="border-color:#1D4ED8">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600">Fill what's missing</div><span class="tag info">Desk rules</span></div>
+      {% set open = l.questions|selectattr('answer', 'equalto', '')|list %}
+      {% if open %}
+      <div class="sub small">The draft is built from Odoo with the standard rules. {{ open|length }} thing{{ '' if open|length == 1 else 's' }} missing.</div>
+      {% for q in open %}
+      <form method="post" action="/orders/{{ o.source_ref }}/answer/{{ q.id }}" style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EEECE6;padding-top:8px">
+        <input type="hidden" name="back" value="specify">
+        <label for="q{{ q.id }}" style="font-weight:600">{{ q.text }}</label>
+        {% if q.options %}<div style="display:flex;flex-wrap:wrap;gap:6px">{% for op in q.options %}<button class="sm" name="value" value="{{ op }}">{{ op }}</button>{% endfor %}</div>{% endif %}
+        <div class="row" style="flex-wrap:nowrap"><input class="sm" id="q{{ q.id }}" name="value" placeholder="Or type the answer"><button class="sm primary">Send</button></div>
+      </form>
+      {% endfor %}
+      {% else %}<div class="small">Nothing is missing.</div>{% endif %}
+      {% for q in l.questions if q.answer %}<div class="sub small">{{ q.text }} <b>{{ q.answer }}</b> · {{ q.answered_by }}</div>{% endfor %}
+    </div>
+
+    {% if cannot %}
+    <div class="card" style="border-color:#B91C1C">
+      <div style="font-weight:600;color:#B91C1C">The engine can't build this yet</div>
+      <div class="small">{{ cannot }}</div>
+      <form method="post" action="/engine-requests" style="display:flex;flex-direction:column;gap:6px">
+        <input type="hidden" name="order_ref" value="{{ o.source_ref }}"><input type="hidden" name="product" value="Product {{ l.no }}: {{ l.name.split('(')[0] }}">
+        <label for="er" class="small">What should the engine be able to build?</label>
+        <textarea id="er" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px">{{ l.name }}</textarea>
+        <div><button class="primary">Request engine change</button></div>
+      </form>
+    </div>
+    {% elif summary %}
+    <div class="card">
+      <div style="font-weight:600">Summary to build</div>
+      <div class="kv">{% for k, v in summary %}<div>{{ k }}</div><div>{{ v }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between">
+      {% if next_todo %}<a class="sbtn" href="/orders/{{ o.source_ref }}/specify/{{ next_todo }}">Skip for now</a>{% else %}<span></span>{% endif %}
+      {% if l.drawing and l.drawing.status == 'preview' %}<a class="sbtn pri" href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Open drawing in viewer &rarr;</a>
+      {% elif summary %}<form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="primary">Draw the preview &rarr;</button></form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<script>
+(function(){var b=document.getElementById('addarea'),box=document.getElementById('arows');if(!b)return;
+b.addEventListener('click',function(){var n=box.children.length+1,d=document.createElement('div');d.className='arow';
+d.innerHTML='<label class="sr" for="ar'+n+'">Area '+n+'</label><input id="ar'+n+'" name="area" placeholder="Area">'+
+'<label class="sr" for="aq'+n+'">Quantity '+n+'</label><input id="aq'+n+'" name="qty" inputmode="numeric" placeholder="Qty">';box.appendChild(d);d.querySelector('input').focus();});})();
+</script>
+{% endblock %}
