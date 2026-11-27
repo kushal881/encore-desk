@@ -11,6 +11,14 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:                       # the same database as on Railway, for the table-upgrade test
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: desk_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - name: Get the desk
         uses: actions/checkout@v4
@@ -44,4 +52,5 @@ jobs:
         env:
           ENGINES_DIR: ${{ github.workspace }}/approved_engines
           TEST_ENGINES_SRC: ${{ github.workspace }}/approved_engines
+          TEST_POSTGRES_URL: postgresql://postgres:test@localhost:5432/desk_test
         run: python tests/run_all.py
