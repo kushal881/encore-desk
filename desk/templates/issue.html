@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Issue and approval · {{ o.source_ref }}{% endblock %}
+{% block crumb %}{% endblock %}
+{% block body %}
+{% include "_ordernav.html" %}
+<style>
+.step{display:flex;flex-direction:column;gap:10px}
+.stephead{display:flex;align-items:center;gap:10px}
+.stepno{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:15px;background:#E3F1EE;color:#0E6B5C;font-weight:700}
+.stepno.now{background:#0E6B5C;color:#fff}
+.f{display:flex;flex-direction:column;gap:4px}
+.f textarea,.f input,.f select{font:inherit;min-height:44px;box-sizing:border-box;border:1px solid #D6D3CA;border-radius:10px;padding:8px 12px;background:#fff}
+.f textarea,.f input,.f select{flex:0 0 auto}
+.seg2{display:flex;flex-wrap:wrap;gap:6px}
+.seg2 a{display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-radius:10px;border:1px solid #D6D3CA;text-decoration:none;color:#17191C;font-size:14px}
+.seg2 a.on{background:#17191C;color:#fff;border-color:#17191C}
+.sbtn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font-weight:600;text-decoration:none}
+</style>
+<div class="cols" style="flex-direction:column;align-items:stretch;max-width:980px">
+  <div class="label">{{ o.client.name }} · Steps 5 – 7 · Issue, client approval and production</div>
+  {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;color:#B91C1C;background:#FDE8E8">{{ error }}</div>{% endif %}
+
+  <div class="card step">
+    <div class="stephead"><span class="stepno {{ 'now' if o.stage in ('drawing', 'issued') }}">5</span><div style="font-weight:600;font-size:17px">Issue to client</div></div>
+    {% if to_issue %}
+    <form method="post" action="/orders/{{ o.source_ref }}/issue" class="f" data-confirm="Issue the drawings picked?\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
+      <input type="hidden" name="back" value="issue">
+      <div class="label">Ready to issue ({{ to_issue|length }})</div>
+      {% for l in to_issue %}<label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked onchange="pick()" value="{{ l.no }}" class="pk" style="min-height:auto;width:20px;height:20px">
+        Product {{ l.no }} · {{ l.name.split('(')[0] }} · {% if l.last_rev %}new revision after Rev {{ l.last_rev.rev }}{% else %}Rev A{% endif %}{% if l.review %} <span class="tag ok">checked</span>{% else %} <span class="tag ask">not checked in the viewer</span>{% endif %}</label>{% endfor %}
+      <input type="hidden" name="nos" id="nos" value="{{ to_issue|map(attribute='no')|join(',') }}">
+      {% if not o.client.folder_no %}<label for="fno" class="small" style="font-weight:600">Folder number for {{ o.client.name }}</label>
+      <input id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">{% endif %}
+      <div><button class="primary">Issue the drawings picked</button></div>
+      {% if not_ready %}<div class="sub small">Not ready yet: product {{ not_ready|map(attribute='no')|join(', ') }} (questions, a change request waiting, or no preview).</div>{% endif %}
+    </form>
+    {% elif not cur %}<div class="sub">Nothing is ready to issue yet. Specify the products and draw the previews first.</div>{% endif %}
+
+    {% if cur %}
+    <div class="label">Issued drawings ({{ cur|length }})</div>
+    {% for l, r in cur %}<div class="small">{{ r.number }} · Product {{ l.no }} · {{ l.name.split('(')[0] }} · Rev {{ r.rev }}{% if not l.issued_current %} <span class="tag ask">changed since, not issued</span>{% endif %}</div>{% endfor %}
+    <div class="small">Combined PDF <a href="/orders/{{ o.source_ref }}/combined.pdf" target="_blank" rel="noopener">{{ combined }}</a> is made in serial order.</div>
+
+    <form method="post" action="/orders/{{ o.source_ref }}/email" class="card" style="background:#FAFAF8;gap:10px">
+      <div style="font-weight:600">Email to client</div>
+      <div class="f"><span class="small">Template</span><div class="seg2">{% for k, v in kinds.items() %}<a class="{{ 'on' if k == kind }}" href="?t={{ k }}">{{ v[0] }}</a>{% endfor %}</div></div>
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <div class="f"><label for="to" class="small">To</label><input id="to" name="to" value="{{ to }}" placeholder="client@company.com" required></div>
+      <div class="f"><label for="cc" class="small">CC</label><input id="cc" name="cc" placeholder="Optional, several separated by commas"></div>
+      <div class="f"><label for="sub" class="small">Subject</label><input id="sub" name="subject" value="{{ subject }}" required></div>
+      <div class="f"><label for="bd" class="small">Message</label><textarea id="bd" name="body" rows="9" required>{{ body }}</textarea></div>
+      <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="attach" value="1" checked style="min-height:auto;width:20px;height:20px"> Attach the combined PDF ({{ combined }})</label>
+      <div><button class="primary">Send email</button></div>
+      <div class="sub small">Sent from {{ 'info@encoreprimefurniture.com' }} through Google Workspace. Until the client portal is ready, the client approves by replying.{% if not mail_on %} <b style="color:#9A4508">Email is not set up yet: add SMTP_PASSWORD in Railway.</b>{% endif %}</div>
+    </form>
+    {% for m in mails[:5] %}<div class="sub small">{{ m.at|when }} · {{ m.by }} · to {{ m.to }} · {{ m.subject }}{% if m.attachment %} · PDF attached{% endif %} {% if m.error %}<span class="tag bad">not sent</span> {{ m.error }}{% else %}<span class="tag ok">sent</span>{% endif %}</div>{% endfor %}
+    {% endif %}
+
+    <div class="card" style="background:#FAFAF8;gap:8px" id="access">
+      <div style="font-weight:600">Portal access for this order</div>
+      <div class="sub small">Only these emails will be able to sign in to the client portal. CC addresses and forwarded mails cannot.</div>
+      {% for a in access %}<form method="post" action="/orders/{{ o.source_ref }}/access/{{ a.id }}/remove" class="small" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="flex:1 1 220px">{{ a.email }}{% if a.name %} · {{ a.name }}{% endif %}</span><span class="tag {{ 'ok' if a.can_approve else 'dim' }}">{{ 'Can approve' if a.can_approve else 'View & comment' }}</span>
+        <button class="sm">Remove</button></form>{% else %}<div class="sub small">Nobody yet.</div>{% endfor %}
+      <form method="post" action="/orders/{{ o.source_ref }}/access" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+        <div class="f" style="flex:2 1 220px"><label for="ae" class="small">Give access to another email</label><input id="ae" name="email" required placeholder="name@client.com"></div>
+        <div class="f" style="flex:1 1 140px"><label for="an" class="small">Name</label><input id="an" name="name" placeholder="Optional"></div>
+        <div class="f" style="flex:1 1 140px"><label for="ac" class="small">Can</label><select id="ac" name="can"><option value="approve">Approve</option><option value="view">View &amp; comment</option></select></div>
+        <button class="sm primary" style="min-height:44px">Add</button>
+      </form>
+      <div class="sub small">Every addition and removal is logged in the project history. Invitations are sent once the client portal is switched on.</div>
+    </div>
+  </div>
+
+  <div class="card step">
+    <div class="stephead"><span class="stepno {{ 'now' if o.stage == 'sent' }}">6</span><div style="font-weight:600;font-size:17px">Client approval</div></div>
+    {% if not cur %}<div class="sub">After issue.</div>{% endif %}
+    {% for l, r in cur %}{% set ap = answers[r.id] %}
+    <details {% if not ap %}open{% endif %} style="border-top:1px solid #EEECE6;padding-top:8px">
+      <summary><b>{{ r.number }} Rev {{ r.rev }}</b> · Product {{ l.no }} ·
+        {% if ap and ap.outcome == 'approved' %}<span class="tag ok">Approved by {{ ap.name }} · {{ ap.on }}</span>{% elif ap %}<span class="tag ask">Changes asked · {{ ap.on }}</span>{% else %}<span class="tag dim">Waiting</span>{% endif %}</summary>
+      {% if ap %}<div class="sub small">{{ ap.name }}{% if ap.designation %}, {{ ap.designation }}{% endif %} · {{ ap.how }} · recorded by {{ ap.by }}{% if ap.note %} · {{ ap.note }}{% endif %}{% if ap.proof %} · <a href="/approvals/{{ ap.id }}/proof">proof</a>{% endif %} · file fingerprint {{ ap.pdf_sha256[:12] }}</div>{% endif %}
+      {% if not (ap and ap.outcome == 'approved') %}
+      <form method="post" action="/orders/{{ o.source_ref }}/answer-from-client/{{ r.id }}" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:8px">
+        <div class="f" style="flex:1 1 160px"><label class="small" for="oc{{ r.id }}">Answer</label><select id="oc{{ r.id }}" name="outcome"><option value="approved">Approved</option><option value="changes">Changes asked</option></select></div>
+        <div class="f" style="flex:1 1 160px"><label class="small" for="nm{{ r.id }}">Approved by</label><input id="nm{{ r.id }}" name="name" required placeholder="Name"></div>
+        <div class="f" style="flex:1 1 140px"><label class="small" for="dg{{ r.id }}">Designation</label><input id="dg{{ r.id }}" name="designation"></div>
+        <div class="f" style="flex:1 1 120px"><label class="small" for="hw{{ r.id }}">How</label><select id="hw{{ r.id }}" name="how"><option>email</option><option>phone</option><option>signed PDF</option></select></div>
+        <div class="f" style="flex:1 1 140px"><label class="small" for="dt{{ r.id }}">Date</label><input id="dt{{ r.id }}" name="on" type="date" value="{{ today }}"></div>
+        <div class="f" style="flex:2 1 220px"><label class="small" for="pf{{ r.id }}">Attach approval (mail / signed PDF)</label><input id="pf{{ r.id }}" name="proof" type="file"></div>
+        <div class="f" style="flex:3 1 260px"><label class="small" for="nt{{ r.id }}">Note (the change asked, if any)</label><input id="nt{{ r.id }}" name="note"></div>
+        <button class="sm primary" style="min-height:44px">Record</button>
+      </form>{% endif %}
+    </details>
+    {% endfor %}
+    <div class="sub small">After approval the client drawing is locked. Only production drawings can change, and only with admin permission. When every issued drawing is approved, the order moves on to production.</div>
+  </div>
+
+  <div class="card step">
+    <div class="stephead"><span class="stepno {{ 'now' if o.stage in ('approved', 'production') }}">7</span><div style="font-weight:600;font-size:17px">Production set</div></div>
+    <div class="small">Made from the approved set, with the job order and deadline, and no client details.{% if sets %} {{ sets|length }} production set{{ '' if sets|length == 1 else 's' }} made.{% endif %}</div>
+    <div><a class="sbtn" href="/orders/{{ o.source_ref }}#next">Release and production drawings on the project page</a></div>
+  </div>
+</div>
+<script>
+function pick(){var v=[].slice.call(document.querySelectorAll('.pk')).filter(function(c){return c.checked}).map(function(c){return c.value});document.getElementById('nos').value=v.join(',')||'none';}
+</script>
+{% endblock %}

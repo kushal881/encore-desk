@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .nodrawing import classify
@@ -525,10 +525,13 @@ def decide(ref: str, cid: int, decision: str, user=User):
 
 
 @app.post("/orders/{ref}/issue")
-def issue(ref: str, folder_no: str = Form(""), user=User):
+def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = Form(""), user=User):
     """Issues every previewed line whose specification differs from its last issued revision. An issued revision is never changed."""
     o = load(ref)
     ready = [l for l in o.lines if _ready(l)]
+    if nos.strip():                                                    # the Issue screen: only the drawings picked
+        pick = {int(x) for x in re.findall(r"\d+", nos)}
+        ready = [l for l in ready if l.no in pick]
     if not ready:
         raise HTTPException(400, "No product is ready to issue: a product needs a preview and no unanswered question or unconfirmed change")
     with db.Session() as s:
@@ -570,7 +573,7 @@ def issue(ref: str, folder_no: str = Form(""), user=User):
         if done:
             s.add(db.Step(order_id=o.id, kind="issued", note=", ".join(done), by=user.name))
         s.commit()
-    return RedirectResponse("/orders/%s/work" % ref, status_code=303)
+    return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
 
 
 def _big(pdf_path, page=0):
@@ -743,6 +746,9 @@ def _panel_state(o, l, sh, mode):
         return "This is an older issued revision. Open the current drawing to change it."
     if l.revisions and o.stage in ("approved", "production", "completed") and not o.approval_pending:
         return "The client has approved this drawing, so it is locked. A change now needs Kushal's permission (a change after approval)."
+    ap = _approval_of(l.last_rev)
+    if ap is not None and ap.outcome == "approved":
+        return "The client approved Rev %s on %s (%s), so it is locked. A change now needs Kushal's permission (a change after approval)." % (l.last_rev.rev, ap.on, ap.name)
     return ""
 
 
@@ -890,6 +896,182 @@ def ai_file(tid: int, kind: str, page: int = 0, user=User):
     if kind == "big":
         return FileResponse(_big(path, page))
     return FileResponse(path, filename="TRIAL-not-for-issue.pdf", content_disposition_type="inline")
+
+
+# ---- Issue (screen 6) ---------------------------------------------------------------------------------------------------
+def _approval_of(r):
+    """The latest client answer on one issued revision, or None."""
+    if r is None:
+        return None
+    with db.Session() as s:
+        return s.scalars(select(db.Approval).where(db.Approval.revision_id == r.id).order_by(db.Approval.id.desc())).first()
+
+
+def _current(o):
+    """The issued drawings of an order as they stand: [(line, revision)], in drawing-serial order."""
+    out = [(l, l.last_rev) for l in o.lines if l.last_rev]
+    return sorted(out, key=lambda x: (x[1].number.rsplit("-", 1)[-1], x[1].number))
+
+
+def _combined(o):
+    """The combined PDF of the issued set, made from the issued revisions in serial order. -> (path, file name) or None."""
+    cur = [r for _, r in _current(o) if r.files.get("pdf") and os.path.exists(r.files["pdf"])]
+    if not cur:
+        return None
+    name = issuing.combined_name(o.client.name)
+    return issuing.combine([r.files["pdf"] for r in cur], os.path.join(engines.FILES, str(o.id), "combined", name)), name
+
+
+@app.get("/orders/{ref}/issue", response_class=HTMLResponse)
+def issue_page(request: Request, ref: str, t: str = "", error: str = "", user=User):
+    """Steps 5 to 7: issue the drawings, email them to the client, the portal access list, the client's answers."""
+    o = load(ref)
+    to_issue = [l for l in o.lines if _ready(l) and not l.issued_current]
+    not_ready = [l for l in o.lines if not _ready(l) and not l.issued_current]
+    cur = _current(o)
+    with db.Session() as s:
+        access = s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id).order_by(db.PortalAccess.id)).all()
+        mails = s.scalars(select(db.EmailLog).where(db.EmailLog.order_id == o.id).order_by(db.EmailLog.id.desc())).all()
+    answers = {r.id: _approval_of(r) for _, r in cur}
+    revs = ["%s Rev %s" % (r.number, r.rev) for _, r in cur]
+    kind = t if t in issuing.TEMPLATES else ("revised" if any(r.rev != "A" for _, r in cur) else "first")
+    contact = (o.client.contact or "").split(",")[0].strip()
+    subject, body = issuing.fill(kind, o.source_ref, o.client.name, contact, revs, user.name)
+    to = ", ".join(a.email for a in access if a.can_approve)
+    approved = [l.no for l, r in cur if answers.get(r.id) and answers[r.id].outcome == "approved"]
+    return T.TemplateResponse(request, "issue.html", ctx(user, o=o, tab="issue", to_issue=to_issue, not_ready=not_ready, cur=cur, answers=answers,
+                              access=access, mails=mails, kind=kind, kinds=issuing.TEMPLATES, subject=subject, body=body, to=to, error=error,
+                              combined=issuing.combined_name(o.client.name), mail_on=issuing.configured(), approved=approved,
+                              today=datetime.date.today().isoformat(), sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"]))
+
+
+def _back(ref, error=""):
+    from urllib.parse import quote
+    return RedirectResponse("/orders/%s/issue%s" % (ref, "?error=" + quote(error) if error else ""), status_code=303)
+
+
+@app.get("/orders/{ref}/combined.pdf")
+def combined_pdf(ref: str, user=User):
+    o = load(ref)
+    got = _combined(o)
+    if not got:
+        raise HTTPException(404, "Nothing has been issued yet")
+    return FileResponse(got[0], filename=got[1], content_disposition_type="inline")
+
+
+@app.post("/orders/{ref}/access")
+def access_add(ref: str, email: str = Form(...), name: str = Form(""), can: str = Form("view"), user=User):
+    """Gives one email access to this order on the client portal (approve, or view and comment). Logged."""
+    o = load(ref)
+    try:
+        e = issuing.emails(email)
+    except ValueError as x:
+        return _back(ref, str(x))
+    if len(e) != 1:
+        return _back(ref, "Give one email address at a time.")
+    with db.Session() as s:
+        a = s.scalar(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id, db.PortalAccess.email == e[0]))
+        what = "changed to" if a else "given"
+        a = a or db.PortalAccess(order_id=o.id, email=e[0])
+        a.name, a.can_approve, a.added_by = name.strip()[:200] or a.name, can == "approve", user.name
+        s.add(a)
+        s.add(db.Message(order_id=o.id, who="desk", text="Portal access %s for %s (%s) by %s." % (what, e[0], "can approve" if a.can_approve else "view and comment", user.name)))
+        s.commit()
+    return _back(ref)
+
+
+@app.post("/orders/{ref}/access/{aid}/remove")
+def access_remove(ref: str, aid: int, user=User):
+    o = load(ref)
+    with db.Session() as s:
+        a = s.get(db.PortalAccess, aid)
+        if a is None or a.order_id != o.id:
+            raise HTTPException(404)
+        s.add(db.Message(order_id=o.id, who="desk", text="Portal access removed for %s by %s." % (a.email, user.name)))
+        s.delete(a); s.commit()
+    return _back(ref)
+
+
+@app.post("/orders/{ref}/email")
+def email_send(ref: str, kind: str = Form("first"), to: str = Form(""), cc: str = Form(""), subject: str = Form(""), body: str = Form(""),
+               attach: str = Form(""), user=User):
+    """Emails the issued drawings to the client from the company address. When it goes, the order is marked as sent."""
+    o = load(ref)
+    if not _current(o):
+        return _back(ref, "Issue the drawings first.")
+    try:
+        to_, cc_ = issuing.emails(to), issuing.emails(cc)
+    except ValueError as x:
+        return _back(ref, str(x))
+    if not to_ or not subject.strip() or not body.strip():
+        return _back(ref, "Fill in To, Subject and Message.")
+    got = _combined(o) if attach else None
+    log = db.EmailLog(order_id=o.id, kind=kind if kind in issuing.TEMPLATES else "first", to=", ".join(to_), cc=", ".join(cc_), subject=subject.strip(),
+                      body=body.strip(), attachment=got[1] if got else "", by=user.name)
+    try:
+        issuing.send(to_, cc_, log.subject, log.body, got[0] if got else None, got[1] if got else None)
+    except RuntimeError as x:
+        log.error = str(x)
+    with db.Session() as s:
+        s.add(log)
+        if not log.error:
+            s.add(db.Message(order_id=o.id, who="desk", text="Emailed to %s by %s: %s%s." % (log.to, user.name, log.subject, " (combined PDF attached)" if got else "")))
+            if o.stage == "issued":
+                s.add(db.Step(order_id=o.id, kind="sent", note="Emailed to %s" % log.to, by=user.name))
+        s.commit()
+    return _back(ref, log.error)
+
+
+@app.post("/orders/{ref}/answer-from-client/{rid}")
+async def client_answer(request: Request, ref: str, rid: int, user=User):
+    """Records the client's answer on one issued drawing, given by email or phone: approved, or changes asked.
+    Kept with the fingerprint of the exact PDF. When every issued drawing is approved, the order is approved."""
+    form = await request.form()
+    outcome, name = form.get("outcome", ""), (form.get("name") or "").strip()
+    o = load(ref)
+    pair = next(((l, r) for l, r in _current(o) if r.id == rid), None)
+    if pair is None:
+        raise HTTPException(404)
+    l, r = pair
+    if outcome not in ("approved", "changes"):
+        return _back(ref, "Choose approved or changes asked.")
+    if not name:
+        return _back(ref, "Enter who answered at the client.")
+    ap = db.Approval(order_id=o.id, revision_id=r.id, outcome=outcome, name=name[:200], designation=(form.get("designation") or "").strip()[:200],
+                     email=(form.get("email") or "").strip()[:200], how=(form.get("how") or "email")[:40], on=(form.get("on") or datetime.date.today().isoformat())[:20],
+                     note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(r.files["pdf"]) if os.path.exists(r.files.get("pdf", "")) else "",
+                     ip=request.client.host if request.client else "", by=user.name)
+    proof = form.get("proof")
+    if proof is not None and getattr(proof, "filename", ""):
+        data = await proof.read()
+        if data:
+            safe = re.sub(r"[^\w.\-]+", "_", proof.filename)[-80:]
+            path = os.path.join(engines.FILES, str(o.id), "approvals", "%d-%d-%s" % (r.id, int(datetime.datetime.now().timestamp()), safe))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "wb").write(data)
+            ap.proof, ap.proof_name = path, proof.filename[:200]
+    with db.Session() as s:
+        s.add(ap)
+        s.add(db.Message(order_id=o.id, who="desk", text="%s Rev %s: %s by %s (%s, %s), recorded by %s." % (
+            r.number, r.rev, "approved" if outcome == "approved" else "changes asked", ap.name, ap.how, ap.on, user.name) + (" " + ap.note if ap.note else "")))
+        s.commit()
+    o = load(ref)
+    cur = _current(o)
+    if all((_approval_of(r_) or db.Approval(outcome="")).outcome == "approved" for _, r_ in cur) and \
+            (o.stage in ("issued", "sent") or (o.stage == "production" and o.approval_pending)):
+        with db.Session() as s:
+            s.add(db.Step(order_id=o.id, kind="approved", note="All %d drawings approved (recorded on the Issue screen)" % len(cur), by=user.name))
+            s.commit()
+    return _back(ref)
+
+
+@app.get("/approvals/{aid}/proof")
+def approval_proof(aid: int, user=User):
+    with db.Session() as s:
+        ap = s.get(db.Approval, aid)
+    if ap is None or not ap.proof or not os.path.exists(ap.proof):
+        raise HTTPException(404)
+    return FileResponse(ap.proof, filename=ap.proof_name or "approval")
 
 
 # ---- Specify (screen 4) ------------------------------------------------------------------------------------------------
