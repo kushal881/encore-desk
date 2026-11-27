@@ -59,6 +59,7 @@ class OrderLine(Base):
     revisions: Mapped[list["Revision"]] = relationship(order_by="Revision.id", cascade="all, delete-orphan")
     sets: Mapped[list["ProductionSet"]] = relationship(order_by="ProductionSet.id", cascade="all, delete-orphan")
     marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
+    areas: Mapped[list["LineArea"]] = relationship(order_by="LineArea.id", cascade="all, delete-orphan")
     keep: Mapped[bool] = mapped_column(Boolean, default=False)          # added back to the drawings on purpose: the no-drawing rule leaves it
 
 
@@ -283,6 +284,17 @@ class AiTurn(Base):
     change_id: Mapped[int] = mapped_column(Integer, default=0)           # the confirmed change made on Accept
     by: Mapped[str] = mapped_column(String(120), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class LineArea(Base):
+    """Where a product goes, when the client asks: several areas, each with a quantity, adding up to the product's qty.
+    Printed in the sheet's Area field. No rows = the Area field stays as the quotation line has it (or blank)."""
+    __tablename__ = "line_area"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    area: Mapped[str] = mapped_column(Text)
+    qty: Mapped[float] = mapped_column(Float, default=1)
+    by: Mapped[str] = mapped_column(String(120), default="")
 
 
 def _default_sql(col, dialect):

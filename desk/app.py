@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, assistant, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .nodrawing import classify
@@ -187,7 +187,7 @@ def load(ref):
                                     and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
                                        and l.last_rev.engine_version != engines.version() and not l.remake)
-            _ = l.sets, l.marks
+            _ = l.sets, l.marks, l.areas
             if l.remake:
                 l.open_count = 0                                     # an exact copy of a past drawing needs no answers
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
@@ -409,7 +409,7 @@ def order(request: Request, ref: str, user=User):
 
 
 @app.post("/orders/{ref}/answer/{qid}")
-def answer(ref: str, qid: int, value: str = Form(...), user=User):
+def answer(ref: str, qid: int, value: str = Form(...), back: str = Form(""), user=User):
     value = value.strip()
     if not value:
         raise HTTPException(400, "Enter an answer first")
@@ -423,6 +423,9 @@ def answer(ref: str, qid: int, value: str = Form(...), user=User):
             raise HTTPException(404)
         q.answer, q.answered_by, q.answered_at = value, user.name, db.now()
         s.commit()
+        no = line.no
+    if back == "specify":
+        return RedirectResponse("/orders/%s/specify/%d" % (ref, no), status_code=303)
     return RedirectResponse("/orders/%s/work" % ref, status_code=303)
 
 
@@ -437,7 +440,11 @@ def make_spec(s, o, l, issue=None, edir=None, extra=None):
     values = dict(l.confirmed, **(extra or {}))
     sp = spec.build(edir or engines.ENGINES_DIR, o, l, l.read, {q.key: q.answer for q in l.questions}, l.no, changes=values,
                     finish=lambda text, kind: finishes.lookup(s, text, kind), issue=issue)
-    return assistant.apply(sp, {k: v for k, v in values.items() if k.startswith("model.")})
+    sp = assistant.apply(sp, {k: v for k, v in values.items() if k.startswith("model.")})
+    areas = [(a.area, int(a.qty)) for a in (getattr(l, "areas", None) or [])]
+    if areas:                                                          # Specify: areas per product, adding up to the qty
+        sp["item"]["area"] = specify.area_text(areas, l.qty)
+    return sp
 
 
 def _draw_lines(o, s, who, only=None):
@@ -883,6 +890,69 @@ def ai_file(tid: int, kind: str, page: int = 0, user=User):
     if kind == "big":
         return FileResponse(_big(path, page))
     return FileResponse(path, filename="TRIAL-not-for-issue.pdf", content_disposition_type="inline")
+
+
+# ---- Specify (screen 4) ------------------------------------------------------------------------------------------------
+@app.get("/orders/{ref}/specify")
+def specify_first(ref: str, user=User):
+    """Specify opens on the first product that still needs something."""
+    o = load(ref)
+    if not o.lines:
+        return RedirectResponse("/orders/%s" % ref, status_code=303)
+    first = next((l for l in o.lines if specify.status(l) == "todo"), o.lines[0])
+    return RedirectResponse("/orders/%s/specify/%d" % (ref, first.no), status_code=303)
+
+
+@app.get("/orders/{ref}/specify/{no}", response_class=HTMLResponse)
+def specify_page(request: Request, ref: str, no: int, area_error: str = "", user=User):
+    """One product: what came from Odoo, its approved template, areas, what is still missing, and what will be built."""
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None:
+        raise HTTPException(404)
+    built, cannot = None, ""
+    if not l.open_count:
+        with db.Session() as s:
+            try:
+                built = make_spec(s, o, l, edir=engines.dir_for(l.engine_for)[0])
+            except spec.CannotDraw as e:
+                cannot = str(e)
+    family = l.read["family"]
+    if family == "other":
+        family = spec.TYPE_BY_ANSWER.get(next((q.answer for q in l.questions if q.key == "family" and q.answer), "").strip().lower(), "other")
+    template = spec.TEMPLATES.get((family, spec.variant(family, l.name, l.read["fields"])), "")
+    if l.drawing is not None and l.drawing.status == "failed" and not cannot:
+        cannot = l.drawing.error
+    i = [x.no for x in o.lines].index(no)
+    nxt = next((x.no for x in o.lines[i + 1:] + o.lines[:i] if specify.status(x) == "todo"), None)
+    return T.TemplateResponse(request, "specify.html", ctx(user, o=o, l=l, tab="specify", template=template, built=built, cannot=cannot,
+                              summary=specify.summary(built) if built else [], statuses={x.no: specify.status(x) for x in o.lines},
+                              done=sum(1 for x in o.lines if specify.status(x) == "done"), pos=i + 1, next_todo=nxt, area_error=area_error,
+                              areas=[(a.area, int(a.qty)) for a in l.areas] or ([(l.read["area"], int(l.qty))] if l.read["area"] else [])))
+
+
+@app.post("/orders/{ref}/specify/{no}/areas")
+async def specify_areas(request: Request, ref: str, no: int, user=User):
+    """Areas for one product (optional). Several areas, each with a quantity; together they must make the product's qty."""
+    form = await request.form()
+    rows = list(zip(form.getlist("area"), form.getlist("qty")))
+    o = load(ref)
+    l = next((x for x in o.lines if x.no == no), None)
+    if l is None:
+        raise HTTPException(404)
+    if l.issued_current:
+        raise HTTPException(400, "This product's drawing is issued. A change of areas makes a new revision: ask for it in the change panel.")
+    clean, problem = specify.check_areas(rows, l.qty)
+    if problem:
+        from urllib.parse import quote
+        return RedirectResponse("/orders/%s/specify/%d?area_error=%s#areas" % (ref, no, quote(problem)), status_code=303)
+    with db.Session() as s:
+        line = s.get(db.OrderLine, l.id)
+        line.areas.clear()
+        for a, n in clean:
+            line.areas.append(db.LineArea(area=a, qty=n, by=user.name))
+        s.commit()
+    return RedirectResponse("/orders/%s/specify/%d#areas" % (ref, no), status_code=303)
 
 
 @app.post("/orders/{ref}/view/{no}/ready")
