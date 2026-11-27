@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawing Desk – Production drawing with AI changes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.nav a{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:44px;border-radius:8px;color:#3A3E45;text-decoration:none;font-size:14px;font-weight:500}
+.nav a.on{background:#E3F1EE;color:#0E6B5C;font-weight:600}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+table{border-collapse:collapse;width:100%}td,th{padding:14px 16px;text-align:left;border-top:1px solid #EEECE6;font-size:14px;vertical-align:middle}th{font-size:12px;color:#5B5F66;font-weight:600;border-top:0}
+.kpi{display:flex;flex-direction:column;gap:6px;padding:20px;text-decoration:none;color:#17191C}
+.kpi:hover{border-color:#0E6B5C}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:100vh">
+  <nav class="nav" aria-label="Main" style="flex:1 1 220px;max-width:260px;background:#fff;border-right:1px solid #E3E1DA;padding:20px 14px;box-sizing:border-box;display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px">
+      <img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:40px;height:40px;border-radius:4px;display:block">
+      <div><div style="font-weight:700;font-size:15px">Encore Prime</div><div style="font-size:12px;color:#5B5F66">Drawing Desk</div></div>
+    </div>
+    <a href="Main.dc.html">Dashboard</a>
+    <a href="NewProject.dc.html">New project</a>
+    <a class="on" href="Projects.dc.html">Projects</a>
+    <a href="NewProject.dc.html">Past orders / Remake</a>
+    <a href="Approvals.dc.html">Approvals <span class="pill" style="margin-left:auto;background:#FDF1E2;color:#9A4508">2</span></a>
+    <div style="margin-top:auto;padding:12px;border-top:1px solid #EEECE6;font-size:13px"><div style="font-weight:600">Kushal</div><div style="color:#5B5F66">Administrator</div></div>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;padding:28px 36px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px">
+    <header style="display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <a class="btn" href="Issue.dc.html" aria-label="Back to production set" style="padding:0 14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</a>
+      <div style="flex:1 1 300px"><div class="lbl">Colonelz Constructions · Step 7 of 8 · Production · JO-[NO.] · deadline [DATE]</div><h1 style="margin:4px 0 0;font-size:24px">ZEE Workstation · production drawing P1</h1></div>
+      <span class="pill" style="background:#17191C;color:#fff;padding:6px 12px">Client design locked · RevA approved</span>
+    </header>
+
+    <div role="tablist" aria-label="Production sheets" style="display:flex;flex-wrap:wrap;gap:8px">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+        <button role="tab" type="button" class="btn" onClick="{{ t.pick }}" style="background:{{t.bg}};color:{{t.fg}};border-color:{{t.bd}}">{{t.label}}</button>
+      </sc-for>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600">Copy for<select style="min-height:44px;padding:0 10px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;background:#fff"><option>All departments</option><option>CNC / panel</option><option>MS fabrication</option><option>Assembly</option><option>Subcontractor / vendor</option></select></label>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <section aria-label="Production sheet" class="card" style="flex:999 1 600px;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #EEECE6">
+          <button class="btn" type="button" aria-label="Zoom out" onClick="{{ zoomOut }}" style="width:44px;padding:0;font-size:20px">−</button>
+          <span style="min-width:56px;text-align:center;font-weight:600;font-size:14px">{{zoomPct}}%</span>
+          <button class="btn" type="button" aria-label="Zoom in" onClick="{{ zoomIn }}" style="width:44px;padding:0;font-size:20px">+</button>
+          <button class="btn" type="button" onClick="{{ zoomFit }}">Fit</button>
+          <span style="width:1px;height:28px;background:#E3E1DA;margin:0 6px"></span>
+          <button class="btn" type="button" onClick="{{ addMarker }}" style="border-color:#D97706;color:#9A4508">+ Add numbered marker</button>
+          <button class="btn" type="button" onClick="{{ toggleCompare }}" style="border-color:#1D4ED8;color:#1D4ED8">{{compareLabel}}</button>
+        </div>
+        <sc-if value="{{ showCompare }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:14px;background:#F4F6FB;border-bottom:1px solid #E3E1DA">
+            <div style="background:#fff;border:1px solid #E3E1DA;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"><span class="lbl">Before · P1</span><div style="height:100px;border:1px solid #9AA0A6;position:relative"><div style="position:absolute;left:10%;right:10%;top:44px;height:6px;background:#9AA0A6"></div><span style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:12px">1 front support beam</span></div></div>
+            <div style="background:#fff;border:2px solid #1D4ED8;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"><span class="lbl" style="color:#1D4ED8">After · P2 proposed</span><div style="height:100px;border:1px solid #9AA0A6;position:relative"><div style="position:absolute;left:10%;right:10%;top:30px;height:6px;background:#1D4ED8"></div><div style="position:absolute;left:10%;right:10%;top:58px;height:6px;background:#1D4ED8"></div><span style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:12px;color:#1D4ED8;font-weight:700">2 beams, end to end, 150 from edges</span></div></div>
+          </div>
+        </sc-if>
+        <div style="background:#E9E7E1;padding:24px;overflow:auto;height:540px;box-sizing:border-box">
+          <div style="width:760px;height:537px;margin:0 auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15);position:relative;transform:scale({{scale}});transform-origin:top center;font-size:10px">
+            <div style="position:absolute;inset:14px;border:1.5px solid #17191C"></div>
+            <div style="position:absolute;left:40px;top:40px;width:330px;height:170px;border:1.5px solid #17191C"><div style="position:absolute;left:24px;right:24px;top:60px;height:6px;background:#17191C"></div><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">UNDER-FRAME · MS 50×25 · 1.2 mm</span></div>
+            <div style="position:absolute;left:400px;top:40px;width:150px;height:170px;border:1.5px dashed #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">LEG DETAIL</span></div>
+            <div style="position:absolute;left:40px;top:250px;width:250px;height:110px;border:1.5px solid #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">TOP · 25 OSL · EDGE SECTION</span></div>
+            <div style="position:absolute;left:320px;top:250px;width:230px;height:110px;border:1px solid #17191C;padding:6px;box-sizing:border-box;display:flex;flex-direction:column;gap:3px"><b>CUT SIZES</b><span>Top 1350 × 750 · 1 no.</span><span>Pipe 50×25 · 1300 · 2 no.</span><span>Pipe 25×25 · 150 · 2 no.</span></div>
+            <div style="position:absolute;right:30px;top:40px;width:160px;display:flex;flex-direction:column;gap:5px"><b>BOARD</b><span>Prelaminated particle board 25mm OSL Laurel Oak Dark</span><b style="margin-top:6px">EDGE BAND</b><span>30 × 2 visible · 30 × 0.8 hidden</span></div>
+            <div style="position:absolute;left:14px;right:14px;bottom:14px;height:62px;border-top:1.5px solid #17191C;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))">
+              <div style="padding:6px;border-right:1px solid #17191C;font-weight:700;font-size:12px">ENCORE PRIME</div>
+              <div style="padding:6px;border-right:1px solid #17191C">Q-[NO.] · JO-[NO.] · no client details</div>
+              <div style="padding:6px;border-right:1px solid #17191C">Deadline [DATE]</div>
+              <div style="padding:6px">Production P1</div>
+            </div>
+            <sc-for list="{{ markers }}" as="m" hint-placeholder-count="1">
+              <span style="position:absolute;left:{{m.x}}px;top:{{m.y}}px;width:24px;height:24px;border-radius:50%;background:#D97706;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff">{{m.n}}</span>
+            </sc-for>
+          </div>
+        </div>
+      </section>
+
+      <aside style="flex:1 1 320px;display:flex;flex-direction:column;gap:16px">
+        <section class="card" aria-labelledby="pai" style="display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #EEECE6">
+            <h2 id="pai" style="margin:0;font-size:16px;flex:1">Change production drawing</h2>
+            <span class="pill" style="background:#E6EDFB;color:#1D4ED8">AI assistant</span>
+          </div>
+          <div style="padding:10px 16px;background:#FDF1E2;color:#9A4508;font-size:12px;font-weight:600">Construction only · approved design can't change · P1 → P2 needs admin approval</div>
+          <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.45">
+            <div style="align-self:flex-end;max-width:90%;background:#0E6B5C;color:#fff;border-radius:10px 10px 4px 10px;padding:9px 12px">Marker 1: use 2 support beams end to end</div>
+            <div style="border:1px solid #C9D6F5;background:#F4F6FB;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px">
+              <div class="lbl" style="color:#1D4ED8">Proposed change · production only</div>
+              <div style="font-size:14px">Support beams <s style="color:#5B5F66">1 front</s> → <b>2 end to end</b>, 150 from front and rear</div>
+              <div style="font-size:13px"><b>BOM:</b> MS pipe 50×25 <s style="color:#5B5F66">4</s> → <b>5</b> lengths of 6 m · powder coat weight to update</div>
+              <div style="font-size:13px"><b>Client drawing:</b> no change (hidden part)</div>
+              <div style="color:#0E6B5C;font-weight:600">Engine redrew · no clashes with legs, raceway, grommet</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <button class="btn pri" type="button" onClick="{{ accept }}" style="min-height:40px">{{acceptLabel}}</button>
+                <button class="btn" type="button" onClick="{{ undo }}" style="min-height:40px">Undo</button>
+                <button class="btn" type="button" onClick="{{ toggleCompare }}" style="min-height:40px">Compare</button>
+              </div>
+            </div>
+            <div style="align-self:flex-end;max-width:90%;background:#0E6B5C;color:#fff;border-radius:10px 10px 4px 10px;padding:9px 12px">Make the top 1500 long</div>
+            <div role="alert" style="background:#FDE8E8;border:1px solid #F5B5B5;border-radius:10px;padding:12px;color:#8F1414">That changes the <b>approved design</b> (size). It can't be done on the production drawing. It needs a client drawing revision (RevB), your permission and client re-approval.
+              <div style="margin-top:8px"><a class="btn" href="Approvals.dc.html" style="min-height:40px;border-color:#B91C1C;color:#B91C1C">Ask admin permission</a></div>
+            </div>
+          </div>
+          <form style="padding:12px 16px;border-top:1px solid #EEECE6;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;gap:8px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#5B5F66">Marker<select style="min-height:40px;padding:0 8px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;background:#fff"><option>None</option><option>1</option></select></label>
+              <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#5B5F66">Ask or change<input placeholder="e.g. show weld points on leg detail" style="min-height:40px;padding:0 10px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+            </div>
+            <button class="btn" type="button">Send</button>
+            <div style="font-size:11px;color:#5B5F66">Allowed here: frame and supports, joinery, hardware placement, edge band, cut sizes, sheet details. Size, finish, look and quantity are locked by the client approval.</div>
+          </form>
+        </section>
+        <section class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;font-size:14px"><span>Matches approved client design</span><b style="color:#0E6B5C">Pass</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px"><span>Engine check · clash check</span><b style="color:#0E6B5C">Pass</b></div>
+          <a class="btn pri" href="Issue.dc.html" style="min-height:50px">Release P1 to production</a>
+          <div style="font-size:12px;color:#5B5F66">A released set changed later becomes P2. Production gets a stop alert and the new sheets.</div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1150}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { zoom: 100, tab: 0, compare: false, accepted: false, markers: [{ n: 1, x: 190, y: 92 }] }; }
+  renderVals() {
+    const s = this.state, z = s.zoom;
+    const set = (v) => this.setState({ zoom: Math.max(50, Math.min(200, v)) });
+    const names = ['Production drawing (incl. pin-up screen detail)', 'Bill of material', 'Cut list / pipe cutting'];
+    return {
+      tabs: names.map((label, i) => ({ label, pick: () => this.setState({ tab: i }),
+        bg: s.tab === i ? '#17191C' : '#fff', fg: s.tab === i ? '#fff' : '#17191C', bd: s.tab === i ? '#17191C' : '#D6D3CA' })),
+      zoomPct: z, scale: z / 100, markers: s.markers,
+      zoomIn: () => set(z + 10), zoomOut: () => set(z - 10), zoomFit: () => set(100),
+      addMarker: () => { const n = s.markers.length + 1; this.setState({ markers: s.markers.concat([{ n, x: 420 + (n % 3) * 60, y: 280 + (n % 2) * 40 }]) }); },
+      showCompare: s.compare, compareLabel: s.compare ? 'Hide compare' : 'Compare P1 / P2',
+      toggleCompare: () => this.setState({ compare: !s.compare }),
+      acceptLabel: s.accepted ? 'Sent for admin approval ✓' : 'Accept → P2',
+      accept: () => this.setState({ accepted: true }), undo: () => this.setState({ accepted: false, compare: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

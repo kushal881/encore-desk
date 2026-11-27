@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Client portal – Your orders</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.in{min-height:44px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;box-sizing:border-box;width:100%}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column">
+  <header style="background:#17191C;color:#fff">
+    <div style="max-width:1240px;margin:0 auto;padding:16px 28px;display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px"><img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:44px;height:44px;border-radius:4px;display:block"><div style="font-weight:700;font-size:16px">Encore Prime Furniture</div></div>
+      <div style="margin-left:auto;font-size:13px;color:#D4D2CC">Client portal · Achievers Apparels Pvt Ltd</div>
+      <a href="PortalHome.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">My orders</a>
+      <a href="PortalPast.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">Past orders</a>
+      <a href="PortalLogin.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">Sign out</a>
+    </div>
+  </header>
+  <main style="max-width:1240px;width:100%;margin:0 auto;padding:28px;box-sizing:border-box;display:flex;flex-direction:column;gap:22px">
+    <section>
+      <div class="lbl">Achievers Apparels Pvt Ltd</div>
+      <h1 style="margin:6px 0 0;font-size:30px">Your orders</h1>
+    </section>
+
+    <section aria-label="Summary" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px">
+      <div class="card" style="padding:18px"><div class="lbl">Active orders</div><div style="font-size:30px;font-weight:700;margin-top:6px">2</div></div>
+      <div class="card" style="padding:18px;border-color:#F2C894"><div class="lbl" style="color:#9A4508">Waiting for your approval</div><div style="font-size:30px;font-weight:700;margin-top:6px;color:#9A4508">2 drawings</div></div>
+      <div class="card" style="padding:18px"><div class="lbl">Changes in progress</div><div style="font-size:30px;font-weight:700;margin-top:6px">1</div></div>
+      <a class="card" href="PortalPast.dc.html" style="padding:18px;text-decoration:none;color:#17191C"><div class="lbl">Past orders</div><div style="font-size:30px;font-weight:700;margin-top:6px">3</div><div style="font-size:13px;color:#0E6B5C;margin-top:4px">See all →</div></a>
+    </section>
+
+    <section aria-labelledby="act" style="display:flex;flex-direction:column;gap:14px">
+      <h2 id="act" style="margin:0;font-size:19px">Active quotations &amp; orders</h2>
+      <article class="card" style="padding:20px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;border-color:#F2C894">
+        <div style="flex:1 1 320px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><b style="font-size:17px">Q-2026-09-368</b><span class="pill" style="background:#FDF1E2;color:#9A4508">Drawings for approval</span></div>
+          <div style="font-size:14px;color:#5B5F66">Office fit-out · A-7, Infocity, Gurugram · 5 products · RevA sent 27 Nov</div>
+        </div>
+        <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#E3E1DA"><span style="width:40%;background:#0E6B5C"></span><span style="width:20%;background:#D97706"></span></div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px"><span><b style="color:#0E6B5C">2</b> approved</span><span><b style="color:#9A4508">1</b> changes asked</span><span><b>2</b> waiting for you</span></div>
+        </div>
+        <a class="btn pri" href="PortalSet.dc.html">Review drawings</a>
+      </article>
+      <article class="card" style="padding:20px;display:flex;flex-wrap:wrap;gap:20px;align-items:center">
+        <div style="flex:1 1 320px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><b style="font-size:17px">Q-2026-10-[NO.]</b><span class="pill" style="background:#E3F1EE;color:#0E6B5C">In production</span></div>
+          <div style="font-size:14px;color:#5B5F66">Pedestals &amp; storage · 3 products · approved 12 Nov · delivery [DATE]</div>
+        </div>
+        <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#E3E1DA"><span style="width:100%;background:#0E6B5C"></span></div>
+          <div style="font-size:13px"><b style="color:#0E6B5C">3 / 3</b> drawings approved</div>
+        </div>
+        <a class="btn" href="PortalSet.dc.html">View drawings</a>
+      </article>
+    </section>
+
+    <section class="card" aria-labelledby="past" style="padding:18px 0 4px">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 20px 12px"><h2 id="past" style="margin:0;font-size:19px;flex:1">Past orders</h2><a class="btn" href="PortalPast.dc.html">See all past orders</a></div>
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;width:100%;font-size:14px">
+          <thead><tr style="text-align:left;color:#5B5F66;font-size:12px"><th style="padding:10px 20px">Order</th><th style="padding:10px 16px">Delivered</th><th style="padding:10px 16px">Products</th><th style="padding:10px 16px">Drawings</th><th style="padding:10px 20px"></th></tr></thead>
+          <tbody>
+            <tr style="border-top:1px solid #EEECE6"><td style="padding:14px 20px"><b>Q-2026-06-[NO.]</b><div style="font-size:12px;color:#5B5F66">Conference room</div></td><td style="padding:14px 16px">Jul 2026</td><td style="padding:14px 16px">2</td><td style="padding:14px 16px">2 approved · final</td><td style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="PortalPast.dc.html">View</a><a class="btn" href="PortalPast.dc.html">Ask to reorder</a></td></tr>
+            <tr style="border-top:1px solid #EEECE6"><td style="padding:14px 20px"><b>Q-2026-03-[NO.]</b><div style="font-size:12px;color:#5B5F66">Workstations, 2nd floor</div></td><td style="padding:14px 16px">Apr 2026</td><td style="padding:14px 16px">4</td><td style="padding:14px 16px">4 approved · final</td><td style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="PortalPast.dc.html">View</a><a class="btn" href="PortalPast.dc.html">Ask to reorder</a></td></tr>
+            <tr style="border-top:1px solid #EEECE6"><td style="padding:14px 20px"><b>Q-2025-11-[NO.]</b><div style="font-size:12px;color:#5B5F66">Reception</div></td><td style="padding:14px 16px">Dec 2025</td><td style="padding:14px 16px">1</td><td style="padding:14px 16px">1 approved · final</td><td style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="PortalPast.dc.html">View</a><a class="btn" href="PortalPast.dc.html">Ask to reorder</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin:8px 20px 14px;font-size:12px;color:#5B5F66">"Ask to reorder" sends the approved drawings to your Encore sales person, who prepares a new quotation.</p>
+    </section>
+    <footer style="font-size:12px;color:#5B5F66;text-align:center;padding-bottom:12px">Encore Modular Furniture Pvt. Ltd. · IMT Manesar, Gurugram</footer>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1150}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

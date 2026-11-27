@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawing Desk – Drawing viewer with AI changes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.nav a{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:44px;border-radius:8px;color:#3A3E45;text-decoration:none;font-size:14px;font-weight:500}
+.nav a.on{background:#E3F1EE;color:#0E6B5C;font-weight:600}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+table{border-collapse:collapse;width:100%}td,th{padding:14px 16px;text-align:left;border-top:1px solid #EEECE6;font-size:14px;vertical-align:middle}th{font-size:12px;color:#5B5F66;font-weight:600;border-top:0}
+.kpi{display:flex;flex-direction:column;gap:6px;padding:20px;text-decoration:none;color:#17191C}
+.kpi:hover{border-color:#0E6B5C}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:100vh">
+  <nav class="nav" aria-label="Main" style="flex:1 1 220px;max-width:260px;background:#fff;border-right:1px solid #E3E1DA;padding:20px 14px;box-sizing:border-box;display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px">
+      <img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:40px;height:40px;border-radius:4px;display:block">
+      <div><div style="font-weight:700;font-size:15px">Encore Prime</div><div style="font-size:12px;color:#5B5F66">Drawing Desk</div></div>
+    </div>
+    <a href="Main.dc.html">Dashboard</a>
+    <a href="NewProject.dc.html">New project</a>
+    <a class="on" href="Projects.dc.html">Projects</a>
+    <a href="NewProject.dc.html">Past orders / Remake</a>
+    <a href="Approvals.dc.html">Approvals <span class="pill" style="margin-left:auto;background:#FDF1E2;color:#9A4508">2</span></a>
+    <div style="margin-top:auto;padding:12px;border-top:1px solid #EEECE6;font-size:13px"><div style="font-weight:600">Kushal</div><div style="color:#5B5F66">Administrator</div></div>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;padding:28px 36px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px">
+    <header style="display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <a class="btn" href="Project.dc.html" aria-label="Back to project" style="padding:0 14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</a>
+      <div style="flex:1 1 300px"><div class="lbl">Achievers Apparels · Step 4 of 8 · Review · Drawing 1 of 5</div><h1 style="margin:4px 0 0;font-size:24px;font-weight:700">Encore-Sep-2026-01-01-Achievers Apparels-RevA</h1></div>
+      <div role="group" aria-label="Sheet type" style="display:flex;border:1px solid #D6D3CA;border-radius:10px;overflow:hidden">
+        <button type="button" onClick="{{ showClient }}" style="min-height:44px;padding:0 16px;border:0;font:600 14px Inter,sans-serif;cursor:pointer;background:{{clientBg}};color:{{clientFg}}">Client drawing</button>
+        <button type="button" onClick="{{ showProd }}" style="min-height:44px;padding:0 16px;border:0;font:600 14px Inter,sans-serif;cursor:pointer;background:{{prodBg}};color:{{prodFg}}">Production drawing</button>
+      </div>
+    </header>
+
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <section aria-label="Drawing" class="card" style="flex:999 1 600px;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #EEECE6">
+          <button class="btn" type="button" aria-label="Zoom out" onClick="{{ zoomOut }}" style="width:44px;padding:0;font-size:20px">−</button>
+          <span style="min-width:56px;text-align:center;font-weight:600;font-size:14px">{{zoomPct}}%</span>
+          <button class="btn" type="button" aria-label="Zoom in" onClick="{{ zoomIn }}" style="width:44px;padding:0;font-size:20px">+</button>
+          <button class="btn" type="button" onClick="{{ zoomFit }}">Fit</button>
+          <span style="width:1px;height:28px;background:#E3E1DA;margin:0 6px"></span>
+          <button class="btn" type="button" onClick="{{ addMarker }}" style="border-color:#D97706;color:#9A4508">+ Add numbered marker</button>
+          <button class="btn" type="button" onClick="{{ toggleCompare }}" style="border-color:#1D4ED8;color:#1D4ED8">{{compareLabel}}</button>
+          <span style="margin-left:auto;font-size:13px;color:#5B5F66">Sheet 1 / 5</span>
+        </div>
+        <sc-if value="{{ showCompare }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:14px;background:#F4F6FB;border-bottom:1px solid #E3E1DA">
+            <div style="background:#fff;border:1px solid #E3E1DA;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"><span class="lbl">Before · current</span><div style="height:110px;border:1px solid #9AA0A6;position:relative"><div style="position:absolute;left:20%;right:20%;top:18px;height:14px;border:2px solid #9AA0A6"></div><span style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:12px">Screen L900</span></div></div>
+            <div style="background:#fff;border:2px solid #1D4ED8;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px"><span class="lbl" style="color:#1D4ED8">After · proposed</span><div style="height:110px;border:1px solid #9AA0A6;position:relative"><div style="position:absolute;left:24%;right:24%;top:18px;height:14px;border:2px solid #1D4ED8;background:#E6EDFB"></div><span style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:12px;color:#1D4ED8;font-weight:700">Screen L800 · changed area highlighted</span></div></div>
+          </div>
+        </sc-if>
+        <div style="background:#E9E7E1;padding:24px;overflow:auto;height:560px;box-sizing:border-box">
+          <div style="width:760px;height:537px;margin:0 auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15);position:relative;transform:scale({{scale}});transform-origin:top center;font-size:10px;color:#17191C">
+            <div style="position:absolute;inset:14px;border:1.5px solid #17191C"></div>
+            <div style="position:absolute;left:40px;top:40px;width:300px;height:150px;border:1.5px solid #17191C"><div style="position:absolute;left:10px;right:10px;top:14px;height:10px;border:1px solid #17191C"></div><div style="position:absolute;left:20px;top:24px;width:8px;height:112px;background:#17191C"></div><div style="position:absolute;right:20px;top:24px;width:8px;height:112px;background:#17191C"></div><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">FRONT VIEW · L1350</span></div>
+            <div style="position:absolute;left:380px;top:40px;width:130px;height:150px;border:1.5px solid #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">SIDE VIEW · D750</span></div>
+            <div style="position:absolute;left:40px;top:230px;width:300px;height:130px;border:1.5px solid #17191C"><div style="position:absolute;left:24px;top:24px;width:26px;height:26px;border-radius:50%;border:1px solid #17191C"></div><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">TOP VIEW</span></div>
+            <div style="position:absolute;left:380px;top:230px;width:200px;height:130px;background:#F4F3EF;display:flex;align-items:center;justify-content:center;color:#5B5F66">ISOMETRIC (true view)</div>
+            <div style="position:absolute;right:30px;top:40px;width:150px;display:flex;flex-direction:column;gap:6px"><b>FINISHES</b><div style="display:flex;gap:6px;align-items:center"><span style="width:18px;height:12px;background:#7A5A3E"></span>Laurel Oak Dark 3416</div><div style="display:flex;gap:6px;align-items:center"><span style="width:18px;height:12px;background:#8A2E1E"></span>D Rust F5051</div><b style="margin-top:8px">HARDWARE</b><div>Adjustors 15 mm</div></div>
+            <sc-if value="{{ isProd }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:40px;top:400px;width:300px;font-size:10px;color:#B91C1C;font-weight:700">PRODUCTION · Job order JO-[NO.] · Deadline [DATE] · no client details</div></sc-if>
+            <div style="position:absolute;left:14px;right:14px;bottom:14px;height:76px;border-top:1.5px solid #17191C;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))">
+              <div style="padding:6px;border-right:1px solid #17191C;font-weight:700;font-size:12px">ENCORE PRIME</div>
+              <div style="padding:6px;border-right:1px solid #17191C">{{clientLine}}</div>
+              <div style="padding:6px;border-right:1px solid #17191C">ZEE Workstation · Qty 11</div>
+              <div style="padding:6px;border-right:1px solid #17191C">Drawn: Suraj<br>Checked: Kushal<br>Approved: —</div>
+              <div style="padding:6px">Rev A · Sheet 1/5</div>
+            </div>
+            <sc-for list="{{ markers }}" as="m" hint-placeholder-count="3">
+              <span style="position:absolute;left:{{m.x}}px;top:{{m.y}}px;width:24px;height:24px;border-radius:50%;background:#D97706;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff">{{m.n}}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;border-top:1px solid #EEECE6">
+          <a class="btn" href="Viewer.dc.html">← Previous</a>
+          <a class="btn" href="Viewer.dc.html">Next drawing →</a>
+        </div>
+      </section>
+
+      <aside style="flex:1 1 300px;display:flex;flex-direction:column;gap:16px">
+        <section class="card" aria-labelledby="checks" style="padding:18px;display:flex;flex-direction:column;gap:10px">
+          <h2 id="checks" style="margin:0;font-size:16px">Automatic checks</h2>
+          <div style="display:flex;justify-content:space-between;font-size:14px"><span>No clashes (legs, beams, raceway, grommet)</span><b style="color:#0E6B5C">Pass</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px"><span>Isometric is true view</span><b style="color:#0E6B5C">Pass</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px"><span>Engine check</span><b style="color:#0E6B5C">Pass</b></div>
+        </section>
+        <section class="card" aria-labelledby="ai" style="display:flex;flex-direction:column">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #EEECE6">
+            <h2 id="ai" style="margin:0;font-size:16px;flex:1">Change this drawing</h2>
+            <span class="pill" style="background:#E6EDFB;color:#1D4ED8">AI assistant</span>
+          </div>
+          <div style="padding:10px 16px;background:#E3F1EE;color:#0A5246;font-size:12px;font-weight:600">Not issued yet · changes keep RevA</div>
+          <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.45">
+            <sc-for list="{{ markers }}" as="m" hint-placeholder-count="3">
+              <div style="display:flex;gap:8px;align-items:center"><span style="flex:none;width:22px;height:22px;border-radius:50%;background:#D97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">{{m.n}}</span><span style="color:#3A3E45">{{m.note}}</span></div>
+            </sc-for>
+            <div style="align-self:flex-end;max-width:90%;background:#0E6B5C;color:#fff;border-radius:10px 10px 4px 10px;padding:9px 12px">Marker 1: make the screen 800 wide</div>
+            <div style="align-self:stretch;border:1px solid #C9D6F5;background:#F4F6FB;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px">
+              <div class="lbl" style="color:#1D4ED8">Proposed change · product file</div>
+              <div style="font-size:14px">Screen <s style="color:#5B5F66">L900</s> → <b>L800</b> <span style="color:#5B5F66">(allowed, max 1050)</span></div>
+              <div style="color:#0E6B5C;font-weight:600">Engine redrew · clash, true-view, engine check pass</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <button class="btn pri" type="button" onClick="{{ accept }}" style="min-height:40px">{{acceptLabel}}</button>
+                <button class="btn" type="button" onClick="{{ undo }}" style="min-height:40px">Undo</button>
+                <button class="btn" type="button" onClick="{{ toggleCompare }}" style="min-height:40px">Compare</button>
+              </div>
+            </div>
+            <div style="align-self:flex-end;max-width:90%;background:#0E6B5C;color:#fff;border-radius:10px 10px 4px 10px;padding:9px 12px">Why is the grommet on the left?</div>
+            <div style="align-self:flex-start;max-width:92%;background:#F4F3EF;border-radius:10px 10px 10px 4px;padding:9px 12px">ZEE rule: grommet 60 dia at 100 × 100 mm from the left corner. Want it on the right instead? That is a change to this product only.</div>
+          </div>
+          <form style="padding:12px 16px;border-top:1px solid #EEECE6;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;gap:8px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#5B5F66">Marker<select style="min-height:40px;padding:0 8px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;background:#fff"><option>None</option><option>1</option><option>2</option><option>3</option></select></label>
+              <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#5B5F66">Ask or change<input placeholder="e.g. raise raceway to 120" style="min-height:40px;padding:0 10px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+            </div>
+            <button class="btn" type="button">Send</button>
+            <div style="font-size:11px;color:#5B5F66">The AI only changes values in the product file. The locked engine does all drawing. After client approval this panel is off on client drawings.</div>
+          </form>
+        </section>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <a class="btn pri" href="Issue.dc.html" style="min-height:52px;font-size:15px">Looks right — mark ready to issue</a>
+          <a class="btn" href="Project.dc.html">Back to all drawings</a>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1250}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { zoom: 100, mode: 'client', compare: false, accepted: false, markers: [
+    { n: 1, x: 70, y: 52, note: 'Screen should be L800, not L900' },
+    { n: 2, x: 330, y: 150, note: 'Show adjustor height' },
+    { n: 3, x: 64, y: 252, note: 'Move grommet to right side' } ] }; }
+  renderVals() {
+    const z = this.state.zoom, prod = this.state.mode === 'prod';
+    const set = (v) => this.setState({ zoom: Math.max(50, Math.min(200, v)) });
+    return {
+      showCompare: this.state.compare, compareLabel: this.state.compare ? 'Hide compare' : 'Compare before / after',
+      toggleCompare: () => this.setState({ compare: !this.state.compare }),
+      acceptLabel: this.state.accepted ? 'Accepted ✓' : 'Accept',
+      accept: () => this.setState({ accepted: true }), undo: () => this.setState({ accepted: false, compare: false }),
+      zoomPct: z, scale: z / 100, markers: this.state.markers, isProd: prod,
+      clientLine: prod ? 'Q-2026-09-368 · JO-[NO.]' : 'Achievers Apparels Pvt Ltd · Q-2026-09-368',
+      zoomIn: () => set(z + 10), zoomOut: () => set(z - 10), zoomFit: () => set(100),
+      showClient: () => this.setState({ mode: 'client' }), showProd: () => this.setState({ mode: 'prod' }),
+      clientBg: prod ? '#fff' : '#17191C', clientFg: prod ? '#17191C' : '#fff',
+      prodBg: prod ? '#17191C' : '#fff', prodFg: prod ? '#fff' : '#17191C',
+      addMarker: () => { const m = this.state.markers; const n = m.length + 1;
+        this.setState({ markers: m.concat([{ n, x: 420 + (n % 3) * 60, y: 120 + (n % 4) * 60, note: '' }]) }); }
+    };
+  }
+}
+</script>
+</body>
+</html>
