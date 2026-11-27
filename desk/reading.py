@@ -3,7 +3,17 @@ Deterministic: no AI here. Claude is added later only for free text this cannot 
 import re
 
 SIZE = re.compile(r"L\s*(\d+)\s*[xX*,]?\s*D\s*(\d+)\s*[xX*,]?\s*H\s*(\d+)", re.I)
-FAMILIES = (("pedestal", ("pedestal",)), ("workstation", ("workstation", "work station")), ("storage", ("storage", "cabinet", "almirah")))
+# product type from the line's name, first match wins (a conference table is checked before "Vertex" means a director table)
+FAMILIES = (("conference", (r"conference", r"meeting\s+table", r"board\s*room")),
+            ("pedestal", (r"pedestal",)), ("workstation", (r"workstation", r"work\s+station")), ("storage", (r"storage", r"cabinet", r"almirah")),
+            ("manager_table", (r"director", r"manager", r"executive\s+table", r"vertex")),
+            ("centre_table", (r"cent(?:re|er)\s+table", r"coffee\s+table")), ("side_table", (r"side\s+table",)),
+            ("desk", (r"\bdesk\b", r"office\s+table")))
+# the product-type question: what the user sees -> the type (only types with an approved template, plus conference tables)
+TYPE_OPTIONS = (("Workstation", "workstation"), ("Storage", "storage"), ("Pedestal", "pedestal"),
+                ("Director / manager table (Vertex, with side unit)", "manager_table"), ("Desk (panel legs)", "desk"),
+                ("Centre table", "centre_table"), ("Side table", "side_table"), ("Conference table", "conference"))
+UNIT_DEFAULT = "L900 D400 H750"
 
 
 def size_of(text):
@@ -28,7 +38,7 @@ def read_line(name, description):
         else:
             loose.append(s)
     low = name.lower()
-    family = next((f for f, keys in FAMILIES if any(k in low for k in keys)), "other")
+    family = next((f for f, keys in FAMILIES if any(re.search(k, low) for k in keys)), "other")
     title_size, body_size = size_of(name), size_of(fields.get("size", ""))
     size = body_size or title_size
     qs = []
@@ -45,6 +55,8 @@ def read_line(name, description):
         qs.append(dict(key="shelves", text="How many shelves inside?", options=["0", "1", "2"]))
     if family == "pedestal" and "shutter" in low and "hinge" not in fields:
         qs.append(dict(key="hinge", text="Which side is the shutter hinged?", options=["Left", "Right"]))
+    if family == "manager_table" and not size_of(fields.get("side unit", "")):
+        qs.append(dict(key="unit", text="What is the size of the side unit (L, D, H in mm)?", options=[UNIT_DEFAULT]))
     if family == "other":
-        qs.append(dict(key="family", text="I could not tell the product type from the name. Which product is this?", options=["Workstation", "Storage", "Pedestal", "None of these"]))
+        qs.append(dict(key="family", text="I could not tell the product type from the name. Which product is this?", options=[t for t, _ in TYPE_OPTIONS] + ["None of these"]))
     return dict(family=family, size=size, fields=fields, area=loose[0] if loose else "", notes=[note] if note else [], questions=qs)

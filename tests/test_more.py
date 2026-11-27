@@ -60,10 +60,10 @@ def test_more():
         q2 = [q.id for q in s.query(db.Question).join(db.OrderLine).join(db.Order).filter(db.Order.source_ref == "SAMPLE-REPEAT-1")]
     h = c.post(B + "/remake/1", data={"rid": rid}).text
     assert "Remake of a past drawing" in h and "Preview, not issued" in h
-    with db.Session() as s:
-        fam = s.query(db.Question).filter_by(key="family").one().id
-    c.post("%s/answer/%d" % (B, fam), data={"value": "None of these"})
+    with db.Session() as s:                                  # a conference table is known now: no product-type question
+        assert s.query(db.Question).filter_by(key="family").count() == 0
     h = c.post(B + "/draw").text
+    assert "Conference tables are not ready to draw yet" in h
     assert "Could not draw" in h and "Ask for an engine addition" in h and "Issue the ready drawings" in h
     h = c.post("/engine-requests", data={"text": "Add Conference Table CT 01 to the engine", "order_ref": "SAMPLE-REPEAT-1", "product": "Conference Table CT 01"}).text
     assert "Engine addition requested by Anchal Dawar" in h

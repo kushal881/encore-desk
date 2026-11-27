@@ -112,6 +112,28 @@ def _fetch_photos(s, src):
             _save_photo(s, l.name, data, "Odoo")
 
 
+def _sync_questions(s, l):
+    """Unanswered questions follow the current reading rules (a line read by an earlier version may be asked something the
+    desk now knows, or be offered old choices). Answered questions are never changed. -> True when something changed."""
+    if l.revisions:
+        return False
+    want = {q["key"]: q for q in l.read["questions"]}
+    changed = False
+    for q in list(l.questions):
+        if q.answer:
+            continue
+        w = want.get(q.key)
+        if w is None:
+            l.questions.remove(q); s.delete(q); changed = True
+        elif (q.text, list(q.options or [])) != (w["text"], w["options"]):
+            q.text, q.options = w["text"], w["options"]; changed = True
+    have = {q.key for q in l.questions}
+    for k, w in want.items():
+        if k not in have:
+            l.questions.append(db.Question(key=k, text=w["text"], options=w["options"])); changed = True
+    return changed
+
+
 def load(ref):
     """The order from our own database; read from its source and copied in the first time it is opened."""
     with db.Session() as s:
@@ -142,8 +164,10 @@ def load(ref):
             _fetch_photos(s, src)
         s.refresh(o)
         _ = o.not_drawn, o.added
+        changed = False
         for l in o.lines:
             l.read = read_line(l.name, l.description)
+            changed |= _sync_questions(s, l)
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"
             l.open_count = sum(1 for q in l.questions if not q.answer)
             _ = l.questions, l.drawing, l.changes, l.revisions
@@ -172,6 +196,10 @@ def load(ref):
             d_ = l.drawing                                           # marked ready to issue in the viewer (that exact preview)
             l.review = s.scalars(select(db.Review).where(db.Review.line_id == l.id, db.Review.shown == "d%d" % int(d_.made_at.timestamp())).order_by(db.Review.id.desc())).first() \
                 if d_ and d_.status == "preview" else None
+        if changed:
+            s.commit()
+            for l in o.lines:
+                _ = l.questions
         _ = o.client, o.messages, o.steps
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
