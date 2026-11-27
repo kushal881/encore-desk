@@ -74,3 +74,39 @@ def test_desk_keeps_them_apart():
         assert [(l.no, l.name) for l in o.lines] == [(1, "Pedestal 2 drawer")]                # only the pedestal gets questions and a drawing
         assert sorted(x.reason for x in o.not_drawn) == ["Bought-out item", "Installation, delivery or transport"]
         assert "1 product to draw in this order (2 more lines need no drawing)" in o.messages[0].text
+
+
+def test_remove_and_add_lines():
+    """Remove a product, add it back (same number), add a set-aside line, add a product not in the quotation. Runs after the test above."""
+    from fastapi.testclient import TestClient
+    from desk.app import app
+    from desk import db
+    c = TestClient(app); c.post("/logout"); c.post("/login/dev/2")                      # any signed-in user, not only the administrator
+    B = "/orders/SAMPLE-ND-1"
+    c.get(B)
+    assert c.post(B + "/lines/9/remove", data=dict(reason="Duplicate line")).status_code == 404
+    r = c.post(B + "/lines/1/remove", data=dict(reason="Not needed by client"), follow_redirects=False)
+    assert r.status_code == 303
+    with db.Session() as s:
+        o = s.query(db.Order).filter_by(source_ref="SAMPLE-ND-1").one()
+        assert o.lines == []
+        gone = next(x for x in o.not_drawn if x.no == 1)
+        assert gone.reason == "Removed: Not needed by client" and gone.by == "Sushil Singhal" and "L400" in gone.description
+        chair = next(x for x in o.not_drawn if x.reason == "Bought-out item")
+        gone_id, chair_id = gone.id, chair.id
+    h = c.get(B).text
+    assert "was Product 1" in h and "Removed: Not needed by client" in h
+    c.post(B + "/not-drawn/%d/add" % gone_id)                                            # back as Product 1
+    c.post(B + "/not-drawn/%d/add" % chair_id)                                           # the chair, on purpose: next number
+    c.post(B + "/lines/add", data=dict(name="Pedestal 3 drawer", qty="2", details="Size : L400 D450 H650mm"))
+    assert c.post(B + "/lines/add", data=dict(name="", qty="1")).status_code == 400
+    with db.Session() as s:
+        o = s.query(db.Order).filter_by(source_ref="SAMPLE-ND-1").one()
+        assert [(l.no, l.name) for l in o.lines] == [(1, "Pedestal 2 drawer"), (2, "Evolve chair EEC 589"), (3, "Pedestal 3 drawer")]
+        assert [(a.no, a.by) for a in o.added] == [(3, "Sushil Singhal")]
+        assert [x.reason for x in o.not_drawn] == ["Installation, delivery or transport"]
+        l1 = o.lines[0]
+        s.add(db.Revision(line_id=l1.id, number="TEST-01", rev="A")); s.commit()             # pretend product 1 was issued
+    assert c.post(B + "/lines/1/remove", data=dict(reason="Other")).status_code == 400   # issued: a quotation change, not a removal
+    h = c.get(B).text
+    assert "Quotation needs update" in h and "Product 3 · Pedestal 3 drawer" in h

@@ -21,7 +21,20 @@
       <div style="display:flex;gap:10px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:8px{% endif %}"><div style="flex-grow:1">{{ text }}</div><a href="{{ url }}">{{ act }}</a></div>
       {% else %}<div class="sub">Nothing else is waiting on the drawings.</div>{% endfor %}
     </div>
-    <div class="label">Products and drawings</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <div class="label" style="flex:1">Products and drawings</div>
+      <details style="flex-basis:100%;order:2"><summary>+ Add a product that is not in the quotation</summary>
+        <form method="post" action="/orders/{{ o.source_ref }}/lines/add" class="card" style="margin-top:8px;gap:8px">
+          <label class="label" for="an">Product</label><input id="an" type="text" name="name" required placeholder="e.g. Pedestal 3 drawer">
+          <label class="label" for="aq">Qty</label><input id="aq" type="text" name="qty" value="1" inputmode="decimal" style="max-width:120px">
+          <label class="label" for="ad">Details (size, finish), one per line</label><textarea id="ad" name="details" rows="3" style="font:inherit;border:1px solid #D6D3CA;border-radius:10px;padding:8px 12px" placeholder="Size : L400 D450 H650mm"></textarea>
+          <div class="sub small">It gets the next product number. The salesperson is told to add it to the quotation.</div>
+          <div><button class="primary">Add to drawings</button></div>
+        </form>
+      </details>
+    </div>
+    {% if o.added %}<div class="card" style="border-color:#F2C894;background:#FDF8F0"><div class="label" style="color:#9A4508">Quotation needs update</div>
+      {% for a in o.added %}<div class="small">Product {{ a.no }} · {{ a.name }} · added by {{ a.by }}. Not in the quotation yet.</div>{% endfor %}</div>{% endif %}
     <div class="grid">
       {% for l in o.lines %}
       <div class="card" style="gap:8px">
@@ -41,6 +54,15 @@
         <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View, mark and ask for a change</b></a>{% if l.last_rev %} · {{ l.last_rev.number }} Rev {{ l.last_rev.rev }} · <a href="/revisions/{{ l.last_rev.id }}/pdf?download=1">PDF</a>{% endif %}</div>
         {% elif l.drawing %}<div class="sub small">{{ l.drawing.error }}</div>
         {% else %}<div class="nophoto" style="width:100%;height:110px">No drawing yet</div>{% endif %}
+        {% if not l.revisions %}
+        <details><summary>Remove from drawings</summary>
+          <form method="post" action="/orders/{{ o.source_ref }}/lines/{{ l.no }}/remove" class="row" style="margin-top:6px" data-confirm="Remove product {{ l.no }} from the drawings? It moves to &quot;No drawing needed&quot; and can be added back." data-yes="Remove">
+            <label class="sr" for="rr{{ l.no }}">Reason</label>
+            <select id="rr{{ l.no }}" name="reason">{% for x in remove_reasons %}<option>{{ x }}</option>{% endfor %}</select>
+            <button class="sm danger">Remove</button>
+          </form>
+        </details>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -49,7 +71,8 @@
       <div id="nd" class="label">No drawing needed ({{ o.not_drawn|length }})</div>
       {% for x in o.not_drawn %}
       <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:6px{% endif %}">
-        <div style="flex:1 1 240px">{{ x.name }} <span class="sub small">· qty {{ '%g' % x.qty }}</span></div><span class="tag dim">{{ x.reason }}</span>
+        <div style="flex:1 1 240px">{% if x.no %}<span class="sub small">was Product {{ x.no }} · </span>{% endif %}{{ x.name }} <span class="sub small">· qty {{ '%g' % x.qty }}{% if x.by %} · by {{ x.by }}{% endif %}</span></div><span class="tag dim">{{ x.reason }}</span>
+        {% if x.reason != 'Installation, delivery or transport' and x.reason != 'Service' %}<form method="post" action="/orders/{{ o.source_ref }}/not-drawn/{{ x.id }}/add"><button class="sm">Add to drawings</button></form>{% endif %}
       </div>
       {% endfor %}
     </div>

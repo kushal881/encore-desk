@@ -42,6 +42,7 @@ class Order(Base):
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
     steps: Mapped[list["Step"]] = relationship(order_by="Step.id", cascade="all, delete-orphan")
     not_drawn: Mapped[list["NoDrawingLine"]] = relationship(order_by="NoDrawingLine.id", cascade="all, delete-orphan")
+    added: Mapped[list["AddedLine"]] = relationship(order_by="AddedLine.id", cascade="all, delete-orphan")
 
 
 class OrderLine(Base):
@@ -67,7 +68,21 @@ class NoDrawingLine(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
     name: Mapped[str] = mapped_column(Text)
     qty: Mapped[float] = mapped_column(Float, default=1)
-    reason: Mapped[str] = mapped_column(String(80), default="")
+    reason: Mapped[str] = mapped_column(String(120), default="")
+    description: Mapped[str] = mapped_column(Text, default="")              # kept so the line can be added back to drawings
+    no: Mapped[int] = mapped_column(Integer, default=0)                      # its former product number when it was removed; never reused
+    by: Mapped[str] = mapped_column(String(120), default="")                 # who removed it ("" = set aside by the rule)
+
+
+class AddedLine(Base):
+    """A product added in the desk that is not in the quotation: the salesperson must update the quotation."""
+    __tablename__ = "added_line"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    no: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(Text)
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Question(Base):
