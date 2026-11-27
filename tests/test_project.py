@@ -32,7 +32,7 @@ def test_project():
     assert 'id="issue"' in w and "Product 1: new drawing number given after you enter the folder number" in w and "data-confirm=" in w
     # markers on the drawing
     v = c.get(A + "/view/2").text
-    assert "Add a marker" in v and 'id="zin"' in v and 'id="zout"' in v and "None yet" in v
+    assert "+ Add numbered marker" in v and 'id="zin"' in v and 'id="zout"' in v and "None on this sheet" in v
     shown = v.split('name="shown" value="')[1].split('"')[0]
     assert c.post(A + "/marks/2", data={"shown": shown, "x": "140", "y": "10"}).status_code == 400
     c.post(A + "/marks/2", data={"shown": shown, "x": "31.5", "y": "42", "label": "left shutter"})
