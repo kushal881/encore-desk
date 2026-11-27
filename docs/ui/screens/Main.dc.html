@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawing Desk – Dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.nav a{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:44px;border-radius:8px;color:#3A3E45;text-decoration:none;font-size:14px;font-weight:500}
+.nav a.on{background:#E3F1EE;color:#0E6B5C;font-weight:600}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+table{border-collapse:collapse;width:100%}td,th{padding:14px 16px;text-align:left;border-top:1px solid #EEECE6;font-size:14px;vertical-align:middle}th{font-size:12px;color:#5B5F66;font-weight:600;border-top:0}
+.kpi{display:flex;flex-direction:column;gap:6px;padding:20px;text-decoration:none;color:#17191C}
+.kpi:hover{border-color:#0E6B5C}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:100vh">
+  <nav class="nav" aria-label="Main" style="flex:1 1 220px;max-width:260px;background:#fff;border-right:1px solid #E3E1DA;padding:20px 14px;box-sizing:border-box;display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px">
+      <img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:40px;height:40px;border-radius:4px;display:block">
+      <div><div style="font-weight:700;font-size:15px">Encore Prime</div><div style="font-size:12px;color:#5B5F66">Drawing Desk</div></div>
+    </div>
+    <a class="on" href="Main.dc.html">Dashboard</a>
+    <a href="NewProject.dc.html">New project</a>
+    <a href="Projects.dc.html">Projects</a>
+    <a href="NewProject.dc.html">Past orders / Remake</a>
+    <sc-if value="{{ isStaff }}" hint-placeholder-val="{{ false }}"><a href="MyRequests.dc.html">My requests <span class="pill" style="margin-left:auto;background:#E6EDFB;color:#1D4ED8">2</span></a></sc-if>
+    <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}"><a href="Approvals.dc.html">Approvals <span class="pill" style="margin-left:auto;background:#FDF1E2;color:#9A4508">2</span></a></sc-if>
+    <div style="margin-top:auto;padding:12px;border-top:1px solid #EEECE6;font-size:13px"><div style="font-weight:600">{{userName}}</div><div style="color:#5B5F66">{{userRole}}</div></div>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;padding:28px 36px;box-sizing:border-box;display:flex;flex-direction:column;gap:24px">
+    <header style="display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <div style="flex:1 1 300px"><div class="lbl">Friday, 27 Nov 2026</div><h1 style="margin:4px 0 0;font-size:28px;font-weight:700">Dashboard</h1></div>
+      <a class="btn pri" href="NewProject.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New project</a>
+    </header>
+
+    <section aria-label="Summary" style="display:grid;grid-template-columns:repeat({{kpiCols}},minmax(0,1fr));gap:14px">
+      <a class="card kpi" href="Projects.dc.html"><span class="lbl">Active projects</span><span style="font-size:34px;font-weight:700">4</span><span style="font-size:13px;color:#5B5F66">Open to see all</span></a>
+      <a class="card kpi" href="Project.dc.html"><span class="lbl">Drawings pending</span><span style="font-size:34px;font-weight:700">12</span><span style="font-size:13px;color:#5B5F66">Not yet generated</span></a>
+      <a class="card kpi" href="Viewer.dc.html"><span class="lbl">To review</span><span style="font-size:34px;font-weight:700">5</span><span style="font-size:13px;color:#5B5F66">Generated, check &amp; issue</span></a>
+      <a class="card kpi" href="Issue.dc.html"><span class="lbl">With client</span><span style="font-size:34px;font-weight:700">3</span><span style="font-size:13px;color:#5B5F66">Awaiting approval</span></a>
+      <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}"><a class="card kpi" href="Approvals.dc.html" style="border-color:#F2C894"><span style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="lbl" style="color:#9A4508">Engine requests</span><span class="pill" style="background:#17191C;color:#fff;font-size:11px">Admin only</span></span><span style="font-size:34px;font-weight:700;color:#9A4508">2</span><span style="font-size:13px;color:#5B5F66">Need your decision</span></a></sc-if>
+    </section>
+
+    <section class="card" aria-labelledby="todo" style="padding:20px 20px 8px">
+      <h2 id="todo" style="margin:0 0 12px;font-size:17px">Your next steps</h2>
+      <div style="display:flex;flex-direction:column">
+        <sc-if value="{{ isStaff }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#E3F1EE;color:#0E6B5C">Approved</span>
+          <div style="flex:1 1 320px"><b>Your request was approved:</b> glass shutter on Vertex side unit · Achievers Apparels — apply it</div>
+          <a class="btn pri" href="MyRequests.dc.html">Open task</a>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#FDE8E8;color:#B91C1C">Rejected</span>
+          <div style="flex:1 1 320px"><b>Your request was rejected:</b> remove grommet on reception table · Fault Code Design</div>
+          <a class="btn" href="MyRequests.dc.html">See reason</a>
+        </div>
+        </sc-if>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#FDE8E8;color:#B91C1C">Changes</span>
+          <div style="flex:1 1 320px"><b>Quotation changed in Odoo</b> · Achievers Apparels — 1 added, 1 dropped, 2 changed</div>
+          <a class="btn" href="Changes.dc.html" style="border-color:#B91C1C;color:#B91C1C">Handle changes</a>
+        </div>
+        <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#FDF1E2;color:#9A4508">Approve</span>
+          <div style="flex:1 1 320px"><b>Engine request:</b> raceway 1500 long on ZEE side-sharing · Fault Code Design</div>
+          <a class="btn" href="Approvals.dc.html">Open request</a>
+        </div>
+        </sc-if>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#E6EDFB;color:#1D4ED8">Review</span>
+          <div style="flex:1 1 320px"><b>5 drawings generated</b> · Achievers Apparels — check and issue to client</div>
+          <a class="btn pri" href="Viewer.dc.html">Review drawings</a>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #EEECE6">
+          <span class="pill" style="background:#E3F1EE;color:#0E6B5C">Production</span>
+          <div style="flex:1 1 320px"><b>Client approved</b> · Colonelz Constructions — make production drawings</div>
+          <a class="btn" href="Issue.dc.html">Make production set</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="active" style="padding:20px 0 4px">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:0 20px 12px">
+        <h2 id="active" style="margin:0;font-size:17px;flex:1">Active projects</h2>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#5B5F66">Search<input type="search" placeholder="Client, folder or quotation" style="min-height:40px;width:240px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+      </div>
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Project</th><th>Folder</th><th>Stage</th><th>Drawings</th><th>Next step</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><b>Achievers Apparels Pvt Ltd</b><div style="font-size:12px;color:#5B5F66">Q-2026-09-368 · <span style="color:#B91C1C;font-weight:600">4 changes</span></div></td><td>Encore-Sep-2026-01</td><td><span class="pill" style="background:#E6EDFB;color:#1D4ED8">4 · Review</span></td><td>5 / 7</td><td>Review &amp; issue</td><td><a class="btn" href="Project.dc.html">Open</a></td></tr>
+          <tr><td><b>Fault Code Design</b><div style="font-size:12px;color:#5B5F66">Nokia Block-C</div></td><td>Encore-Nov-2026-05</td><td><span class="pill" style="background:#FDF1E2;color:#9A4508">2 · Specify</span></td><td>0 / 2</td><td>Waiting on engine request</td><td><a class="btn" href="Project.dc.html">Open</a></td></tr>
+          <tr><td><b>Mr. Ashok Gupta</b><div style="font-size:12px;color:#5B5F66">Wardrobes · Sector 50</div></td><td>Encore-Oct-2026-03</td><td><span class="pill" style="background:#F1EFE9;color:#3A3E45">6 · With client</span></td><td>6 / 6</td><td>Chase client approval</td><td><a class="btn" href="Project.dc.html">Open</a></td></tr>
+          <tr><td><b>Colonelz Constructions Pvt Ltd</b></td><td>Encore-Nov-2026-01</td><td><span class="pill" style="background:#E3F1EE;color:#0E6B5C">7 · Production</span></td><td>4 / 4</td><td>Make production drawings</td><td><a class="btn" href="Project.dc.html">Open</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"viewAs":{"editor":"enum","options":["Admin","Staff"],"default":"Admin"},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const admin = (this.props.viewAs ?? 'Admin') === 'Admin';
+    return { isAdmin: admin, isStaff: !admin, kpiCols: admin ? 5 : 4,
+      userName: admin ? 'Kushal' : 'Suraj', userRole: admin ? 'Administrator' : 'Drawing staff' };
+  }
+}
+</script>
+</body>
+</html>

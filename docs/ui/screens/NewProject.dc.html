@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawing Desk – New project</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.nav a{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:44px;border-radius:8px;color:#3A3E45;text-decoration:none;font-size:14px;font-weight:500}
+.nav a.on{background:#E3F1EE;color:#0E6B5C;font-weight:600}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+table{border-collapse:collapse;width:100%}td,th{padding:14px 16px;text-align:left;border-top:1px solid #EEECE6;font-size:14px;vertical-align:middle}th{font-size:12px;color:#5B5F66;font-weight:600;border-top:0}
+.kpi{display:flex;flex-direction:column;gap:6px;padding:20px;text-decoration:none;color:#17191C}
+.kpi:hover{border-color:#0E6B5C}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:100vh">
+  <nav class="nav" aria-label="Main" style="flex:1 1 220px;max-width:260px;background:#fff;border-right:1px solid #E3E1DA;padding:20px 14px;box-sizing:border-box;display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px">
+      <img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:40px;height:40px;border-radius:4px;display:block">
+      <div><div style="font-weight:700;font-size:15px">Encore Prime</div><div style="font-size:12px;color:#5B5F66">Drawing Desk</div></div>
+    </div>
+    <a href="Main.dc.html">Dashboard</a>
+    <a class="on" href="NewProject.dc.html">New project</a>
+    <a href="Projects.dc.html">Projects</a>
+    <a href="NewProject.dc.html">Past orders / Remake</a>
+    <a href="Approvals.dc.html">Approvals <span class="pill" style="margin-left:auto;background:#FDF1E2;color:#9A4508">2</span></a>
+    <div style="margin-top:auto;padding:12px;border-top:1px solid #EEECE6;font-size:13px"><div style="font-weight:600">Kushal</div><div style="color:#5B5F66">Administrator</div></div>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;padding:28px 36px;box-sizing:border-box;display:flex;flex-direction:column;gap:24px">
+    <header style="display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <a class="btn" href="Main.dc.html" aria-label="Back to dashboard" style="padding:0 14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</a>
+      <div style="flex:1 1 300px"><div class="lbl">Step 1 of 8 · Order</div><h1 style="margin:4px 0 0;font-size:28px;font-weight:700">Start a new drawing project</h1></div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start">
+      <section class="card" aria-labelledby="fromq" style="padding:22px;display:flex;flex-direction:column;gap:14px">
+        <div><h2 id="fromq" style="margin:0;font-size:18px">From an Odoo quotation</h2>
+        <p style="margin:6px 0 0;font-size:14px;color:#5B5F66">Only quotations whose opportunity is still open are listed. Won or lost ones are hidden.</p></div>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Search quotation or client<input type="search" placeholder="e.g. Q-2026-11 or Fault Code" style="min-height:44px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+        <div style="display:flex;flex-direction:column;border:1px solid #EEECE6;border-radius:10px">
+          <label style="display:flex;align-items:center;gap:14px;padding:14px;border-bottom:1px solid #EEECE6;background:#F4FAF8;cursor:pointer">
+            <input type="radio" name="q" checked style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="flex:1"><div style="font-weight:600">Q-2026-11-412 · Fault Code Design</div><div style="font-size:13px;color:#5B5F66">2 products · Opportunity: Proposition · Balvinder Singh</div></div>
+            <span class="pill" style="background:#E3F1EE;color:#0E6B5C">Open</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:14px;padding:14px;border-bottom:1px solid #EEECE6;cursor:pointer">
+            <input type="radio" name="q" style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="flex:1"><div style="font-weight:600">Q-2026-11-398 · [Client name]</div><div style="font-size:13px;color:#5B5F66">6 products · Opportunity: Qualified</div></div>
+            <span class="pill" style="background:#E3F1EE;color:#0E6B5C">Open</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:14px;padding:14px;cursor:pointer">
+            <input type="radio" name="q" style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="flex:1"><div style="font-weight:600">Q-2026-11-377 · [Client name]</div><div style="font-size:13px;color:#5B5F66">3 products · Opportunity: New</div></div>
+            <span class="pill" style="background:#E3F1EE;color:#0E6B5C">Open</span>
+          </label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;max-width:240px">Server folder no.<input value="05" style="min-height:44px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+        <div style="background:#F4F3EF;border-radius:8px;padding:12px 14px;font-size:13px">Folder will be created: <b>Encore-Nov-2026-05-Fault Code Design</b> with PDF · DXF · Other</div>
+        <a class="btn pri" href="Project.dc.html" style="align-self:flex-start">Create project &amp; read products</a>
+      </section>
+
+      <section class="card" aria-labelledby="remake" style="padding:22px;display:flex;flex-direction:column;gap:14px">
+        <div><h2 id="remake" style="margin:0;font-size:18px">Remake from a past order</h2>
+        <p style="margin:6px 0 0;font-size:14px;color:#5B5F66">Customer wants the same product again? Pick the old drawing. Its approved specification is copied into a new project.</p></div>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Search past drawings<input type="search" value="Achievers" style="min-height:44px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></label>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;gap:14px;align-items:center;padding:12px;border:1px solid #EEECE6;border-radius:10px;cursor:pointer">
+            <input type="checkbox" checked style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="width:64px;height:48px;border-radius:6px;background:#EEECE6;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5B5F66">Photo</div>
+            <div style="flex:1"><div style="font-weight:600">ZEE Workstation 1350 × 750</div><div style="font-size:12px;color:#5B5F66">Encore-Sep-2026-01-01 · RevA · Client approved</div></div>
+          </label>
+          <label style="display:flex;gap:14px;align-items:center;padding:12px;border:1px solid #EEECE6;border-radius:10px;cursor:pointer">
+            <input type="checkbox" style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="width:64px;height:48px;border-radius:6px;background:#EEECE6;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5B5F66">Photo</div>
+            <div style="flex:1"><div style="font-weight:600">Vertex table with separate side unit</div><div style="font-size:12px;color:#5B5F66">Encore-Sep-2026-01-06 · RevA · Client approved</div></div>
+          </label>
+          <label style="display:flex;gap:14px;align-items:center;padding:12px;border:1px solid #EEECE6;border-radius:10px;cursor:pointer">
+            <input type="checkbox" style="width:20px;height:20px;accent-color:#0E6B5C">
+            <div style="width:64px;height:48px;border-radius:6px;background:#EEECE6;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5B5F66">Photo</div>
+            <div style="flex:1"><div style="font-weight:600">Pedestal 2 drawer, castor</div><div style="font-size:12px;color:#5B5F66">Encore-Sep-2026-01-15 · RevA · Client approved</div></div>
+          </label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Link to new quotation<select style="min-height:44px;padding:0 10px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;background:#fff"><option>Select open quotation…</option></select></label>
+        <a class="btn pri" href="Specify.dc.html" style="align-self:flex-start">Copy 1 product into new project</a>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

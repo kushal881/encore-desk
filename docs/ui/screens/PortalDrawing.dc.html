@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Client portal – Review a drawing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#17191C;background:#F4F3EF}
+a{color:#0E6B5C}a:hover{color:#0A5246}
+.card{background:#fff;border:1px solid #E3E1DA;border-radius:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font:600 14px Inter,sans-serif;text-decoration:none;border:1px solid #D6D3CA;background:#fff;color:#17191C;cursor:pointer;box-sizing:border-box}
+.btn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.lbl{font-size:12px;color:#5B5F66;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.in{min-height:44px;padding:0 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif;box-sizing:border-box;width:100%}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column">
+  <header style="background:#17191C;color:#fff">
+    <div style="max-width:1240px;margin:0 auto;padding:16px 28px;display:flex;flex-wrap:wrap;align-items:center;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px"><img src="/_blob/90abad62000180601f4c1451ea7bb9f8" alt="Encore Prime logo" style="width:44px;height:44px;border-radius:4px;display:block"><div style="font-weight:700;font-size:16px">Encore Prime Furniture</div></div>
+      <div style="margin-left:auto;font-size:13px;color:#D4D2CC">Client portal · Achievers Apparels Pvt Ltd</div>
+      <a href="PortalHome.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">My orders</a>
+      <a href="PortalPast.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">Past orders</a>
+      <a href="PortalLogin.dc.html" style="color:#fff;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center">Sign out</a>
+    </div>
+  </header>
+  <main style="max-width:1240px;width:100%;margin:0 auto;padding:24px 28px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
+      <a class="btn" href="PortalSet.dc.html" aria-label="Back to all drawings" style="padding:0 14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>All drawings</a>
+      <div style="flex:1 1 300px"><div class="lbl">Sheet 4 of 5 · RevA</div><h1 style="margin:4px 0 0;font-size:24px">Vertex table with separate side unit · Qty 3</h1></div>
+      <a class="btn" href="PortalDrawing.dc.html">← Previous</a><a class="btn" href="PortalDrawing.dc.html">Next →</a>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <section class="card" aria-label="Drawing" style="flex:999 1 620px;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #EEECE6">
+          <button class="btn" type="button" aria-label="Zoom out" onClick="{{ zoomOut }}" style="width:44px;padding:0;font-size:20px">−</button>
+          <span style="min-width:56px;text-align:center;font-weight:600">{{zoomPct}}%</span>
+          <button class="btn" type="button" aria-label="Zoom in" onClick="{{ zoomIn }}" style="width:44px;padding:0;font-size:20px">+</button>
+          <button class="btn" type="button" onClick="{{ addMark }}" style="margin-left:auto;border-color:#D97706;color:#9A4508">+ Mark a spot to change</button>
+        </div>
+        <div style="background:#E9E7E1;padding:22px;height:540px;overflow:auto;box-sizing:border-box">
+          <div style="width:720px;height:509px;margin:0 auto;background:#fff;position:relative;box-shadow:0 1px 4px rgba(0,0,0,.15);transform:scale({{scale}});transform-origin:top center;font-size:10px">
+            <div style="position:absolute;inset:14px;border:1.5px solid #17191C"></div>
+            <div style="position:absolute;left:40px;top:40px;width:260px;height:140px;border:1.5px solid #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">FRONT VIEW · L1350</span></div>
+            <div style="position:absolute;left:330px;top:40px;width:170px;height:140px;border:1.5px solid #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">SIDE UNIT · L1500</span></div>
+            <div style="position:absolute;left:40px;top:220px;width:300px;height:120px;border:1.5px solid #17191C"><span style="position:absolute;bottom:-16px;left:0;right:0;text-align:center">TOP VIEW</span></div>
+            <div style="position:absolute;left:380px;top:220px;width:180px;height:120px;background:#F4F3EF;display:flex;align-items:center;justify-content:center;color:#5B5F66">ISOMETRIC</div>
+            <div style="position:absolute;left:14px;right:14px;bottom:14px;height:62px;border-top:1.5px solid #17191C;display:flex;align-items:center;padding:0 10px;gap:20px"><b style="font-size:12px">ENCORE PRIME</b><span>Achievers Apparels · Q-2026-09-368</span><span style="margin-left:auto">Rev A · 4/5</span></div>
+            <sc-for list="{{ marks }}" as="m" hint-placeholder-count="1">
+              <span style="position:absolute;left:{{m.x}}px;top:{{m.y}}px;width:24px;height:24px;border-radius:50%;background:#D97706;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff">{{m.n}}</span>
+            </sc-for>
+          </div>
+        </div>
+      </section>
+
+      <aside style="flex:1 1 320px;display:flex;flex-direction:column;gap:14px">
+        <sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}">
+          <section class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+            <h2 style="margin:0;font-size:17px">What would you like to do?</h2>
+            <button class="btn pri" type="button" onClick="{{ pickApprove }}" style="min-height:52px;font-size:15px">Approve this drawing</button>
+            <button class="btn" type="button" onClick="{{ pickChange }}" style="min-height:52px;font-size:15px;border-color:#D97706;color:#9A4508">Ask for a change</button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ isChange }}" hint-placeholder-val="{{ false }}">
+          <section class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+            <h2 style="margin:0;font-size:17px">Ask for a change</h2>
+            <p style="margin:0;font-size:13px;color:#5B5F66">Tap "Mark a spot" on the drawing, then say what to change.</p>
+            <sc-for list="{{ marks }}" as="m" hint-placeholder-count="1">
+              <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:600"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:#D97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">{{m.n}}</span><input class="in" value="{{m.note}}" placeholder="What should change here?"></label>
+            </sc-for>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Anything else<textarea rows="3" style="padding:10px 12px;border:1px solid #D6D3CA;border-radius:8px;font:14px Inter,sans-serif"></textarea></label>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Attach photo or file (optional)<input type="file" style="font:13px Inter,sans-serif"></label>
+            <div style="display:flex;gap:10px"><button class="btn pri" type="button" onClick="{{ send }}">Send change request</button><button class="btn" type="button" onClick="{{ reset }}">Cancel</button></div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ isApprove }}" hint-placeholder-val="{{ false }}">
+          <section class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+            <h2 style="margin:0;font-size:17px">Approve this drawing</h2>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Your name<input class="in" placeholder="Full name"></label>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">One-time code from your email<input class="in" placeholder="6 digits"></label>
+            <label style="display:flex;gap:10px;align-items:flex-start;font-size:13px"><input type="checkbox" style="width:20px;height:20px;accent-color:#0E6B5C">I approve this drawing for manufacturing as shown.</label>
+            <div style="display:flex;gap:10px"><button class="btn pri" type="button" onClick="{{ confirm }}">Confirm approval</button><button class="btn" type="button" onClick="{{ reset }}">Cancel</button></div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+          <section class="card" role="status" style="padding:20px;display:flex;flex-direction:column;gap:10px;border-color:#0E6B5C;background:#F4FAF8">
+            <h2 style="margin:0;font-size:17px;color:#0E6B5C">{{doneTitle}}</h2>
+            <p style="margin:0;font-size:14px">{{doneText}}</p>
+            <a class="btn" href="PortalSet.dc.html">Back to all drawings</a>
+          </section>
+        </sc-if>
+
+        <section class="card" style="padding:16px;display:flex;flex-direction:column;gap:6px;font-size:13px">
+          <b>Finishes on this drawing</b>
+          <div>Top: Laurel Oak Light · Storage: Slate Grey · Frame: black powder coat</div>
+          <a href="PortalSet.dc.html" style="margin-top:4px">Download this sheet (PDF)</a>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { zoom: 100, mode: 'open', marks: [] }; }
+  renderVals() {
+    const s = this.state, z = s.zoom;
+    const set = (v) => this.setState({ zoom: Math.max(50, Math.min(200, v)) });
+    return {
+      zoomPct: z, scale: z / 100, marks: s.marks,
+      zoomIn: () => set(z + 10), zoomOut: () => set(z - 10),
+      addMark: () => { const n = s.marks.length + 1;
+        this.setState({ mode: 'change', marks: s.marks.concat([{ n, x: 90 + (n % 4) * 120, y: 70 + (n % 3) * 110, note: n === 1 ? 'Make the side unit 1200 long' : '' }]) }); },
+      isOpen: s.mode === 'open', isChange: s.mode === 'change', isApprove: s.mode === 'approve', isDone: s.mode === 'sent' || s.mode === 'approved',
+      doneTitle: s.mode === 'approved' ? 'Drawing approved ✓' : 'Change request sent ✓',
+      doneText: s.mode === 'approved' ? 'Thank you. Encore has been notified and this drawing is now locked for manufacturing.' : 'Our team will revise this drawing and send it back as RevB for your approval.',
+      pickApprove: () => this.setState({ mode: 'approve' }), pickChange: () => this.setState({ mode: 'change' }),
+      send: () => this.setState({ mode: 'sent' }), confirm: () => this.setState({ mode: 'approved' }),
+      reset: () => this.setState({ mode: 'open', marks: [] })
+    };
+  }
+}
+</script>
+</body>
+</html>
