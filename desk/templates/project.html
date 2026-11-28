@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_references.html" import refs_box %}
 {% block title %}{{ o.source_ref }} · {{ o.client.name }}{% endblock %}
 {% block crumb %}{% endblock %}
 {% block body %}
@@ -106,6 +107,7 @@
   </div>
   <div class="right" id="sets">
     {% include "_next.html" %}
+    {{ refs_box(o, 0, "/orders/%s#references"|format(o.source_ref)) }}
     {% include "_sets.html" %}
   </div>
 </div>

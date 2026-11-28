@@ -779,6 +779,7 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         s.commit()
     if done:
         keep_issued(o.id)
+        references.keep_all(o.id)                                      # issue #72: the client's folder exists now
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
 
 
@@ -1095,7 +1096,7 @@ def _changed_box(sh, tr):
 
 
 @app.post("/orders/{ref}/view/{no}/ai")
-def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user=User):
+def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), use_refs: str = Form(""), user=User):
     """The user asks the assistant about this product. A change is drawn as a trial; the drawing stays as it is until
     someone presses Accept."""
     text = text.strip()
@@ -1122,7 +1123,8 @@ def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user
         history = [(t.typed, t.said or t.answer) for t in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
     product = dict(product="Product %d" % l.no, name=l.name.split("(")[0].strip(), family=l.read["family"], qty=l.qty,
                    issued=("Rev %s" % l.last_rev.rev) if l.last_rev else "not issued")
-    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history)
+    pictures = references.images_for_ai(o.id, l.no) if use_refs else []   # issue #72: the client's sketches and photos, when ticked
+    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history, images=pictures)
     tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=text, kind=reply["kind"], said=reply["said"], values=reply["values"], by=user.name,
                    answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""))
     tr.status = reply["kind"] if reply["kind"] != "change" else "trial"
@@ -2344,6 +2346,10 @@ app.include_router(_guide)
 
 from .tour import router as _tour                                    # issue #43: first-time tour
 app.include_router(_tour)
+
+
+from . import references                                              # issue #72: client references
+app.include_router(references.router)
 
 
 from . import bridge                                                  # issue #73: bridge products (drawings made outside the engine)
