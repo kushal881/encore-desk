@@ -7,10 +7,10 @@
   <div class="card">
     <div style="font-weight:600">Add a person</div>
     <form method="post" action="/users/add" class="row" style="align-items:flex-end">
-      <span style="display:flex;flex-direction:column;flex:1 1 200px"><label class="small" for="nm">Name</label><input type="text" id="nm" name="name" required></span>
-      <span style="display:flex;flex-direction:column;flex:1 1 260px"><label class="small" for="em">Email (@{{ domain }})</label><input type="text" id="em" name="email" required placeholder="name@{{ domain }}"></span>
+      <span style="display:flex;flex-direction:column;flex:1 1 200px"><label class="small" for="nm">Name</label><input type="text" id="nm" name="name" required style="flex:0 0 auto"></span>
+      <span style="display:flex;flex-direction:column;flex:1 1 260px"><label class="small" for="em">Email (@{{ domain }})</label><input type="text" id="em" name="email" required placeholder="name@{{ domain }}" style="flex:0 0 auto"></span>
       <span style="display:flex;flex-direction:column;flex:0 1 220px"><label class="small" for="rl">Role</label>
-        <select id="rl" name="role">{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'drawing' }}>{{ t }}</option>{% endfor %}</select></span>
+        <select id="rl" name="role" style="flex:0 0 auto">{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'drawing' }}>{{ t }}</option>{% endfor %}</select></span>
       <button class="primary">Add</button>
     </form>
     <div class="sub small">They sign in with Google using that address. Addresses starting with design@, production@ or sales@ get that role automatically on first sign-in.</div>

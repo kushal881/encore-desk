@@ -26,7 +26,7 @@ PREFIX_ROLES = (("design", "drawing"), ("production", "production"), ("sales", "
 # production drawings; production only what is about production.
 PRODUCTION_PATHS = (r"^/orders/[^/]+/production(/|$)", r"^/production$", r"^/sets/", r"^/production-files/", r"^/prodpreview/", r"^/prodchange/",
                     r"^/orders/[^/]+/sets/", r"^/orders/[^/]+/bom$", r"^/orders/[^/]+/view/\d+/production$")
-PRODUCTION_ALSO = (r"^/$", r"^/photos/", r"^/tasks/\d+/done$", r"^/static/")       # what production users also reach
+PRODUCTION_ALSO = (r"^/$", r"^/photos/", r"^/tasks/\d+/done$", r"^/static/", r"^/guide", r"^/notifications")       # what production users also reach
 
 
 def role_for_email(email):

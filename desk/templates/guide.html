@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Encore drawing desk{% endblock %}
+{% block body %}
+<style>
+.gd h1{font-size:24px;margin:0 0 8px}.gd h2{font-size:19px;margin:22px 0 6px;padding-top:12px;border-top:1px solid #EEECE6}.gd h3{font-size:16px;margin:14px 0 4px}
+.gd p,.gd li{line-height:1.6}.gd ol,.gd ul{padding-left:22px}.gd code{background:#F1EFE9;border-radius:4px;padding:1px 5px}
+.gd :target{outline:none;background:#FDF1E2;border-radius:6px}
+</style>
+<div class="page">
+  {% if both %}<nav role="tablist" aria-label="Guides" style="display:flex;gap:6px">
+    {% for k, t in (('staff', 'Staff Guide'), ('directors', 'Directors Guide')) %}<a role="tab" aria-selected="{{ 'true' if which == k else 'false' }}" class="btn" style="padding:6px 14px;{% if which == k %}background:#17191C;color:#fff;border-color:#17191C{% endif %}" href="/guide/{{ k }}">{{ t }}</a>{% endfor %}
+  </nav>{% endif %}
+  {% if body is none %}
+  <div class="card"><b>The {{ title }} is not available right now.</b><div class="sub">Its text has not been added to this desk yet. Ask Kushal; in the meantime the big teal button on each page always shows the next step.</div></div>
+  {% else %}
+  <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <nav class="card" aria-label="Contents" style="flex:1 1 220px;max-width:300px;position:sticky;top:12px">
+      <div style="font-weight:600">Contents</div>
+      {% for a, t in toc %}<a class="small" href="#{{ a }}">{{ t }}</a>{% endfor %}
+      {% if which == 'staff' %}<a class="small" href="{{ '/production?tour=1' if is_production else '/?tour=1' }}" style="border-top:1px solid #EEECE6;padding-top:6px">Take the tour</a>{% endif %}
+    </nav>
+    <article class="card gd" style="flex:999 1 520px;min-width:0;padding:20px 24px">{{ body }}</article>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
