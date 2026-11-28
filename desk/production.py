@@ -110,7 +110,8 @@ def _page(request, user, o, l, tab, sheet, error=""):
     vs = current_set(l, "VENDOR")
     with db.Session() as s:
         turns = s.scalars(select(db.ProdChange).where(db.ProdChange.line_id == l.id).order_by(db.ProdChange.id)).all()
-        bom = s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id, db.ProductionFile.error == "").order_by(db.ProductionFile.id.desc())).first()
+        bom = s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id, db.ProductionFile.kind == "bom", db.ProductionFile.error == "")
+                        .order_by(db.ProductionFile.id.desc())).first()    # the BOM itself, not a later cutting or label PDF
     rows = None
     if tab in ("bom", "cut") and bom is not None and os.path.exists(bom.path):
         rows = _order_bom_rows(bom.path, l)
