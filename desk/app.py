@@ -1,5 +1,5 @@
 """Encore drawing desk: dashboard, orders, questions, previews, changes, issue with numbers and revisions, the steps after
-issue, engine requests, product photographs and remakes. Not built yet: Odoo source, client portal, cloud archive."""
+issue, engine requests, product photographs and remakes. Client portal: portal.py. Kept files: storage.py."""
 import os
 from fastapi import FastAPI, Form, HTTPException, Request, Depends, UploadFile, File
 from starlette.middleware.sessions import SessionMiddleware
@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, portal, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .nodrawing import classify
@@ -25,6 +25,7 @@ if auth.ON_SERVER and not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set on the server")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32), https_only=auth.ON_SERVER, same_site="lax", max_age=12 * 3600)
 app.include_router(auth.router)
+app.include_router(portal.router)                                        # the client portal, /portal (its own sign-in)
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")), name="static")   # logo; no client files here
 db.init()
 engines.start()
@@ -37,6 +38,11 @@ User = Depends(auth.current_user)
 @app.exception_handler(auth.NotSignedIn)
 def _to_login(request: Request, exc):
     return RedirectResponse("/login", status_code=303)
+
+
+@app.exception_handler(portal.PortalSignIn)
+def _to_portal_login(request: Request, exc):
+    return RedirectResponse("/portal/login", status_code=303)
 
 
 @app.post("/engines/refresh")
@@ -53,7 +59,43 @@ def engines_refresh(user=User):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "engines": engines.version()}
+    return {"ok": True, "engines": engines.version(), "bucket": storage.configured()}
+
+
+@app.get("/storage", response_class=HTMLResponse)
+def storage_page(done: str = "", user=User):
+    """Administrator: is the storage bucket set up, how many files it keeps, and a button to copy older files into it."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only an administrator can do this")
+    from html import escape
+    with db.Session() as s:
+        kept = s.query(db.StoredFile).count()
+        revs = s.query(db.Revision).all()
+        missing = sum(1 for r in revs if r.files.get("pdf") and not storage.key_of(r.files["pdf"]))
+        logs = s.scalars(select(db.FileLog).order_by(db.FileLog.id.desc()).limit(30)).all()
+    on = storage.configured()
+    rows = "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+        escape(T.env.filters["when"](g.at)), escape(g.who), "Portal" if g.side == "portal" else "Desk", g.action, escape(g.name)) for g in logs)
+    body = ("<h1>Storage bucket</h1>"
+            + ("<p class='ok'>The private storage bucket <b>%s</b> is set up. Files open through links that work for %d minutes.</p>" % (escape(storage.bucket()), storage.minutes()) if on
+               else "<p class='no'>No storage bucket is set up yet: files are kept on the desk's disk only. In Railway add the bucket's BUCKET, ACCESS_KEY_ID, SECRET_ACCESS_KEY, ENDPOINT and REGION to the web service.</p>")
+            + "<p>Files kept in the bucket: <b>%d</b>. Issued drawings not in the bucket yet: <b>%d</b>.</p>" % (kept, missing)
+            + ("<p class='ok'>Copied %s file(s) to the bucket.</p>" % escape(done) if done else "")
+            + ("<form method='post' action='/storage/keep-all'><button>Copy older files to the bucket</button></form>" if on else "")
+            + "<h2>Last views and downloads</h2><table><tr><th>When</th><th>Who</th><th>Where</th><th>What</th><th>File</th></tr>%s</table>" % rows
+            + "<p><a href='/'>← Back to the desk</a></p>")
+    return HTMLResponse("<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Storage · Encore drawing desk</title>"
+                        "<style>body{font-family:Inter,system-ui,sans-serif;background:#F4F3EF;color:#17191C;margin:0;padding:24px}main{max-width:900px;margin:auto;background:#fff;border:1px solid #E3E1DA;border-radius:12px;padding:24px}"
+                        ".ok{color:#0E6B5C}.no{color:#9A4508;background:#FDF1E2;padding:10px;border-radius:8px}button{min-height:44px;padding:0 18px;border-radius:10px;background:#0E6B5C;color:#fff;border:none;font:inherit;font-weight:600;cursor:pointer}"
+                        "table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid #E3E1DA;padding:6px;text-align:left}a{color:#0E6B5C}</style></head><body><main>" + body + "</main></body></html>")
+
+
+@app.post("/storage/keep-all")
+def storage_keep_all(user=User):
+    if user.role != "admin":
+        raise HTTPException(403, "Only an administrator can do this")
+    n = keep_everything()
+    return RedirectResponse("/storage?done=%d" % n, status_code=303)
 
 
 STAGES = dict(drawing="Drawings in progress", issued="Issued, to be sent to client", sent="With client for approval",
@@ -146,13 +188,14 @@ def load(ref):
             except OdooError as e:
                 raise HTTPException(502, "Odoo could not be read: %s" % e)
             c = s.scalar(select(db.Client).where(db.Client.name == src.client_name)) or db.Client(name=src.client_name, contact=src.client_contact)
-            o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery)
+            o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery,
+                         delivery_date=getattr(src, "delivery_date", "") or "")
             total = 0
             for l in src.lines:
                 if l.no_drawing:                                   # bought-out, service, installation, delivery: listed, never drawn
                     o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, reason=l.no_drawing))
                     continue
-                line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty)
+                line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty, source_line=getattr(l, "line_ref", "") or "")
                 for q in read_line(l.name, l.description)["questions"]:
                     line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"])); total += 1
                 o.lines.append(line)
@@ -161,6 +204,8 @@ def load(ref):
                               " (%d more line%s need%s no drawing)" % (skipped, "" if skipped == 1 else "s", "s" if skipped == 1 else "") if skipped else "",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
+            from .quotes import snapshot                                 # quotation version 1: what later changes are compared with
+            s.add(db.QuoteVersion(order_id=o.id, n=1, lines=snapshot(src), why="first read")); s.commit()
             _fetch_photos(s, src)
         s.refresh(o)
         _ = o.not_drawn, o.added
@@ -184,7 +229,8 @@ def load(ref):
                 if c.status == "confirmed" and "use_engine" in (c.values or {}) and (not l.last_rev or c.at.replace(tzinfo=None) > l.last_rev.issued_at.replace(tzinfo=None)):
                     l.engine_for = c.values["use_engine"]
             l.issued_current = bool(l.last_rev and l.drawing and l.drawing.status == "preview" and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
-                                    and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
+                                    and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version
+                                    and (l.last_rev.spec.get("item") or {}).get("qty") == (l.drawing.spec.get("item") or {}).get("qty"))   # decision 4: qty is in the title block
             if not l.issued_current and l.last_rev and l.drawing and l.drawing.status == "preview" and _stale_preview(l):
                 l.issued_current = True                              # a preview left from before the issue: the issued revision replaced it
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
@@ -208,6 +254,7 @@ def load(ref):
         _ = o.client, o.messages, o.steps
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
+        o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
         for r in past:
@@ -302,7 +349,7 @@ def open_order(ref: str = Form(...), user=User):
 
 
 def _ready(l):
-    return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
+    return bool(not l.cancelled_at and l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
                 and not getattr(l, "ai_waiting", False))
 
 
@@ -378,6 +425,8 @@ def _bom_files(o):
 def project(request: Request, ref: str, user=User):
     """The project page: where the order stands, what needs attention, and every product with its drawing."""
     load(ref)
+    from .quotes import maybe_check                                    # decision 2: re-check the quotation when the project opens
+    maybe_check(ref)
     _, issued_aside = apply_no_drawing(ref)                                  # orders read before the rule existed get it too
     o = load(ref)
     todo = []
@@ -561,6 +610,9 @@ def decide(ref: str, cid: int, decision: str, user=User):
 def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = Form(""), user=User):
     """Issues every previewed line whose specification differs from its last issued revision. An issued revision is never changed."""
     o = load(ref)
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
     ready = [l for l in o.lines if _ready(l)]
     if nos.strip():                                                    # the Issue screen: only the drawings picked
         pick = {int(x) for x in re.findall(r"\d+", nos)}
@@ -610,11 +662,67 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         if done:
             s.add(db.Step(order_id=o.id, kind="issued", note=", ".join(done), by=user.name))
         s.commit()
+    if done:
+        keep_issued(o.id)
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
+
+
+def _folder(s, client_id):
+    """The client's folder in the storage bucket, named from the client's first drawing number. None before any issue."""
+    first = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == client_id).order_by(db.Revision.id)).first()
+    c = s.get(db.Client, client_id)
+    return storage.client_folder(first.number if first else "", c.name if c else "")
+
+
+def keep_issued(order_id):
+    """Puts the order's issued revisions that are not in the storage bucket yet into it (PDF, DXF, a preview per sheet);
+    earlier revisions of the same drawing move to Old Revisions/. Nothing happens when no bucket is set."""
+    if not storage.configured():
+        return 0
+    n = 0
+    with db.Session() as s:
+        o = s.get(db.Order, order_id)
+        folder = _folder(s, o.client_id)
+        for l in o.lines:
+            for i, r in enumerate(l.revisions):
+                if r.files.get("pdf") and not storage.key_of(r.files["pdf"]):
+                    later = i + 1 < len(l.revisions)
+                    n += storage.keep_revision(folder, r.number, r.rev, r.files, earlier=[x.files for x in l.revisions[:i]])
+                    if later:                                # an old revision kept late: it belongs in Old Revisions/
+                        for kind in ("pdf", "dxf"):
+                            k = storage.key_of(r.files.get(kind))
+                            if k:
+                                storage.move(r.files[kind], storage.old_key(k))
+    return n
+
+
+def keep_everything():
+    """Copies every kept file the bucket does not have yet: issued revisions, production drawings, bills of material,
+    approval proofs. For files made before the bucket was set up. -> number of files copied."""
+    if not storage.configured():
+        return 0
+    n = 0
+    with db.Session() as s:
+        orders = list(s.scalars(select(db.Order)))
+    for o in orders:
+        n += keep_issued(o.id)
+        with db.Session() as s:
+            folder = _folder(s, o.client_id)
+            if not folder:
+                continue
+            for pf in s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id, db.ProductionFile.error == "")):
+                n += bool(not storage.key_of(pf.path) and storage.keep(pf.path, "%s/Bill of Material/%s" % (folder, storage.safe(pf.name))))
+            for ps in s.scalars(select(db.ProductionSet).join(db.OrderLine).where(db.OrderLine.order_id == o.id)):
+                for f in ps.files:
+                    n += bool(not storage.key_of(f.get("pdf")) and storage.keep(f.get("pdf"), "%s/Other/Production/%d-%s" % (folder, ps.id, storage.safe(f.get("name") or os.path.basename(f.get("pdf", ""))))))
+            for ap in s.scalars(select(db.Approval).where(db.Approval.order_id == o.id, db.Approval.proof != "")):
+                n += bool(not storage.key_of(ap.proof) and storage.keep(ap.proof, "%s/Other/Approvals/%s" % (folder, os.path.basename(ap.proof))))
+    return n
 
 
 def _big(pdf_path, page=0):
     """A sharp picture of one sheet for viewing inside the desk, made from the PDF once and kept beside it."""
+    pdf_path = storage.local(pdf_path) or pdf_path
     out = pdf_path[:-4] + (".view.png" if page == 0 else ".view%d.png" % page)
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(pdf_path):
         import pymupdf
@@ -633,17 +741,20 @@ def _pages(pdf_path):
 
 
 @app.get("/revisions/{rid}/{kind}")
-def revision_file(rid: int, kind: str, download: int = 0, page: int = 0, user=User):
+def revision_file(request: Request, rid: int, kind: str, download: int = 0, page: int = 0, user=User):
     if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
         r = s.get(db.Revision, rid)
         path, name = (r.files.get("pdf" if kind == "big" else kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
-    if not path or not os.path.exists(path):
+        oid = s.get(db.OrderLine, r.line_id).order_id if r else 0
+    if not path or not (os.path.exists(path) or storage.key_of(path)):
         raise HTTPException(404)
-    if kind == "big":
-        return FileResponse(_big(path, page))
-    return FileResponse(path, filename=None if kind == "png" else name, content_disposition_type="attachment" if download or kind == "dxf" else "inline")
+    if kind in ("big", "png"):
+        if not storage.local(path):
+            raise HTTPException(404)
+        return FileResponse(_big(path, page) if kind == "big" else path)
+    return storage.serve(request, path, name, download=bool(download) or kind == "dxf", who=user.name, order_id=oid)
 
 
 @app.get("/drawings/{did}/{kind}")
@@ -985,7 +1096,7 @@ def _permitted(o, l):
 
 
 # ---- Approvals (screen 7) ------------------------------------------------------------------------------------------------
-APPROVAL_TABS = (("engine", "Engine changes"), ("after", "Changes after client approval"), ("revision", "Revision raises"))
+APPROVAL_TABS = (("engine", "Engine changes"), ("after", "Changes after client approval"), ("revision", "Revision raises"), ("production", "Production changes"))
 
 
 @app.get("/approvals", response_class=HTMLResponse)
@@ -1003,7 +1114,9 @@ def approvals(request: Request, tab: str = "engine", show: int = 0, user=User):
             "after": [dict(kind="after_approval", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
                            status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "after_approval"],
             "revision": [dict(kind="revision", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
-                              status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "revision"]}
+                              status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "revision"],
+            "production": [dict(kind="production", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
+                                status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "production"]}
     counts = {k: sum(1 for x in v if x["status"] == "asked") for k, v in rows.items()}
     sel = next((x for x in rows[tab] if x["id"] == show), None) or next((x for x in rows[tab] if x["status"] == "asked"), None) or (rows[tab][0] if rows[tab] else None)
     return T.TemplateResponse(request, "approvals.html", ctx(user, nav="appr", tab=tab, tabs=APPROVAL_TABS, rows=rows[tab], counts=counts, sel=sel,
@@ -1015,7 +1128,7 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
     """A (this client only: the product's file) / B (send to engine work: a generic option, off by default, built as an
     engine branch and approved in encore-approved; the desk never changes engines) / approve / reject.
     Every decision creates a task for the person who asked."""
-    if kind not in ("engine", "after_approval", "revision") or decision not in ("a", "b", "approve", "reject"):
+    if kind not in ("engine", "after_approval", "revision", "production") or decision not in ("a", "b", "approve", "reject"):
         raise HTTPException(404)
     if not auth.can_decide(user, kind):
         raise HTTPException(403, "Only Kushal decides this" if kind != "revision" else "Only an administrator decides this")
@@ -1038,7 +1151,9 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
                 raise HTTPException(400, "This request cannot take that decision now")
             r.status = "approved" if decision == "approve" else "rejected"
             text = ({"after_approval": "Allowed: change Product %d in the change panel; issuing it makes a new revision, which the client approves again. %s",
-                     "revision": "Revision allowed for Product %d. %s"}[kind] if decision == "approve" else "Rejected for Product %d: keep the drawing as it is. %s") % (r.line_no, r.text)
+                     "revision": "Revision allowed for Product %d. %s",
+                     "production": "Allowed: the new production drawing of Product %d is made and production gets a stop alert. %s"}[kind]
+                    if decision == "approve" else "Rejected for Product %d: keep the drawing as it is. %s") % (r.line_no, r.text)
             line_no, src = r.line_no, "change:%d" % r.id
         r.decided_by, r.decided_at = user.name, db.now()
         r.note = note or r.note
@@ -1048,7 +1163,11 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
             if o_:
                 s.add(db.Message(order_id=o_.id, who="desk", text="%s decided by %s: %s" % ("Engine request" if kind == "engine" else "Change request", user.name, text)))
         s.commit()
-    tab = {"engine": "engine", "after_approval": "after", "revision": "revision"}[kind]
+    if kind == "production":                                           # screen 11: make the next P and send the stop alert
+        from .production import apply_approved
+        with db.Session() as s:
+            apply_approved(s.get(db.ChangeRequest, rid), user.name)
+    tab = {"engine": "engine", "after_approval": "after", "revision": "revision", "production": "production"}[kind]
     return RedirectResponse("/approvals?tab=%s&show=%d" % (tab, rid), status_code=303)
 
 
@@ -1090,13 +1209,13 @@ def _approval_of(r):
 
 def _current(o):
     """The issued drawings of an order as they stand: [(line, revision)], in drawing-serial order."""
-    out = [(l, l.last_rev) for l in o.lines if l.last_rev]
+    out = [(l, l.last_rev) for l in o.lines if l.last_rev and not l.cancelled_at]     # a cancelled drawing is left out of the set
     return sorted(out, key=lambda x: (x[1].number.rsplit("-", 1)[-1], x[1].number))
 
 
 def _combined(o):
     """The combined PDF of the issued set, made from the issued revisions in serial order. -> (path, file name) or None."""
-    cur = [r for _, r in _current(o) if r.files.get("pdf") and os.path.exists(r.files["pdf"])]
+    cur = [r for _, r in _current(o) if r.files.get("pdf") and storage.local(r.files["pdf"])]
     if not cur:
         return None
     name = issuing.combined_name(o.client.name)
@@ -1134,12 +1253,12 @@ def _back(ref, error=""):
 
 
 @app.get("/orders/{ref}/combined.pdf")
-def combined_pdf(ref: str, user=User):
+def combined_pdf(request: Request, ref: str, user=User):
     o = load(ref)
     got = _combined(o)
     if not got:
         raise HTTPException(404, "Nothing has been issued yet")
-    return FileResponse(got[0], filename=got[1], content_disposition_type="inline")
+    return storage.serve(request, got[0], got[1], who=user.name, order_id=o.id)
 
 
 @app.post("/orders/{ref}/access")
@@ -1176,7 +1295,7 @@ def access_remove(ref: str, aid: int, user=User):
 
 
 @app.post("/orders/{ref}/email")
-def email_send(ref: str, kind: str = Form("first"), to: str = Form(""), cc: str = Form(""), subject: str = Form(""), body: str = Form(""),
+def email_send(request: Request, ref: str, kind: str = Form("first"), to: str = Form(""), cc: str = Form(""), subject: str = Form(""), body: str = Form(""),
                attach: str = Form(""), user=User):
     """Emails the issued drawings to the client from the company address. When it goes, the order is marked as sent."""
     o = load(ref)
@@ -1191,8 +1310,18 @@ def email_send(ref: str, kind: str = Form("first"), to: str = Form(""), cc: str 
     got = _combined(o) if attach else None
     log = db.EmailLog(order_id=o.id, kind=kind if kind in issuing.TEMPLATES else "first", to=", ".join(to_), cc=", ".join(cc_), subject=subject.strip(),
                       body=body.strip(), attachment=got[1] if got else "", by=user.name)
+    # each recipient on the portal access list gets the email alone, with their own sign-in link; everyone else (other
+    # To addresses and CC) gets one copy with the plain portal address, so a copy never signs anyone in
+    with db.Session() as s:
+        listed = {a.email for a in s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id))}
+    base = portal.base_url(request)
+    mails = [([e], [], portal.personal_body(log.body, portal.link_for(e, o.id, base))) for e in to_ if e in listed]
+    rest = [e for e in to_ if e not in listed]
+    if rest or cc_:
+        mails.append((rest or cc_, cc_ if rest else [], portal.general_body(log.body, base)))
     try:
-        issuing.send(to_, cc_, log.subject, log.body, got[0] if got else None, got[1] if got else None)
+        for to1, cc1, body1 in mails:
+            issuing.send(to1, cc1, log.subject, body1, got[0] if got else None, got[1] if got else None)
     except RuntimeError as x:
         log.error = str(x)
     with db.Session() as s:
@@ -1229,7 +1358,7 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
         return _back(ref, "For an approval by phone, write a note: who called, when, and what was said.")
     ap = db.Approval(order_id=o.id, revision_id=r.id, outcome=outcome, name=name[:200], designation=(form.get("designation") or "").strip()[:200],
                      email=(form.get("email") or "").strip()[:200], how=(form.get("how") or "email")[:40], on=(form.get("on") or datetime.date.today().isoformat())[:20],
-                     note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(r.files["pdf"]) if os.path.exists(r.files.get("pdf", "")) else "",
+                     note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(storage.local(r.files.get("pdf")) or "") if storage.local(r.files.get("pdf")) else "",
                      ip=request.client.host if request.client else "", by=user.name)
     proof = form.get("proof")
     if proof is not None and getattr(proof, "filename", ""):
@@ -1240,28 +1369,39 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "wb").write(data)
             ap.proof, ap.proof_name = path, proof.filename[:200]
+            with db.Session() as s:
+                folder = _folder(s, o.client_id)
+            if folder:
+                storage.keep(path, "%s/Other/Approvals/%s" % (folder, os.path.basename(path)))
     with db.Session() as s:
         s.add(ap)
         s.add(db.Message(order_id=o.id, who="desk", text="%s Rev %s: %s by %s (%s, %s), recorded by %s." % (
             r.number, r.rev, "approved" if outcome == "approved" else "changes asked", ap.name, ap.how, ap.on, user.name) + (" " + ap.note if ap.note else "")))
         s.commit()
-    o = load(ref)
-    cur = _current(o)
-    if all((_approval_of(r_) or db.Approval(outcome="")).outcome == "approved" for _, r_ in cur) and \
-            (o.stage in ("issued", "sent") or (o.stage == "production" and o.approval_pending)):
-        with db.Session() as s:
-            s.add(db.Step(order_id=o.id, kind="approved", note="All %d drawings approved (recorded on the Issue screen)" % len(cur), by=user.name))
-            s.commit()
+    all_approved_step(ref, user.name, "recorded on the Issue screen")
     return _back(ref)
 
 
+def all_approved_step(ref, by, where):
+    """When every issued drawing of the order is approved, the order moves to Approved by client. -> True when it moved."""
+    o = load(ref)
+    cur = _current(o)
+    if cur and all((_approval_of(r_) or db.Approval(outcome="")).outcome == "approved" for _, r_ in cur) and \
+            (o.stage in ("issued", "sent") or (o.stage == "production" and o.approval_pending)):
+        with db.Session() as s:
+            s.add(db.Step(order_id=o.id, kind="approved", note="All %d drawings approved (%s)" % (len(cur), where), by=by))
+            s.commit()
+        return True
+    return False
+
+
 @app.get("/approvals/{aid}/proof")
-def approval_proof(aid: int, user=User):
+def approval_proof(request: Request, aid: int, user=User):
     with db.Session() as s:
         ap = s.get(db.Approval, aid)
-    if ap is None or not ap.proof or not os.path.exists(ap.proof):
+    if ap is None or not ap.proof:
         raise HTTPException(404)
-    return FileResponse(ap.proof, filename=ap.proof_name or "approval")
+    return storage.serve(request, ap.proof, ap.proof_name or "approval", download=True, who=user.name, order_id=ap.order_id)
 
 
 # ---- Specify (screen 4) ------------------------------------------------------------------------------------------------
@@ -1527,7 +1667,15 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
     o = load(ref)
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
     details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline.strip() or "TBC")
+    made, failed, made_sets = [], [], []
+    deadline = deadline.strip() or (o.delivery_date if kind == "PRODUCTION" else "")
+    if kind == "PRODUCTION" and not deadline:                  # decision 3: the deadline is Odoo's Delivery Date
+        raise HTTPException(400, "Ask sales to enter the delivery date in Odoo (or type the production deadline here)")
+    details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline or "TBC")
     made, failed = [], []
     ok = next((st for st in reversed(o.steps) if st.kind == "approved"), None)
     approved_on = "" if (o.approval_pending or ok is None) else ok.at.replace(tzinfo=ok.at.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y").upper()
@@ -1538,22 +1686,33 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
             r = l.last_rev
             if r is None:
                 continue
-            sp = __import__("copy").deepcopy(r.spec)
+            prev = s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind, db.ProductionSet.revision_id == r.id)
+                             .order_by(db.ProductionSet.id.desc())).first()
+            # made again for the same revision: keeps its P number, release and construction changes (screen 11)
+            sp = __import__("copy").deepcopy(prev.spec if prev is not None and prev.spec else r.spec)
             sp["drawing_set"], sp["production"] = kind, dict(details)
             if approved_on:                                        # the client's approval, when it has been recorded for this issue
                 sp["drawing"].update(approved="CLIENT", approval_date=approved_on)
             edir, ver = engines.dir_for(r.engine_version)
             try:
-                files = engines.draw_set(sp, "%d/line%d/%s/rev%s" % (o.id, l.no, kind.lower(), r.rev), edir)
+                files = engines.draw_set(sp, "%d/line%d/%s/rev%s-p%d" % (o.id, l.no, kind.lower(), r.rev, prev.prod_no if prev else 1), edir)
             except RuntimeError as e:
                 failed.append("product %d (%s)" % (l.no, str(e)[:120])); continue
+            keep = dict(prod_no=prev.prod_no, released_by=prev.released_by, released_at=prev.released_at) if prev is not None else {}
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name))
+            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name)
+            s.add(ps_)
+            made_sets.append(ps_)
+            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep))
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
         s.commit()
+        folder = _folder(s, o.client_id)
+    for ps_ in made_sets if folder else []:                          # kept in the storage bucket, after the record is saved
+        for f in ps_.files:
+            storage.keep(f.get("pdf"), "%s/Other/Production/%d-%s" % (folder, ps_.id, storage.safe(f.get("name") or os.path.basename(f.get("pdf", "")))))
     return _after(request, ref)
 
 
@@ -1565,7 +1724,10 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
     o = load(ref)
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
-    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev}
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
     if not revs:
         raise HTTPException(400, "Nothing has been issued yet")
     on = bool(panel_saw)
@@ -1581,22 +1743,25 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
         s.add(db.Message(order_id=o.id, who="desk", text=("Bill of material made%s by %s." % (" with panel-saw cutting" if on else "", user.name)) if not pf.error
                          else "The bill of material could not be made: %s" % pf.error))
         s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not pf.error:
+        storage.keep(pf.path, "%s/Bill of Material/%s" % (folder, storage.safe(pf.name)))
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
 @app.get("/production-files/{fid}")
-def production_file(fid: int, user=User):
+def production_file(request: Request, fid: int, user=User):
     with db.Session() as s:
         pf = s.get(db.ProductionFile, fid)
-    if pf is None or pf.error or not os.path.exists(pf.path):
+    if pf is None or pf.error:
         raise HTTPException(404)
-    return FileResponse(pf.path, filename=pf.name)
+    return storage.serve(request, pf.path, pf.name, download=True, who=user.name, order_id=pf.order_id)
 
 
 def _set_file(sid, i):
     with db.Session() as s:
         ps = s.get(db.ProductionSet, sid)
-        if ps is None or not (0 <= i < len(ps.files)) or not os.path.exists(ps.files[i]["pdf"]):
+        if ps is None or not (0 <= i < len(ps.files)) or not storage.local(ps.files[i]["pdf"]):
             raise HTTPException(404)
         line = s.get(db.OrderLine, ps.line_id)
         order_ = s.get(db.Order, line.order_id)
@@ -1612,9 +1777,9 @@ def set_view(request: Request, sid: int, i: int, user=User):
 
 
 @app.get("/sets/{sid}/{i}/pdf")
-def set_pdf(sid: int, i: int, download: int = 0, user=User):
+def set_pdf(request: Request, sid: int, i: int, download: int = 0, user=User):
     ps, f, line, ref, rev = _set_file(sid, i)
-    return FileResponse(f["pdf"], filename=f.get("name") or "drawing.pdf", content_disposition_type="attachment" if download else "inline")
+    return storage.serve(request, f["pdf"], f.get("name") or "drawing.pdf", download=bool(download), who=user.name, order_id=line.order_id)
 
 
 @app.get("/sets/{sid}/{i}/page/{n}")
@@ -1787,3 +1952,11 @@ def remove_order(ref: str, user=User):
 
 from .newproject import router as _newproject                        # screen 2: New project and Remake
 app.include_router(_newproject)
+from .projects import router as _projects                            # screen 3a: Projects
+app.include_router(_projects)
+from .myrequests import router as _myrequests                        # screen 7a: My requests
+app.include_router(_myrequests)
+from .production import router as _production                        # screen 11: Production
+app.include_router(_production)
+from .quotes import router as _quotes                                # screen 8: Quotation changes + the Odoo webhook
+app.include_router(_quotes)

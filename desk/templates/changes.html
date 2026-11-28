@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Quotation changes · {{ o.source_ref }}{% endblock %}
+{% block body %}
+{% include "_ordernav.html" %}
+<div class="page">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <div style="flex:1 1 360px"><div class="sub small">{{ o.client.name }} · {{ o.source_ref }}{% if last %} · Odoo version {{ last.n }}{% if prev %} vs {{ prev.n }}{% endif %}{% endif %}</div>
+      <h1 style="margin:0;font-size:22px">Quotation changes</h1></div>
+    <span class="sub small">Last checked {{ (o.checked_at or (last.at if last else none))|when or 'never' }}</span>
+    <form method="post" action="/orders/{{ o.source_ref }}/changes/check"><button class="primary">Check Odoo now</button></form>
+  </div>
+  {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
+  {% if opened %}
+  <div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>Issue and production are locked</b> until the {{ opened|length }} change{{ '' if opened|length == 1 else 's' }} below {{ 'is' if opened|length == 1 else 'are' }} handled. Drawings and quotation must match.</div>
+  {% endif %}
+  <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <div class="card" style="flex:3 1 520px;gap:0">
+      <div style="font-weight:600;padding-bottom:8px">Changes inbox · {{ opened|length }} to handle</div>
+      {% for row in rows %}{% set c = row.c %}
+      {% set tag = {'added': ('ok', 'Added'), 'dropped': ('bad', 'Dropped'), 'qty': ('ask', 'Qty changed'), 'spec': ('ask', 'Spec changed'), 'price': ('dim', 'Price only')}[c.kind] %}
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid #EEECE6;{% if c.status != 'open' %}opacity:.75{% endif %}">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span class="tag {{ tag[0] }}">{{ tag[1] }}</span>
+          <b>{% if c.line_no %}Product {{ c.line_no }} · {% endif %}{{ c.name.split('(')[0] }}</b>
+          {% if c.kind == 'qty' %}<span class="small">· qty {{ '%g' % c.before.qty }} &rarr; <b>{{ '%g' % c.after.qty }}</b></span>
+          {% elif c.kind == 'added' %}<span class="small">· Qty {{ '%g' % c.after.qty }}</span>
+          {% elif c.kind == 'price' %}<span class="small">· rate changed · drawings not affected</span>{% endif %}
+          <span class="sub small" style="margin-left:auto">version {{ c.version }}</span>
+        </div>
+        {% if c.kind == 'spec' %}<div class="small"><span class="sub">Was:</span> {{ c.before.name }}{% if c.before.description %} · {{ c.before.description[:160] }}{% endif %}<br><span class="sub">Now:</span> <b>{{ c.after.name }}{% if c.after.description %} · {{ c.after.description[:160] }}{% endif %}</b></div>{% endif %}
+        {% if c.status == 'open' %}
+        <div class="small">Stage: {{ c.stage }} &rarr; <b>{{ row.action }}</b></div>
+        {% if c.note %}<div class="small" style="color:#9A4508">{{ c.note }}</div>{% endif %}
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          {% if c.kind == 'added' %}
+          <form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/add"><button class="primary">Add &amp; specify the new product</button></form>
+          {% elif c.kind == 'dropped' %}
+            {% if c.stage in ('not drawn', 'drawn') %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/remove"><button class="primary">{{ 'Remove from the drawings' if c.stage == 'not drawn' else 'Archive the preview' }}</button></form>
+            {% elif c.stage == 'issued' or row.can_admin or row.permitted %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/cancel" data-confirm="Mark {{ 'Product ' ~ c.line_no }} CANCELLED? The drawing gets a Cancelled stamp, its serial is retired and it leaves the combined set."><button style="background:#B91C1C;border-color:#B91C1C;color:#fff">Mark cancelled &amp; reissue</button></form>
+            {% else %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/ask"><button>Ask admin permission</button></form>{% endif %}
+          {% elif c.kind in ('qty', 'spec') %}
+            {% if c.stage in ('not drawn', 'drawn') %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/update"><button class="primary">{{ 'Use the new values' if c.stage == 'not drawn' else 'Regenerate, same revision' }}</button></form>
+            {% elif c.stage == 'issued' %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/update" data-confirm="Use the new values and redraw Product {{ c.line_no }}? Issuing it makes a new revision (the quantity is in the title block)."><button class="primary">Redraw for a new revision</button></form>
+            {% elif row.can_admin or row.permitted %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/update" data-confirm="Product {{ c.line_no }} is client-approved{{ ' and in production' if c.stage == 'production' else '' }}. Redraw it with the new values? The new revision needs the client's approval again{{ ', then redo the production drawings and BOM' if c.stage == 'production' else '' }}."><button class="primary">{{ 'Redo production set' if c.stage == 'production' else 'Redraw, new revision' }}</button></form>
+            {% else %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/ask"><button>Ask admin permission</button></form>{% endif %}
+          {% endif %}
+          {% if row.can_admin %}<form method="post" action="/orders/{{ o.source_ref }}/changes/{{ c.id }}/ignore" data-confirm="Leave this change without touching the drawings? Only when the quotation change does not matter for the drawing."><button class="sm">Ignore</button></form>{% endif %}
+        </div>
+        {% else %}
+        <div class="sub small">{{ 'Ignored' if c.status == 'ignored' else 'Handled' }}{% if c.handled_by and c.handled_by != 'desk' %} by {{ c.handled_by }}, {{ c.handled_at|when }}{% endif %}{% if c.note %} · {{ c.note }}{% endif %}</div>
+        {% endif %}
+      </div>
+      {% else %}<div class="sub" style="padding-top:8px">No changes. The drawings match Odoo version {{ last.n if last else 1 }}.</div>{% endfor %}
+    </div>
+    <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:12px">
+      <div class="card">
+        <div style="font-weight:600">Quotation needs update <span class="tag info">Drawing &rarr; Sales</span></div>
+        {% for a in added %}<div class="small">Product {{ a.no }} · {{ a.name }} <span class="sub">· added on the desk by {{ a.by }}; not in the Odoo quotation</span></div>
+        {% else %}<div class="sub small">Nothing: every product on the desk is in the quotation.</div>{% endfor %}
+        {% if added %}<form method="post" action="/orders/{{ o.source_ref }}/changes/notify-sales"><button class="sm">Notify salesperson{% if o.salesperson %} ({{ o.salesperson }}){% endif %}</button></form>{% endif %}
+      </div>
+      <div class="card">
+        <div style="font-weight:600">How a cancelled drawing looks</div>
+        <div style="border:3px solid #B91C1C;color:#B91C1C;font-weight:800;text-align:center;padding:8px;letter-spacing:2px;border-radius:6px">CANCELLED</div>
+        <div class="small">Stamp carries the date and quotation version · the serial is retired, never reused · kept with the old revisions for record · left out of the new combined PDF; sheet numbers redone.</div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600">Change history</div>
+        {% for at, text in hist %}<div class="small" style="display:flex;gap:8px"><span class="sub" style="white-space:nowrap">{{ at|when }}</span><span>{{ text }}</span></div>
+        {% else %}<div class="sub small">Nothing yet.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

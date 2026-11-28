@@ -99,6 +99,8 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
   <a href="/" class="item {{ 'on' if nav == 'dash' }}">Dashboard</a>
   <a href="/new" class="item {{ 'on' if nav == 'new' }}">New project</a>
   <a href="/new#remake" class="item">Past orders / Remake</a>
+  <a href="/projects" class="item {{ 'on' if nav == 'projects' }}">Projects</a>
+  {% if not is_admin %}<a href="/my-requests" class="item {{ 'on' if nav == 'mine' }}">My requests{% if my_tasks %}<span class="count" style="margin-left:auto">{{ my_tasks }}</span>{% endif %}</a>{% endif %}
   {% if is_approver %}<a href="/approvals" class="item {{ 'on' if nav == 'appr' }}">Approvals{% if approvals_waiting %}<span class="count" style="margin-left:auto">{{ approvals_waiting }}</span>{% endif %}</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>

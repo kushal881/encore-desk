@@ -1,0 +1,44 @@
+{% extends "portal/base.html" %}
+{% block title %}Past orders{% endblock %}
+{% block body %}
+<a class="back" href="/portal/orders">← Your orders</a>
+<div><div class="sub">{{ client }}</div><h1>Past orders</h1></div>
+{% if sent == 1 %}<div class="okmsg">Sent to your Encore sales person, with the approved drawings of the ticked products. They will send you a new quotation.</div>{% endif %}
+{% if sent == -1 %}<div class="err">Tick at least one product to reorder.</div>{% endif %}
+<form method="get" action="/portal/past" class="row">
+  <div class="f" style="flex:0 1 140px"><label for="yr">Year</label><select id="yr" name="year"><option value="">All</option>{% for y in years %}<option {{ 'selected' if year == y|string }}>{{ y }}</option>{% endfor %}</select></div>
+  <div class="f" style="flex:1 1 220px"><label for="q">Search</label><input id="q" name="q" value="{{ q }}" placeholder="Quotation or product"></div>
+  <button class="btn sec" style="align-self:flex-end">Show</button>
+</form>
+<div class="row" style="align-items:flex-start;gap:16px">
+  <div class="card" style="flex:1 1 260px;max-width:360px">
+    {% for x in rows %}
+    <a href="/portal/past?o={{ x.o.source_ref }}&year={{ year }}&q={{ q }}" style="text-decoration:none;color:inherit;padding:8px;border-radius:8px;{{ 'background:#E3F1EE' if sel and sel.o.id == x.o.id }}">
+      <b>{{ x.o.source_ref }}</b> <span class="sub small">{{ x.last|when }}</span><div class="small sub">{{ x.ds|length }} product{{ '' if x.ds|length == 1 else 's' }}</div></a>
+    {% else %}<div class="sub">No past orders found.</div>{% endfor %}
+  </div>
+  {% if sel %}
+  <div class="card" style="flex:999 1 460px;min-width:0">
+    <div class="sub">{{ sel.o.source_ref }}{% if sel.last %} · last drawings {{ sel.last|when }}{% endif %}</div>
+    <div class="row"><span class="tag ok">{{ 'All drawings approved · final' if sel.sum.approved == sel.sum.total and sel.sum.total else '%d of %d drawings approved' % (sel.sum.approved, sel.sum.total) }}</span></div>
+    <div class="row">{% if sel.ds %}<a class="btn sec" href="/portal/orders/{{ sel.o.source_ref }}/set.pdf">Download final drawing set (PDF)</a><a class="btn sec" href="/portal/orders/{{ sel.o.source_ref }}">View drawings</a>{% endif %}</div>
+    <form method="post" action="/portal/orders/{{ sel.o.source_ref }}/reorder" id="reorder" class="f" style="gap:10px">
+      <div class="tw"><table>
+        <tr><th>Reorder</th><th>Product</th><th>Finish</th><th>Qty supplied</th><th>Drawing</th><th>Quantity / note</th></tr>
+        {% for d in sel.ds %}
+        <tr><td><input type="checkbox" name="no" value="{{ d.l.no }}" aria-label="Reorder {{ d.name }}" style="width:22px;min-height:22px"></td>
+          <td><b>{{ d.name }}</b><div class="small sub">{{ d.code }}</div></td><td class="small">{{ d.finishes[0][1] if d.finishes else '' }}</td><td>{{ d.qty }}</td>
+          <td><a href="/portal/orders/{{ sel.o.source_ref }}/d/{{ d.r.id }}">Sheet {{ d.sheet }}</a></td>
+          <td><input name="qty_{{ d.l.no }}" aria-label="Quantity or note for {{ d.name }}" style="min-width:90px"></td></tr>
+        {% endfor %}
+      </table></div>
+      <h2>Need these again?</h2>
+      <div class="f"><label for="st">Site</label><input id="st" name="site"></div>
+      <div class="f"><label for="nt">Note</label><textarea id="nt" name="note"></textarea></div>
+      <button class="btn">Ask to reorder the ticked products</button>
+      <div class="small sub">Your Encore sales person gets the approved drawings of the ticked products and sends you a new quotation.</div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

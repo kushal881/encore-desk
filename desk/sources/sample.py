@@ -13,15 +13,16 @@ class SampleSource:
             raise KeyError(ref)
         d = json.load(open(path, encoding="utf-8"))
         return SourceOrder(source=d["source"], ref=d["ref"], client_name=d["client"]["name"], client_contact=d["client"].get("contact", ""),
-                           delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""),
+                           delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""), delivery_date=d.get("delivery_date", ""),
                            lines=self._lines(d["lines"]))
 
     @staticmethod
     def _lines(rows):
         """Same rule as Odoo: lines that get no drawing are kept apart and not numbered. A sample line may give "type" and "routes"."""
         out, no = [], 0
-        for r in rows:
+        for i, r in enumerate(rows, 1):
             r = dict(r)
+            r.setdefault("line_ref", "sample-%d" % i)                    # sample lines have no ids: their position stands in
             why = classify(r.get("name", ""), r.pop("type", ""), r.pop("routes", ()))
             r.pop("no", None)
             if not why:

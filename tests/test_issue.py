@@ -102,8 +102,10 @@ def test_issue_screen(monkeypatch):
     assert "Additional drawings: Q-2026-10-444" in v
     c.post(A + "/email", data={"kind": "first", "to": "singh@achievers.in", "cc": "kushal@encoreprimefurniture.com", "subject": "Drawings for approval",
                                "body": "Dear Mr Singh", "attach": "1"})
-    to, cc, subject, att, name = MAIL[-1]
-    assert to == ["singh@achievers.in"] and cc == ["kushal@encoreprimefurniture.com"] and os.path.exists(att) and name.endswith(".pdf")
+    # Singh is on the portal list: his mail goes to him alone (it carries his own sign-in link); the CC gets its own copy
+    (to, cc, subject, att, name), (to2, cc2, _, att2, _) = MAIL[-2], MAIL[-1]
+    assert to == ["singh@achievers.in"] and cc == [] and os.path.exists(att) and name.endswith(".pdf")
+    assert to2 == ["kushal@encoreprimefurniture.com"] and cc2 == [] and att2 == att
     with db.Session() as s:
         assert s.query(db.Step).filter_by(kind="sent").one().note == "Emailed to singh@achievers.in"
 

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Projects · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <div style="flex-grow:1"><div class="sub small">All drawing projects</div><h1 style="margin:0;font-size:22px">Projects</h1></div>
+    <a class="btn primary big" href="/new">New project</a>
+  </div>
+  <div class="tiles" role="list" aria-label="Projects by stage">
+    {% for label in steps %}{% set i = loop.index %}
+    <a role="listitem" class="tile {{ 'on' if stage == i }}" style="flex:1 1 120px;padding:10px 12px{% if stage == i %};background:#E3F1EE{% endif %}"
+       href="/projects?show={{ 'Completed' if i == 8 else ('Active' if show == 'Completed' else show) }}&stage={{ 0 if stage == i else i }}&sp={{ sp|urlencode }}&q={{ q|urlencode }}"
+       aria-label="{{ counts[i-1] }} projects at {{ i }} {{ label }}. {{ 'Show all stages' if stage == i else 'Show only these' }}.">
+      <div class="sub small">{{ i }} {{ label }}</div><div class="n" style="font-size:22px">{{ counts[i-1] }}</div></a>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <div style="font-weight:600;flex-grow:1">{{ title }} ({{ rows|length }})</div>
+      <div role="tablist" aria-label="Which projects" style="display:flex;gap:6px">
+        {% for t in ('Active', 'Completed', 'All') %}
+        <a role="tab" aria-selected="{{ 'true' if show == t else 'false' }}" class="btn{{ ' primary' if show == t }}" style="padding:6px 14px;{% if show == t %}background:#17191C;border-color:#17191C{% endif %}"
+           href="/projects?show={{ t }}&sp={{ sp|urlencode }}&q={{ q|urlencode }}">{{ t }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    <form class="row" method="get" action="/projects">
+      <input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="stage" value="{{ stage }}">
+      <label class="sr" for="sp">Salesperson</label>
+      <select id="sp" name="sp" style="flex:0 1 220px" onchange="this.form.submit()">
+        <option value="">Salesperson: All</option>
+        {% for p in people %}<option value="{{ p }}" {{ 'selected' if sp == p }}>{{ p }}</option>{% endfor %}
+      </select>
+      <label class="sr" for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ q }}" placeholder="Search client, quotation or folder">
+      <button class="sm">Search</button>
+    </form>
+    {% if rows %}
+    <div class="scroll"><table>
+      <tr><th>Project</th><th>Folder</th><th>Stage</th><th>Drawings</th><th>Needs attention</th><th>Last activity</th><th></th></tr>
+      {% for r in rows %}
+      <tr>
+        <td><b>{{ r.client }}</b><div class="sub small">{{ r.ref }}{% if r.salesperson %} · {{ r.salesperson }}{% endif %}</div></td>
+        <td class="small">{{ r.folder or '—' }}</td>
+        <td style="min-width:150px"><div class="small" style="font-weight:600;color:{{ '#0E6B5C' if r.st == 8 else '#3A3E45' }}">{{ r.stage }}</div>
+          <div style="display:flex;gap:2px;margin-top:4px" aria-hidden="true">{% for x in steps %}<span style="flex:1;height:5px;border-radius:2px;background:{{ '#0E6B5C' if loop.index < r.st or r.st == 8 else ('#D97706' if loop.index == r.st else '#E3E1DA') }}"></span>{% endfor %}</div></td>
+        <td>{{ r.done }} / {{ r.total }}</td>
+        <td>{% if r.flag %}<span class="tag {{ 'bad' if 'change' in r.flag.lower() or 'request' in r.flag.lower() or 'could not' in r.flag else 'ask' }}">{{ r.flag }}</span>{% endif %}</td>
+        <td class="sub small" style="white-space:nowrap">{{ r.last|when }}</td>
+        <td><a class="btn" href="/orders/{{ r.ref }}" style="padding:6px 14px">Open</a></td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<div class="sub">No projects in this view.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

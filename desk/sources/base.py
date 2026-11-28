@@ -13,6 +13,8 @@ class SourceLine:
     unit: str = ""
     product_ref: str = ""       # the product's id in the source, used to fetch its photograph
     no_drawing: str = ""        # why this line gets no drawing (see desk/nodrawing.py); "" = it is drawn
+    line_ref: str = ""          # the line's own id in the source (Odoo sale.order.line id): products are tied to it
+    price: float = 0            # unit price; a price-only change never touches a drawing
 
 
 @dataclass
@@ -25,6 +27,7 @@ class SourceOrder:
     salesperson: str = ""
     job_order: str = ""
     date: str = ""
+    delivery_date: str = ""     # the sales order's Delivery Date: the production deadline ("" = not entered yet)
     lines: list = field(default_factory=list)
 
 

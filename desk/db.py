@@ -36,7 +36,9 @@ class Order(Base):
     job_order: Mapped[str] = mapped_column(String(80), default="")
     salesperson: Mapped[str] = mapped_column(String(120), default="")
     delivery: Mapped[list] = mapped_column(JSON, default=list)
+    delivery_date: Mapped[str] = mapped_column(String(40), default="")     # Odoo's Delivery Date (production deadline); "" = not entered
     read_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)   # quotation last compared with Odoo
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
@@ -61,6 +63,9 @@ class OrderLine(Base):
     marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
     areas: Mapped[list["LineArea"]] = relationship(order_by="LineArea.id", cascade="all, delete-orphan")
     keep: Mapped[bool] = mapped_column(Boolean, default=False)          # added back to the drawings on purpose: the no-drawing rule leaves it
+    source_line: Mapped[str] = mapped_column(String(40), default="")    # the quotation line it is tied to (Odoo sale.order.line id); "" = not tied
+    cancelled_by: Mapped[str] = mapped_column(String(120), default="")  # dropped from the quotation after issue: Cancelled stamp, left out of the set
+    cancelled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NoDrawingLine(Base):
@@ -243,6 +248,38 @@ class Photo(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class QuoteVersion(Base):
+    """A saved copy of the quotation's lines each time Odoo shows a difference (version 1 = as first read)."""
+    __tablename__ = "quote_version"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    n: Mapped[int] = mapped_column(Integer, default=1)
+    lines: Mapped[list] = mapped_column(JSON, default=list)             # [dict(ref, name, description, qty, price, no_drawing)]
+    why: Mapped[str] = mapped_column(String(40), default="")            # first read | webhook | project opened | check now | nightly
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class QuoteChange(Base):
+    """One difference between two quotation versions, with what it means for the product's drawing at its stage
+    (UI_BRIEF, quotation change rules) and how it was handled."""
+    __tablename__ = "quote_change"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(20))                       # added | dropped | qty | spec | price
+    line_ref: Mapped[str] = mapped_column(String(40), default="")
+    line_no: Mapped[int] = mapped_column(Integer, default=0)            # the desk product, 0 = none yet
+    name: Mapped[str] = mapped_column(Text, default="")
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    stage: Mapped[str] = mapped_column(String(20), default="")          # not drawn | drawn | issued | approved | production
+    status: Mapped[str] = mapped_column(String(20), default="open")     # open | handled | ignored
+    handled_by: Mapped[str] = mapped_column(String(120), default="")
+    handled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ProductionSet(Base):
     """The production (or subcontractor) drawings of one product, made from one issued revision."""
     __tablename__ = "production_set"
@@ -255,6 +292,32 @@ class ProductionSet(Base):
     engine_version: Mapped[str] = mapped_column(String(80), default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    prod_no: Mapped[int] = mapped_column(Integer, default=1)              # P1, P2 ...: a released set changed later becomes the next P
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)               # the specification it was drawn from ({} = the revision's, older sets)
+    released_by: Mapped[str] = mapped_column(String(120), default="")    # released to the shop floor ("" = not yet)
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProdChange(Base):
+    """A construction change on a product's production drawing (screen 11): frame, supports, joinery, hardware placement,
+    edge band, cut sizes. Allowed only when the client drawing stays exactly as approved. Before release it changes the
+    current P; after release it needs an administrator (P1 -> P2) and production gets a stop alert."""
+    __tablename__ = "prod_change"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    set_id: Mapped[int] = mapped_column(Integer, default=0)              # the production set it was asked on
+    marker: Mapped[int] = mapped_column(Integer, default=0)
+    typed: Mapped[str] = mapped_column(Text)
+    said: Mapped[str] = mapped_column(Text, default="")
+    answer: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="")          # answer | cannot | refused | failed | trial | accepted | undone | asked | approved | rejected
+    reason: Mapped[str] = mapped_column(Text, default="")
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)               # the production specification with the change
+    files: Mapped[list] = mapped_column(JSON, default=list)              # the trial production set
+    bom: Mapped[list] = mapped_column(JSON, default=list)                # BOM effect lines: [dict(item, before, after)]
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Mark(Base):
@@ -397,6 +460,48 @@ class Approval(Base):
     ip: Mapped[str] = mapped_column(String(60), default="")
     code_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class StoredFile(Base):
+    """A file the desk keeps in the private storage bucket (storage.py): where it was made on the desk's disk, and its
+    name in the bucket. The disk copy is only a working copy; the bucket copy is the one kept."""
+    __tablename__ = "stored_file"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(600), unique=True)          # the local path recorded in the drawing / revision
+    key: Mapped[str] = mapped_column(Text)                                # its name in the bucket
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class FileLog(Base):
+    """Every view and download of a kept file, by staff or by a client on the portal (brief: log every view, download, approval)."""
+    __tablename__ = "file_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    who: Mapped[str] = mapped_column(String(200), default="")             # staff name, or the client's email
+    side: Mapped[str] = mapped_column(String(10), default="desk")         # desk | portal
+    action: Mapped[str] = mapped_column(String(20), default="view")       # view | download
+    name: Mapped[str] = mapped_column(Text, default="")                   # the file name shown
+    key: Mapped[str] = mapped_column(Text, default="")                    # bucket name, "" = served from the desk's disk
+    order_id: Mapped[int] = mapped_column(Integer, default=0)
+    ip: Mapped[str] = mapped_column(String(60), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class PortalCode(Base):
+    """A one-time 6-digit code emailed to a client on the portal: to sign in, or to approve drawings (decision 11).
+    Only its fingerprint is kept. Valid 10 minutes, 5 tries, used once."""
+    __tablename__ = "portal_code"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(200))
+    purpose: Mapped[str] = mapped_column(String(20), default="signin")   # signin | approve
+    order_id: Mapped[int] = mapped_column(Integer, default=0)             # approve: the order it is for
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    tries: Mapped[int] = mapped_column(Integer, default=0)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    ip: Mapped[str] = mapped_column(String(60), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
