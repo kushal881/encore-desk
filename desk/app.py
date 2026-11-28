@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
+from . import finishcheck
 from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, portal, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
@@ -246,7 +247,15 @@ def load(ref):
         changed = False
         for l in o.lines:
             l.read = read_line(l.name, l.description)
+            # finishes the preview still shows as placeholders (LAMINATE NAME + CODE): asked on Specify (issue #45)
+            fq = finishcheck.questions(l.drawing.spec if l.drawing else None, l.read["fields"], {x["key"] for x in l.read["questions"]})
+            l.read["questions"] += fq
             changed |= _sync_questions(s, l)
+            if l.revisions:                                          # issued products: questions are not synced, so add these here
+                have = {q.key for q in l.questions}
+                for w in fq:
+                    if w["key"] not in have:
+                        l.questions.append(db.Question(key=w["key"], text=w["text"], options=w["options"])); changed = True
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"
             l.open_count = sum(1 for q in l.questions if not q.answer)
             _ = l.questions, l.drawing, l.changes, l.revisions
@@ -392,15 +401,30 @@ def open_order(ref: str = Form(...), user=User):
     return RedirectResponse("/orders/%s" % ref.strip(), status_code=303)
 
 
+def _finish_gap(l):
+    """'finishes not set (laminate, fabric)' when the preview still shows placeholder finishes, else ''. Issued drawings are
+    never re-checked (issue #45: old issued drawings are not changed)."""
+    if not l.drawing or l.drawing.status != "preview" or getattr(l, "issued_current", False):
+        return ""
+    return finishcheck.reason(l.drawing.spec)
+
+
 def _ready(l):
     return bool(not l.cancelled_at and l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
-                and not getattr(l, "ai_waiting", False))
+                and not getattr(l, "ai_waiting", False) and not _finish_gap(l))
 
 
 def _why_not_ready(l):
     """Why a product cannot be issued yet, in plain words."""
     if getattr(l, "ai_waiting", False):
         return "Accept or Undo the change first"
+    gap = _finish_gap(l)
+    if gap:
+        keys = finishcheck.missing(l.drawing.spec)
+        asked = [q for q in l.questions if q.key in keys]
+        if asked and all(q.answer for q in asked):
+            return gap + ". Draw the preview again to show the finishes you answered"
+        return gap + ". Answer them on Specify before issuing"
     if l.open_count:
         return "questions to answer"
     if any(c.status == "asked" for c in l.changes):
@@ -663,6 +687,9 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
     if nos.strip():                                                    # the Issue screen: only the drawings picked
         pick = {int(x) for x in re.findall(r"\d+", nos)}
         ready = [l for l in ready if l.no in pick]
+        gaps = [l for l in o.lines if l.no in pick and not getattr(l, "ai_waiting", False) and _finish_gap(l)]
+        if gaps and not any(getattr(l, "ai_waiting", False) for l in o.lines if l.no in pick):
+            raise HTTPException(400, " ".join("Product %d: %s." % (l.no, _why_not_ready(l)) for l in gaps))
     if not ready:
         waiting = [l.no for l in o.lines if getattr(l, "ai_waiting", False)]
         raise HTTPException(400, ("Product %s: Accept or Undo the change first." % ", ".join(map(str, waiting))) if waiting else
