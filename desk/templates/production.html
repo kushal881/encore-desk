@@ -9,6 +9,7 @@
     {% if approved %}<span class="tag bad">Client design locked · {{ approved }}</span>{% endif %}
     {% if ps and ps.released_at %}<span class="tag ok">P{{ ps.prod_no }} released by {{ ps.released_by }}, {{ ps.released_at|when }}</span>{% elif ps %}<span class="tag ask">P{{ ps.prod_no }} not released yet</span>{% endif %}
   </div>
+  {% if bridge %}<div class="card" role="note" style="border-color:#B91C1C;background:#FDE8E8;color:#7F1D1D"><b>BRIDGE — made outside the engine, check manually.</b> The engine checks did not run on this drawing; the BOM is the one uploaded with it.</div>{% endif %}
   {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
   {% if not ready %}
   <div class="card" style="border-color:#9A4508">

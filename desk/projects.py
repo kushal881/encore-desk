@@ -93,7 +93,8 @@ def rows(s):
             check = ""
         out.append(dict(ref=o.source_ref, client=o.client.name, folder=folder(o), salesperson=o.salesperson or "", st=n, stage="%d · %s" % (n, STEPS[n - 1]),
                         done=sum(1 for l in lines if l.revisions), total=len(lines), flag="" if archived else attention(s, o, st, n, lines), last=last, check=check,
-                        archived=archived, archived_reason=o.archived_reason or ""))
+                        archived=archived, archived_reason=o.archived_reason or "",
+                        bridge=sum(1 for l in lines if l.drawing is not None and l.drawing.engine_version == "BRIDGE")))   # issue #73
     return out
 
 

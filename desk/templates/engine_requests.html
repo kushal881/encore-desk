@@ -11,6 +11,16 @@
       <button class="primary">Send request</button>
     </form>
   </div>
+  {% if bridges %}
+  <div class="card" id="bridges">
+    <div style="font-weight:600">Bridge products waiting for the engine ({{ bridges|length }})</div>
+    <div class="sub small">Drawings made outside the engine and issued by hand. Once the engine can draw them, use Redraw on the engine on the product card.</div>
+    <div class="scroll"><table><tr><th>Project</th><th>Product</th><th>Engine request</th></tr>
+      {% for b in bridges %}<tr><td><a href="/orders/{{ b.ref }}/work#bridge{{ b.no }}">{{ b.ref }}</a></td><td>Product {{ b.no }} · {{ b.name }} <span class="tag bad">BRIDGE</span></td>
+        <td>{% if b.request %}#{{ b.request }} · {{ b.request_status }} · {{ b.request_text[:80] }}{% else %}none{% endif %}</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  {% endif %}
   <div class="card">
     <div style="font-weight:600">Requests</div>
     {% if rows %}
