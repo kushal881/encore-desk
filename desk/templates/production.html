@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Production · Product {{ l.no }} · {{ o.source_ref }}{% endblock %}
+{% block crumb %}<span class="sub small">{{ o.client.name }} · Step 7 of 8 · Production · {{ (ps.details.job_order if ps else o.job_order) or 'JO-[NO.]' }} · deadline {{ (ps.details.deadline if ps else o.delivery_date) or '[DATE]' }}</span>{% endblock %}
+{% block body %}
+<div class="page">
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+    <h1 style="margin:0;font-size:22px;flex:1 1 360px">{{ l.name.split('(')[0] }} · production drawing{% if ps %} P{{ ps.prod_no }}{% endif %}</h1>
+    {% if approved %}<span class="tag bad">Client design locked · {{ approved }}</span>{% endif %}
+    {% if ps and ps.released_at %}<span class="tag ok">P{{ ps.prod_no }} released by {{ ps.released_by }}, {{ ps.released_at|when }}</span>{% elif ps %}<span class="tag ask">P{{ ps.prod_no }} not released yet</span>{% endif %}
+  </div>
+  {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
+  {% if not ready %}
+  <div class="card" style="border-color:#9A4508">
+    <div style="font-weight:600">Make the production drawings first</div>
+    {% if o.stage not in ('production', 'completed') %}<div class="small">The order is not released to production yet. Release it on the project page.</div>
+    {% elif not o.delivery_date %}<div class="small">Ask sales to enter the delivery date in Odoo. It is the production deadline on the sheets (you can also type it when making the drawings).</div>{% endif %}
+    <div><a class="btn primary" style="padding:0 16px;min-height:44px" href="/orders/{{ o.source_ref }}#sets">Go to production drawings</a></div>
+  </div>
+  {% else %}
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+    <nav role="tablist" aria-label="Production sheet" style="display:flex;gap:6px;flex-wrap:wrap">
+      {% for k, t in (('drawing', 'Production drawing'), ('bom', 'Bill of material'), ('cut', 'Cut list')) %}
+      <a role="tab" aria-selected="{{ 'true' if tab == k else 'false' }}" class="btn" style="padding:0 14px;min-height:44px;{% if tab == k %}background:#17191C;color:#fff;border-color:#17191C{% endif %}" href="/orders/{{ o.source_ref }}/production/{{ l.no }}?tab={{ k }}">{{ t }}</a>
+      {% endfor %}
+    </nav>
+    <form method="get" action="/orders/{{ o.source_ref }}/production/{{ l.no }}/copy" target="_blank" style="display:flex;gap:8px;align-items:center;margin-left:auto">
+      <label for="dept" class="small">Copy for</label>
+      <select id="dept" name="dept" style="flex:0 1 220px">{% for k, t, _ in depts %}<option value="{{ k }}" {{ 'disabled' if k == 'vendor' and not vs }}>{{ t }}{{ ' (make the subcontractor drawings first)' if k == 'vendor' and not vs }}</option>{% endfor %}</select>
+      <button class="sm">Open PDF</button>
+    </form>
+  </div>
+  <div class="cols" style="padding:0">
+    <div class="main" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      {% if tab == 'drawing' %}
+      {% set f0 = ps.files[0] %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <div class="zoomer" role="group" aria-label="Zoom"><button type="button" id="zout" aria-label="Zoom out">&minus;</button><span id="zpct" class="small">100%</span><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zfit" class="sm" style="font-size:13px">Fit</button></div>
+        {% if pages > 1 %}<span class="small" style="margin-left:auto">Sheet {% for i in range(1, pages + 1) %}<a href="/orders/{{ o.source_ref }}/production/{{ l.no }}?tab=drawing&s={{ i }}" {% if i == sheet %}aria-current="page" style="font-weight:700"{% endif %}>{{ i }}</a> {% endfor %}of {{ pages }}</span>{% endif %}
+      </div>
+      <div style="overflow:auto;border:1px solid #E3E1DA;border-radius:8px;max-height:76vh" id="zwrap">
+        <img id="zimg" src="/sets/{{ ps.id }}/0/page/{{ sheet - 1 }}" alt="Production drawing P{{ ps.prod_no }} of Product {{ l.no }}, sheet {{ sheet }} of {{ pages }}" style="width:100%;display:block">
+      </div>
+      <div class="sub small">{{ f0.title }} · engines {{ ps.engine_version }} · made by {{ ps.made_by }}, {{ ps.made_at|when }}. No client details on these sheets. <a href="/sets/{{ ps.id }}/0/pdf" target="_blank">Full PDF</a>
+        {% if ps.files|length > 1 %}· Department sets: {% for f in ps.files[1:] %}<a href="/sets/{{ ps.id }}/{{ loop.index }}" >{{ f.title }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div>
+      {% else %}
+      {% if not bom %}
+      <div class="sub">The bill of material has not been made for this order yet. <a href="/orders/{{ o.source_ref }}#sets">Make it on the project page</a> (with or without panel-saw cutting).</div>
+      {% elif rows is none %}
+      <div class="sub">This product is not in the latest bill of material ({{ bom.name }}). Make it again on the project page.</div>
+      {% else %}
+      {% set sec = 'cut' if tab == 'cut' else 'buy' %}
+      <div class="sub small">From <a href="/production-files/{{ bom.id }}">{{ bom.name }}</a>{% if bom.panel_saw %} · panel-saw cutting{% endif %} · {{ bom.made_by }}, {{ bom.made_at|when }}</div>
+      <div class="scroll"><table>
+        <tr>{% for h in rows['head_' + sec] %}<th>{{ h }}</th>{% endfor %}</tr>
+        {% for row in rows[sec] %}<tr>{% for v in row %}<td class="small">{{ v }}</td>{% endfor %}</tr>{% else %}<tr><td class="sub">Nothing listed.</td></tr>{% endfor %}
+      </table></div>
+      {% if tab == 'bom' %}<div class="sub small">Cells shown as … are worked out in the Excel file (rates, rolls with wastage).</div>{% endif %}
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="right" id="panel">
+      <div class="card" style="gap:10px">
+        <div style="font-weight:600">Change production drawing <span class="tag info">AI assistant</span></div>
+        <div class="sub small">Construction only · the approved design can't change · after release, P{{ ps.prod_no }} &rarr; P{{ ps.prod_no + 1 }} needs admin approval</div>
+        {% for t in turns[-6:] %}
+        <div style="border-top:1px solid #EEECE6;padding-top:8px;display:flex;flex-direction:column;gap:6px">
+          <div class="small"><b>{{ t.by }}:</b> {% if t.marker %}Marker {{ t.marker }}: {% endif %}{{ t.typed }}</div>
+          {% if t.status in ('trial', 'accepted', 'asked', 'approved', 'rejected', 'undone') and t.said %}<div class="small"><span class="tag info">Proposed change · production only</span> {{ t.said }}</div>{% endif %}
+          {% if t.status == 'trial' %}
+            {% if t.bom %}<div class="small"><b>BOM:</b>{% for b in t.bom %}<div>{{ b.item }}: {{ b.before }} &rarr; <b>{{ b.after }}</b></div>{% endfor %}</div>{% else %}<div class="small"><b>BOM:</b> no change</div>{% endif %}
+            <div class="small"><b>Client drawing:</b> no change (checked sheet by sheet)</div>
+            <div class="small"><span class="tag ok">Pass</span> Matches approved client design · <span class="tag ok">Pass</span> Engine check · clash check</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <a class="btn sm" style="padding:6px 10px" target="_blank" href="/prodchange/{{ t.id }}/page/0">See after</a>
+              <form method="post" action="/orders/{{ o.source_ref }}/production/{{ l.no }}/ai/{{ t.id }}/accept"><button class="sm primary">{{ 'Accept' if not ps.released_at else 'Ask admin for P' ~ (ps.prod_no + 1) }}</button></form>
+              <form method="post" action="/orders/{{ o.source_ref }}/production/{{ l.no }}/ai/{{ t.id }}/undo"><button class="sm">Undo</button></form>
+            </div>
+          {% elif t.status == 'refused' %}
+            <div class="small" style="color:#8F1414">{{ t.reason }} It needs a client drawing revision (RevB), your permission and client re-approval.</div>
+            <div><a class="btn sm" style="padding:6px 10px" href="/orders/{{ o.source_ref }}/view/{{ l.no }}#panel">Ask admin permission</a></div>
+          {% elif t.status == 'failed' %}<div class="small" style="color:#8F1414">{{ t.reason }}</div>
+          {% elif t.status in ('answer', 'cannot') %}<div class="small">{{ t.answer }}</div>
+          {% elif t.status == 'accepted' %}<span class="tag ok">Accepted · P{{ ps.prod_no }} updated</span>
+          {% elif t.status == 'asked' %}<span class="tag ask">Waiting for an administrator (P{{ ps.prod_no }} &rarr; P{{ ps.prod_no + 1 }})</span>
+          {% elif t.status == 'approved' %}<span class="tag ok">Allowed · new production drawing made, stop alert sent</span>
+          {% elif t.status == 'rejected' %}<span class="tag bad">Rejected by the administrator</span>
+          {% elif t.status == 'undone' %}<span class="tag dim">Undone</span>{% endif %}
+        </div>
+        {% endfor %}
+        {% if not trial and not asked %}
+        <form method="post" action="/orders/{{ o.source_ref }}/production/{{ l.no }}/ai" style="display:flex;flex-direction:column;gap:8px">
+          <label for="marker" class="small">Marker</label>
+          <select id="marker" name="marker" style="flex:0 0 auto"><option value="0">None</option>{% for m in l.marks %}<option value="{{ m.no }}">{{ m.no }}{% if m.label %} · {{ m.label[:30] }}{% endif %}</option>{% endfor %}</select>
+          <label for="pt" class="small">Ask or change</label>
+          <textarea id="pt" name="text" rows="3" required placeholder="for example: use 2 support beams, end to end, 150 from the edges" style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px"></textarea>
+          <button class="primary">Send</button>
+        </form>
+        {% endif %}
+        <div class="sub small">Allowed here: {{ allowed }}. {{ locked_text }}</div>
+      </div>
+      <div class="card">
+        {% if can_release %}
+        <form method="post" action="/orders/{{ o.source_ref }}/production/{{ l.no }}/release" data-confirm="Release P{{ ps.prod_no }} of Product {{ l.no }} to production? A change after this becomes P{{ ps.prod_no + 1 }} and needs an administrator."><button class="primary big">Release P{{ ps.prod_no }} to production</button></form>
+        {% elif not ps.released_at %}<div class="small">Accept or undo the waiting change before release.</div>{% endif %}
+        <div class="sub small">A released set changed later becomes P{{ ps.prod_no + 1 }}. Production gets a stop alert and the new sheets.</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+<script>
+(function(){var im=document.getElementById('zimg');if(!im)return;var z=100,p=document.getElementById('zpct');
+function set(v){z=Math.max(50,Math.min(400,v));im.style.width=z+'%';p.textContent=z+'%';}
+document.getElementById('zin').onclick=function(){set(z+25)};document.getElementById('zout').onclick=function(){set(z-25)};document.getElementById('zfit').onclick=function(){set(100)};})();
+</script>
+{% endblock %}

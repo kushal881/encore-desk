@@ -36,6 +36,7 @@ class Order(Base):
     job_order: Mapped[str] = mapped_column(String(80), default="")
     salesperson: Mapped[str] = mapped_column(String(120), default="")
     delivery: Mapped[list] = mapped_column(JSON, default=list)
+    delivery_date: Mapped[str] = mapped_column(String(40), default="")     # Odoo's Delivery Date (production deadline); "" = not entered
     read_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
@@ -255,6 +256,32 @@ class ProductionSet(Base):
     engine_version: Mapped[str] = mapped_column(String(80), default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    prod_no: Mapped[int] = mapped_column(Integer, default=1)              # P1, P2 ...: a released set changed later becomes the next P
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)               # the specification it was drawn from ({} = the revision's, older sets)
+    released_by: Mapped[str] = mapped_column(String(120), default="")    # released to the shop floor ("" = not yet)
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProdChange(Base):
+    """A construction change on a product's production drawing (screen 11): frame, supports, joinery, hardware placement,
+    edge band, cut sizes. Allowed only when the client drawing stays exactly as approved. Before release it changes the
+    current P; after release it needs an administrator (P1 -> P2) and production gets a stop alert."""
+    __tablename__ = "prod_change"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("order_line.id"))
+    set_id: Mapped[int] = mapped_column(Integer, default=0)              # the production set it was asked on
+    marker: Mapped[int] = mapped_column(Integer, default=0)
+    typed: Mapped[str] = mapped_column(Text)
+    said: Mapped[str] = mapped_column(Text, default="")
+    answer: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="")          # answer | cannot | refused | failed | trial | accepted | undone | asked | approved | rejected
+    reason: Mapped[str] = mapped_column(Text, default="")
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)               # the production specification with the change
+    files: Mapped[list] = mapped_column(JSON, default=list)              # the trial production set
+    bom: Mapped[list] = mapped_column(JSON, default=list)                # BOM effect lines: [dict(item, before, after)]
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Mark(Base):

@@ -11,6 +11,17 @@ class OdooError(RuntimeError):
     pass
 
 
+def _day(v):
+    """Odoo's date-time '2026-12-10 05:30:00' -> '10 DEC 2026' (as the sheets write dates); False / empty -> ''."""
+    if not v:
+        return ""
+    import datetime
+    try:
+        return datetime.datetime.strptime(str(v)[:10], "%Y-%m-%d").strftime("%d %b %Y").upper()
+    except ValueError:
+        return ""
+
+
 class OdooSource:
     name = "odoo"
 
@@ -23,6 +34,9 @@ class OdooSource:
         self.key = key or os.environ.get("ODOO_KEY", "")
         self.http = client or httpx.Client(timeout=30)
         self.mode, self.uid, self._status, self._open, self.stage_note = None, None, (0, ""), (0, []), ""
+        # decision 3: Job Order No is a field added to the sales order in Odoo; its technical name is set in Railway
+        # (ODOO_JOB_ORDER_FIELD, e.g. x_studio_job_order_no). Delivery Date is Odoo's own commitment_date.
+        self.job_order_field = os.environ.get("ODOO_JOB_ORDER_FIELD", "").strip()
 
     @property
     def configured(self):
@@ -72,8 +86,13 @@ class OdooSource:
 
     # ---- what the desk asks for ------------------------------------------------------------------------------------
     def get_order(self, ref):
-        rows = self.call("sale.order", "search_read", domain=[["name", "=", ref.strip()]], limit=1,
-                         fields=["name", "partner_id", "partner_shipping_id", "user_id", "date_order", "order_line", "client_order_ref"])
+        extra = [f for f in (self.job_order_field, "commitment_date") if f]
+        try:
+            rows = self.call("sale.order", "search_read", domain=[["name", "=", ref.strip()]], limit=1,
+                             fields=["name", "partner_id", "partner_shipping_id", "user_id", "date_order", "order_line", "client_order_ref"] + extra)
+        except OdooError:                                              # a job order field this Odoo does not have: read without it
+            rows = self.call("sale.order", "search_read", domain=[["name", "=", ref.strip()]], limit=1,
+                             fields=["name", "partner_id", "partner_shipping_id", "user_id", "date_order", "order_line", "client_order_ref", "commitment_date"])
         if not rows:
             raise KeyError(ref)
         o = rows[0]
@@ -102,7 +121,8 @@ class OdooSource:
                 no += 1                                            # only products that get a drawing are numbered Product 1, 2, ...
             lines.append(SourceLine(no=0 if why else no, name=name, description=rest.strip(), qty=l.get("product_uom_qty") or 1, product_ref=str(l["product_id"][0]), no_drawing=why))
         return SourceOrder(source="odoo", ref=o["name"], client_name=company, client_contact=contact, delivery=delivery,
-                           salesperson=o["user_id"][1] if o.get("user_id") else "", job_order="", date=str(o.get("date_order") or "")[:10], lines=lines)
+                           salesperson=o["user_id"][1] if o.get("user_id") else "", job_order=str(o.get(self.job_order_field) or "") if self.job_order_field else "",
+                           date=str(o.get("date_order") or "")[:10], delivery_date=_day(o.get("commitment_date")), lines=lines)
 
     def _product_kinds(self, ids):
         """-> {product id: (product type, [route names])}. Routes need Odoo's Inventory; without them only the type is used."""
