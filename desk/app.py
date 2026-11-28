@@ -425,7 +425,15 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
 
 @app.post("/open")
 def open_order(ref: str = Form(...), user=User):
-    return RedirectResponse("/orders/%s" % ref.strip(), status_code=303)
+    """The dashboard box: a project on the desk or a quotation number opens; a name ("sudeva") goes to the search
+    results on New project instead of a "not found" page (issue #86)."""
+    from urllib.parse import quote
+    ref = ref.strip()
+    with db.Session() as s:
+        on_desk = s.scalar(select(db.Order).where(db.Order.source_ref == ref)) is not None
+    if on_desk or re.search(r"\d", ref):
+        return RedirectResponse("/orders/%s" % quote(ref), status_code=303)
+    return RedirectResponse("/new?q=%s" % quote(ref), status_code=303)
 
 
 def _finish_gap(l):

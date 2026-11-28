@@ -1,0 +1,22 @@
+{# The green "Selected" card on New project (issue #86). ref, on_desk, c = line_counts(ref) or None #}
+{% if on_desk %}
+<div class="card" style="border-color:#0E6B5C;gap:4px"><b>{{ ref }}</b><span>Already on the desk · <a href="/orders/{{ ref }}">Open &rsaquo;</a></span>
+  <button type="button" class="sm" data-qchange style="align-self:flex-start">Change</button></div>
+{% elif c is none %}
+<div class="card" role="alert" style="border-color:#B91C1C;gap:4px"><b>{{ ref }}</b><span>This quotation was not found.</span><button type="button" class="sm" data-qchange style="align-self:flex-start">Change</button></div>
+{% elif c.error %}
+<div class="card" role="alert" style="border-color:#D97706;gap:4px"><b>{{ ref }}</b><span>{{ c.error }}</span><button type="button" class="sm" data-qchange style="align-self:flex-start">Change</button></div>
+{% else %}
+<div class="card" id="selcard" style="border-color:#0E6B5C;background:#F3FAF8;gap:6px">
+  <input type="hidden" name="ref" value="{{ c.ref }}" data-client="{{ c.client }}">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag ok">&#10003; Selected</span><b>{{ c.ref }}</b><span>· {{ c.client }}</span>
+    <span style="flex-grow:1"></span><button type="button" class="sm" data-qchange>Change</button></div>
+  {% if c.salesperson %}<div class="sub small">Salesperson: {{ c.salesperson }}</div>{% endif %}
+  {% for key, label in (('drawn', 'we draw'), ('bought', 'bought in · no drawing'), ('aside', 'set aside · services, delivery, installation')) %}{% set rows = c[key] %}
+  <details class="cnt"><summary><b>{{ rows|length }}</b> {{ label }}{% if rows %} <span class="sub small">show &#9656;</span>{% endif %}</summary>
+    {% if rows %}<div class="small" style="max-height:180px;overflow:auto;padding:4px 0 0 18px">{% for no, name, qty, why in rows %}<div>{% if no %}Product {{ no }} · {% endif %}{{ name }} · qty {{ '%g'|format(qty) }}{% if why and key == 'aside' %} <span class="sub">({{ why|lower }})</span>{% endif %}</div>{% endfor %}</div>{% endif %}
+  </details>{% endfor %}
+  {% if c.areas %}<div class="small"><span class="sub">By area:</span> {% for a, n in c.areas %}{{ a }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+  <div class="sub small">The full list is in the Products tab after Create project.</div>
+</div>
+{% endif %}

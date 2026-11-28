@@ -7,11 +7,13 @@
 Routes are kept here, apart from app.py; app.py includes this router at its end."""
 import datetime, re
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy import select
 from . import db
 from .app import T, User, ctx, load, ODOO, SOURCE, product_key, _next_no, _new_line, _draw_lines, stage_of
+from .reading import read_line
 from .sources.sample import SampleSource
+from .sources.odoo import OdooError
 
 router = APIRouter()
 
@@ -78,14 +80,99 @@ def approved_drawings(s, q=""):
     return sorted(out, key=lambda d: d["number"], reverse=True)
 
 
-@router.get("/new", response_class=HTMLResponse)
-def new_page(request: Request, q: str = "", p: str = "", error: str = "", user=User):
+# ---- issue #86: results as you type, select a card, lines counted ------------------------------------------------------
+
+MIN_LETTERS = 2
+ODOO_DOWN = "Odoo could not be reached just now. Projects already on the desk are still shown. Try again in a minute."
+
+
+def search(q, limit=12):
+    """Quotations and orders matching q (number or client), for New project and the dashboard search box.
+    -> (results, note). Under 2 letters: nothing is searched. Each result says whether it is already on the desk."""
+    q = (q or "").strip()
+    if len(q) < MIN_LETTERS:
+        return [], ""
+    note, rows = "", []
+    if ODOO.configured:
+        try:
+            rows = ODOO.search_orders(q, limit)
+        except OdooError:
+            note = ODOO_DOWN
+    else:
+        for ref in SampleSource().list_refs():
+            src = SampleSource().get_order(ref)
+            if q.lower() in ref.lower() or q.lower() in src.client_name.lower():
+                rows.append(dict(ref=ref, client=src.client_name, kind="Sample order", date=src.date or "", amount=sum((l.price or 0) * (l.qty or 0) for l in src.lines),
+                                 currency="", lines=len(src.lines), salesperson=src.salesperson))
     with db.Session() as s:
-        quotes = open_quotations(s, q)
+        orders = {o.source_ref: o for o in s.scalars(select(db.Order))}
+        for r in rows:
+            o = orders.get(r["ref"])
+            r["on_desk"] = bool(o is not None and not o.archived_at)
+        seen = {r["ref"] for r in rows}
+        for o in sorted(orders.values(), key=lambda x: -x.id):                # projects already on the desk (works without Odoo)
+            if o.archived_at or o.source_ref in seen or not (q.lower() in o.source_ref.lower() or q.lower() in o.client.name.lower()):
+                continue
+            rows.append(dict(ref=o.source_ref, client=o.client.name, kind="On the desk", date=o.read_at.strftime("%d %b %Y").upper() if o.read_at else "",
+                             amount=0, currency="", lines=len(o.lines) + len(o.not_drawn), salesperson=o.salesperson, on_desk=True))
+    return rows[:limit], note
+
+
+@router.get("/new/search")
+def search_json(q: str = "", user=User):
+    rows, note = search(q)
+    return JSONResponse(dict(q=q, results=rows, note=note, min=MIN_LETTERS))
+
+
+def line_counts(ref):
+    """The quotation's lines counted, not listed (issue #86): drawn / bought in / set aside, and drawn per area.
+    -> dict(drawn, bought, aside: [(no, name, qty, why)], areas: [(area, n)]) or None when it cannot be read."""
+    try:
+        src = SOURCE.get_order(ref)
+    except KeyError:
+        return None
+    except Exception:
+        return dict(error=ODOO_DOWN)
+    drawn, bought, aside, areas = [], [], [], {}
+    for l in src.lines:
+        row = (l.no, l.name.split("(")[0].strip(), l.qty, l.no_drawing)
+        if not l.no_drawing:
+            drawn.append(row)
+            a = (read_line(l.name, l.description).get("area") or "").strip() or "No area"
+            areas[a] = areas.get(a, 0) + 1
+        elif l.no_drawing.startswith("Bought"):
+            bought.append(row)
+        else:
+            aside.append(row)                                          # services, installation, delivery, freight (hard rule 6)
+    return dict(ref=src.ref, client=src.client_name, salesperson=src.salesperson, drawn=drawn, bought=bought, aside=aside,
+                areas=sorted(areas.items(), key=lambda x: (x[0] == "No area", -x[1], x[0])))
+
+
+def designers():
+    with db.Session() as s:
+        return [u.name for u in s.scalars(select(db.User).order_by(db.User.name)) if getattr(u, "active", True) and u.role in ("drawing", "admin", "admin2")]
+
+
+@router.get("/new/pick", response_class=HTMLResponse)
+def pick(request: Request, ref: str = "", user=User):
+    """The green "Selected" card for one quotation (fetched by the page when a result is chosen)."""
+    with db.Session() as s:
+        o = s.scalar(select(db.Order).where(db.Order.source_ref == ref.strip()))
+        on_desk = o is not None and not o.archived_at
+    return T.TemplateResponse(request, "_newpick.html", dict(ref=ref.strip(), on_desk=on_desk, c=None if on_desk else line_counts(ref.strip())))
+
+
+@router.get("/new", response_class=HTMLResponse)
+def new_page(request: Request, q: str = "", p: str = "", ref: str = "", error: str = "", user=User):
+    with db.Session() as s:
+        quotes = open_quotations(s, "")
         past = approved_drawings(s, p)
         on_desk = [o.source_ref for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())) if not o.archived_at and (not o.lines or not any(l.revisions for l in o.lines))]
-    return T.TemplateResponse(request, "newproject.html", ctx(user, quotes=quotes, past=past, q=q, p=p, error=error, on_desk=on_desk,
-                                                               odoo_on=ODOO.configured, today=datetime.date.today(), nav="new"))
+        sel_on_desk = bool(ref) and s.scalar(select(db.Order).where(db.Order.source_ref == ref.strip())) is not None
+    results, note = search(q) if q else ([], "")
+    return T.TemplateResponse(request, "newproject.html", ctx(user, quotes=quotes, past=past, q=q, p=p, error=error, on_desk=on_desk, results=results, note=note,
+                                                               sel=ref.strip(), sel_on_desk=sel_on_desk, counts=line_counts(ref.strip()) if ref and not sel_on_desk else None,
+                                                               designers=designers(), odoo_on=ODOO.configured, today=datetime.date.today(), nav="new"))
 
 
 def _start(ref, folder_no, who):
@@ -125,11 +212,19 @@ def _start(ref, folder_no, who):
 
 
 @router.post("/new")
-def new_project(ref: str = Form(""), folder_no: str = Form(""), user=User):
+def new_project(ref: str = Form(""), folder_no: str = Form(""), notes: str = Form(""), needed_by: str = Form(""), designer: str = Form(""), user=User):
     try:
         o = _start(ref, folder_no, user.name)
     except HTTPException as e:
-        return RedirectResponse("/new?error=%s" % _q(e.detail), status_code=303)
+        return RedirectResponse("/new?error=%s%s" % (_q(e.detail), "&ref=" + _q(ref.strip()) if ref.strip() else ""), status_code=303)
+    notes, needed_by, designer = notes.strip()[:2000], needed_by.strip()[:40], designer.strip()[:120]
+    if notes or needed_by or designer:                                   # issue #86: the brief for the designer
+        with db.Session() as s:
+            od = s.get(db.Order, o.id)
+            od.brief, od.needed_by, od.designer = notes, needed_by, designer
+            s.add(db.Message(order_id=o.id, who="desk", text="Brief for the designer from %s:%s%s%s" % (
+                user.name, (" designer %s." % designer) if designer else "", (" Needed by %s." % needed_by) if needed_by else "", (" " + notes) if notes else "")))
+            s.commit()
     return RedirectResponse("/orders/%s" % o.source_ref, status_code=303)
 
 

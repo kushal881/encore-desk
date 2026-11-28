@@ -46,7 +46,8 @@ def test_new_project():
         assert o.client.folder_no == "05" and len(o.lines) == 3
         assert any("Encore-%s-%d-05-Achiever Apparels Pvt Ltd" % (datetime.date.today().strftime("%b"), datetime.date.today().year) in m.text for m in o.messages)
     h = c.get("/new").text
-    assert 'name="ref" value="Q-2026-10-444"' not in h and 'name="ref" value="SAMPLE-REPEAT-1"' in h   # a project now: not offered as new
+    assert 'href="/new?ref=Q-2026-10-444"' not in h and 'href="/new?ref=SAMPLE-REPEAT-1"' in h        # a project now: not offered as new
+    assert "Already on the desk" in c.get("/new?q=Q-2026").text                                   # issue #86: search says so instead
     # the same client keeps its folder number: another number is refused, an empty one takes 05 (tested in test_remake)
     assert "already has folder 05" in c.post("/new", data={"ref": "SAMPLE-REPEAT-1", "folder_no": "9"}).text
     # opening an existing project again needs no folder number

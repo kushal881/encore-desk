@@ -187,6 +187,17 @@ class OdooSource:
         self._open = (time.time(), out)
         return out
 
+    def search_orders(self, q, limit=12):
+        """Quotations and sales orders whose number or client matches q, newest first (issue #86: results as you type).
+        -> [dict(ref, client, kind, date, amount, currency, lines, salesperson)]. Raises OdooError when Odoo cannot be read."""
+        q = (q or "").strip()
+        rows = self.call("sale.order", "search_read", domain=["|", ["name", "ilike", q], ["partner_id", "ilike", q], ["state", "!=", "cancel"]],
+                         fields=["name", "partner_id", "state", "date_order", "amount_total", "currency_id", "order_line", "user_id"], limit=limit, order="id desc")
+        return [dict(ref=r["name"], client=r["partner_id"][1].split(",")[0] if r.get("partner_id") else "",
+                     kind="Sales order" if r.get("state") == "sale" else "Quotation", date=_day(r.get("date_order")),
+                     amount=float(r.get("amount_total") or 0), currency=(r.get("currency_id") or [0, ""])[1] if r.get("currency_id") else "",
+                     lines=len(r.get("order_line") or []), salesperson=r["user_id"][1] if r.get("user_id") else "") for r in rows]
+
     def list_refs(self, limit=20):
         return [q["ref"] for q in self.open_quotations(limit)]
 
