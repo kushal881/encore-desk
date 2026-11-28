@@ -444,7 +444,53 @@ def _drawing_ctx(ds, rid):
     pages = len(storage.preview_paths(d["r"].files.get("pdf"))) or 1
     with db.Session() as s:
         marks = list(s.scalars(select(db.Mark).where(db.Mark.line_id == d["l"].id, db.Mark.shown.like("r%d%%" % d["r"].id), db.Mark.by.like("Client:%")).order_by(db.Mark.no)))
-    return dict(d=d, prev=ds[i - 1] if i > 0 else None, next=ds[i + 1] if i + 1 < len(ds) else None, pages=pages, marks=marks, sheet=1)
+    return dict(d=d, prev=ds[i - 1] if i > 0 else None, next=ds[i + 1] if i + 1 < len(ds) else None, pages=pages, marks=marks, sheet=1,
+                pos=i + 1, chat=chat_events(d), designer=(d["r"].issued_by or "Encore").split(" ")[0])
+
+
+def _note_parts(note):
+    """A change request's note as the portal saves it ("[1] make it longer; [5] plinth lower; other words") ->
+    ([(marker no, text)], the rest)."""
+    chips, rest = [], []
+    for seg in [x.strip() for x in (note or "").split("; ") if x.strip()]:
+        m_ = re.match(r"\[(\d+)\]\s*(.*)$", seg)
+        if m_:
+            chips.append((int(m_.group(1)), m_.group(2)))
+        else:
+            rest.append(seg)
+    return chips, "; ".join(rest)
+
+
+def chat_events(d):
+    """The chat on the portal drawing page (issue #83), oldest first: every issued revision of this product the client was
+    sent ("Rev A is ready for you", then "New revision: Rev B"), the client's change requests with their marked comments,
+    Encore's replies, and approvals. Built from the records the portal already keeps: old requests show as history.
+    -> [dict(kind encore | client | divider | approved, at, who, text, chips)]"""
+    l = d["l"]
+    out = []
+    with db.Session() as s:
+        revs = list(s.scalars(select(db.Revision).where(db.Revision.line_id == l.id, db.Revision.id <= d["r"].id).order_by(db.Revision.id)))
+        rids = [r.id for r in revs]
+        aps = list(s.scalars(select(db.Approval).where(db.Approval.revision_id.in_(rids)).order_by(db.Approval.id))) if rids else []
+        acts = list(s.scalars(select(db.ClientAction).where(db.ClientAction.approval_id.in_([a_.id for a_ in aps]),
+                                                            db.ClientAction.kind.in_(("reply", "reject", "reissued"))))) if aps else []
+    for k, r in enumerate(revs):
+        who = (r.issued_by or "Encore").split(" ")[0]
+        if k:
+            out.append(dict(kind="divider", at=r.issued_at, text="New revision: Rev %s" % r.rev))
+        out.append(dict(kind="encore", at=r.issued_at, who=who, text=("Rev %s of %s is ready for you. Add a marker anywhere you want a change." if not k
+                                                                       else "Rev %s of %s is ready. Please check it and approve, or mark what still needs changing.") % (r.rev, d["name"])))
+    for a_ in aps:
+        if a_.outcome == "approved":
+            out.append(dict(kind="approved", at=a_.at, text="Approved by %s on %s" % (a_.name, a_.on)))
+        else:
+            chips, rest = _note_parts(a_.note)
+            out.append(dict(kind="client", at=a_.at, who=a_.name or a_.email, text=rest, chips=chips, file=bool(a_.proof)))
+    for x in acts:
+        out.append(dict(kind="encore", at=x.at, who=(x.by or "Encore").split(" ")[0],
+                        text=("We could not make this change: " if x.kind == "reject" else "Revised drawing sent: " if x.kind == "reissued" else "") + (x.text or "")))
+    fix = lambda v: v.replace(tzinfo=None) if v else datetime.datetime.min
+    return sorted(out, key=lambda e: fix(e["at"]))
 
 
 @router.get("/orders/{ref}/d/{rid}", response_class=HTMLResponse)

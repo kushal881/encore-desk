@@ -1,0 +1,15 @@
+{# One line of the portal drawing chat (issue #83). e: dict(kind encore | client | divider | approved, at, who, text, chips) #}
+{% if e.kind == 'encore' %}
+<div class="en"><span class="av" aria-hidden="true">E</span><div class="tx">{{ e.text }}<div class="sub" style="font-size:11px">{{ e.who }} · {{ e.at.strftime('%d %b %H:%M') if e.at }}</div></div></div>
+{% elif e.kind == 'client' %}
+<div class="me">
+  {% if e.chips %}<div style="display:flex;flex-wrap:wrap;gap:4px">{% for n, t in e.chips %}<span class="pchip"><span class="n">{{ n }}</span>{{ t }}</span>{% endfor %}</div>{% endif %}
+  {% if e.text %}<div>{{ e.text }}</div>{% endif %}
+  {% if e.file %}<div class="sub small">Photo / file attached</div>{% endif %}
+  <span class="sub" style="font-size:11px;align-self:flex-end">{{ e.who }} · {{ e.at.strftime('%d %b %H:%M') if e.at }}</span>
+</div>
+{% elif e.kind == 'divider' %}
+<div class="tag ok" style="align-self:center">{{ e.text }}</div>
+{% elif e.kind == 'approved' %}
+<div class="tag ok" style="align-self:center">&#10003; {{ e.text }}</div>
+{% endif %}

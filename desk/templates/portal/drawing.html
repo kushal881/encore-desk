@@ -1,111 +1,156 @@
 {% extends "portal/base.html" %}
 {% block title %}Review a drawing{% endblock %}
 {% block body %}
+{# Portal drawing page, chat style (issue #83): the drawing on the left; "Talk to Encore about this drawing" on the right,
+   newest at the bottom, the message box pinned; the client's marked comments become chips and go out as ONE change
+   request to the designer (never to the AI); a new revision shows as a line, with the Approve box (email code) right above
+   the message box. No engine words here. #}
 {% set base = '/portal/orders/' ~ o.source_ref %}
-<div class="row" style="justify-content:space-between">
-  <a class="back" href="{{ base }}">← All drawings</a>
-  <div class="row">
-    {% if prev %}<a class="btn sec" href="{{ base }}/d/{{ prev.r.id }}">← Previous</a>{% endif %}
-    {% if next %}<a class="btn sec" href="{{ base }}/d/{{ next.r.id }}">Next →</a>{% endif %}
-  </div>
-</div>
-<div>
-  <div class="sub">Sheet {{ d.sheet }} of {{ d.total }} · {{ d.r.number }} Rev {{ d.r.rev }}</div>
-  <h1>{{ d.name }} · Qty {{ d.qty }}</h1>
-  <div class="sub">{{ d.code }}</div>
+<style>
+main{max-width:1440px}
+.pw{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,420px);gap:14px;height:calc(100vh - 215px);min-height:540px}
+@media (max-width:900px){.pw{grid-template-columns:1fr;height:auto}.pw .pd{height:65vh}.pw .pc{height:85vh}}
+.pd,.pc{background:#fff;border:1px solid #E3E1DA;border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pc{border-color:#0E6B5C}
+.pbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #EEECE6}
+.pbtn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;min-width:38px;padding:0 10px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font:600 13px Inter,sans-serif;text-decoration:none;cursor:pointer;width:auto}
+#psheet{flex:1 1 auto;min-height:0;overflow:auto;background:#FAFAF7}
+.ppin{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:13px;background:#9A4508;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.ppin.new{background:#0E6B5C}
+#ppop{position:absolute;z-index:30;display:none;background:#fff;border:1px solid #0E6B5C;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px;width:250px;flex-direction:column;gap:7px}
+#pmsgs{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:10px 12px}
+.me{align-self:flex-end;background:#F1EFE9;border-radius:14px 14px 4px 14px;padding:8px 11px;font-size:13px;max-width:88%;display:flex;flex-direction:column;gap:5px}
+.en{align-self:flex-start;display:flex;gap:8px;max-width:92%}
+.en .av{width:24px;height:24px;border-radius:12px;background:#0E6B5C;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.en .tx{font-size:13px;background:#EEF7F4;border-radius:14px 14px 14px 4px;padding:8px 11px}
+.pchip{display:inline-flex;align-items:center;gap:5px;background:#FFF4E8;border:1px solid #F0C9A0;border-radius:14px;padding:3px 8px 3px 3px;font-size:12px;max-width:100%}
+.pchip .n{width:18px;height:18px;border-radius:9px;background:#9A4508;color:#fff;font-weight:700;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.pchip button{border:0;background:none;cursor:pointer;color:#5B5F66;font-size:14px;line-height:1;padding:0 2px;min-height:0;width:auto}
+.pcmp{border:1.5px solid #0E6B5C;border-radius:16px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;margin:8px 12px 6px}
+.pcmp textarea{border:0;outline:0;resize:none;min-height:38px;max-height:110px;padding:2px}
+.appr{margin:0 12px;border:1px solid #BFE0D6;background:#F3FAF8;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.appr input{min-height:38px}
+.sw{position:relative}.sw>summary{list-style:none;cursor:pointer}
+.sw>div{position:absolute;z-index:40;top:44px;left:0;width:min(380px,85vw);max-height:60vh;overflow:auto;background:#fff;border:1px solid #D6D3CA;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px}
+.sw a{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:8px;text-decoration:none;color:#17191C}
+.sw a.on{background:#F4FAF8;font-weight:600}
+</style>
+<div class="row" style="gap:8px">
+  <a class="back" href="{{ base }}">&larr; All {{ ds|length }} drawing{{ 's' if ds|length != 1 }}</a>
+  <span class="sub">{{ o.source_ref }}</span>
 </div>
 {% if done == 'changes' %}<div class="okmsg">Thank you. Your change request is with our team; the drawing will come back to you as a new revision.</div>{% endif %}
 {% if done.startswith('approved') %}<div class="okmsg">Thank you. Your approval is recorded and a confirmation with the approved drawing is on its way to {{ email }}.</div>{% endif %}
 {% if error %}<div class="err" id="msg">{{ error }}</div>{% endif %}
 
-<div class="row" style="align-items:flex-start;gap:16px">
-  <div class="card" style="flex:999 1 520px;min-width:0">
-    <div class="row">
-      <button type="button" class="btn sec" onclick="zoom(-25)" aria-label="Zoom out">−</button>
-      <span id="zp" style="min-width:48px;text-align:center">100%</span>
-      <button type="button" class="btn sec" onclick="zoom(25)" aria-label="Zoom in">+</button>
-      {% if d.status != 'approved' %}<button type="button" class="btn sec" id="markbtn" onclick="markMode()">+ Mark a spot to change</button>{% endif %}
-      {% if pages > 1 %}<span class="sub">Sheet:</span>{% for n in range(1, pages + 1) %}<a class="btn {{ '' if n == sheet else 'sec' }}" href="{{ base }}/d/{{ d.r.id }}?s={{ n }}">{{ n }}</a>{% endfor %}{% endif %}
+<div class="pw">
+  <section class="pd" aria-label="Drawing">
+    <div class="pbar">
+      {% if prev %}<a class="pbtn" href="{{ base }}/d/{{ prev.r.id }}" aria-label="Previous drawing">&lsaquo;</a>{% endif %}
+      <details class="sw" style="flex:1 1 220px;min-width:0"><summary class="pbtn" style="justify-content:flex-start;width:100%;text-align:left;font-weight:400">
+        <span style="flex-grow:1;min-width:0"><span class="sub small" style="display:block">Drawing {{ pos }} of {{ ds|length }} · Rev {{ d.r.rev }}{% if d.status == 'waiting' %} · waiting for you{% elif d.status == 'approved' %} · approved{% elif d.status == 'changes' %} · change asked{% endif %}</span><b>{{ d.name }}</b></span><span aria-hidden="true">&#9662;</span></summary>
+        <div>
+          <label class="sr" for="swq" style="position:absolute;left:-9999px">Find a drawing</label>
+          <input id="swq" type="search" placeholder="Find a drawing" autocomplete="off" style="min-height:38px;margin-bottom:4px">
+          {% for x in ds %}<a href="{{ base }}/d/{{ x.r.id }}" class="{{ 'on' if x.r.id == d.r.id }}" data-name="{{ (x.name ~ ' ' ~ x.code ~ ' ' ~ x.r.number)|lower }}"><span style="flex-grow:1;min-width:0">{{ loop.index }}. {{ x.name }} <span class="sub small">{{ x.code }}</span></span>
+            {% if x.status == 'approved' %}<span class="tag ok">Approved</span>{% elif x.status == 'changes' %}<span class="tag ask">Change asked</span>{% else %}<span class="tag dim">Waiting</span>{% endif %}</a>{% endfor %}
+        </div></details>
+      {% if next %}<a class="pbtn" href="{{ base }}/d/{{ next.r.id }}" aria-label="Next drawing">&rsaquo;</a>{% endif %}
+      <span role="group" aria-label="Zoom" style="display:inline-flex;gap:4px;align-items:center"><button type="button" class="pbtn" onclick="zoom(-25)" aria-label="Zoom out">&minus;</button><span id="zp" class="small" style="min-width:42px;text-align:center">100%</span><button type="button" class="pbtn" onclick="zoom(25)" aria-label="Zoom in">+</button></span>
+      {% if pages > 1 %}<span class="sub small">Sheet:</span>{% for n in range(1, pages + 1) %}<a class="pbtn" style="{{ 'background:#0E6B5C;color:#fff;border-color:#0E6B5C' if n == sheet }}" href="{{ base }}/d/{{ d.r.id }}?s={{ n }}">{{ n }}</a>{% endfor %}{% endif %}
+      <a class="pbtn" href="{{ base }}/d/{{ d.r.id }}/pdf?download=1">Download PDF</a>
     </div>
-    <div style="overflow:auto;border:1px solid #EEECE6;border-radius:8px;background:#FAFAF7;max-height:75vh">
-      <div id="sheet" style="position:relative;width:100%;cursor:default">
-        <img id="img" src="{{ base }}/d/{{ d.r.id }}/sheet/{{ sheet }}" alt="Drawing {{ d.r.number }} Rev {{ d.r.rev }}, sheet {{ sheet }}" style="width:100%;display:block">
-        {% for m in marks %}{% if m.shown == ('r%d' % d.r.id if sheet == 1 else 'r%ds%d' % (d.r.id, sheet)) %}
-        <span title="{{ m.label }}" style="position:absolute;left:{{ m.x }}%;top:{{ m.y }}%;transform:translate(-50%,-50%);background:#9A4508;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">{{ m.no }}</span>
-        {% endif %}{% endfor %}
+    <div id="psheet">
+      <div id="sheet" style="position:relative;width:100%">
+        <img id="img" src="{{ base }}/d/{{ d.r.id }}/sheet/{{ sheet }}" alt="Drawing {{ d.r.number }} Rev {{ d.r.rev }}, sheet {{ sheet }}" style="width:100%;display:block;{{ 'cursor:crosshair' if d.status != 'approved' }}">
+        {% for m in marks %}{% if m.shown == ('r%d' % d.r.id if sheet == 1 else 'r%ds%d' % (d.r.id, sheet)) %}<span class="ppin" title="{{ m.label }}">{{ m.no }}</span>{% endif %}{% endfor %}
+        {% if d.status != 'approved' %}<div id="ppop" role="dialog" aria-label="Your comment">
+          <div style="display:flex;align-items:center;gap:6px"><span class="ppin new" id="popn" style="position:static;transform:none">1</span><b class="small" style="flex-grow:1">Your comment here</b><button type="button" id="popx" class="pbtn" style="min-height:28px;min-width:28px" aria-label="Close">&times;</button></div>
+          <label class="sr" for="poptext" style="position:absolute;left:-9999px">What should change here</label>
+          <input type="text" id="poptext" placeholder="What should change here?" style="min-height:38px">
+          <div style="display:flex;align-items:center;gap:6px"><span class="sub small" style="flex-grow:1">Enter = add to message</span><button type="button" id="popadd" class="pbtn" style="background:#0E6B5C;color:#fff;border-color:#0E6B5C;min-height:30px">Add &#8629;</button></div>
+        </div>{% endif %}
       </div>
     </div>
-    <div class="row">
-      <a href="{{ base }}/d/{{ d.r.id }}/pdf?download=1">Download this sheet (PDF)</a>
-      <a href="{{ base }}/d/{{ d.r.id }}/pdf" target="_blank" rel="noopener">Open the full-quality PDF</a>
+    <div class="pbar" style="border-top:1px solid #EEECE6;border-bottom:0">
+      <span class="sub small" style="flex-grow:1">{% if d.status != 'approved' %}Click anywhere on the drawing to add a marker with your comment.{% else %}This drawing is approved and locked for manufacturing.{% endif %}{% if d.finishes %} · Finishes: {% for u, c in d.finishes %}{{ c }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</span>
+      <a href="{{ base }}/d/{{ d.r.id }}/pdf" target="_blank" rel="noopener">Open PDF</a>
     </div>
-    {% if d.finishes %}<div class="small sub"><b>Finishes on this drawing:</b> {% for u, c in d.finishes %}{{ u }}: {{ c }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
-  </div>
+  </section>
 
-  <div style="flex:1 1 300px;max-width:420px;display:flex;flex-direction:column;gap:12px">
+  <section class="pc" aria-label="Talk to Encore about this drawing">
+    <div class="pbar"><b style="flex-grow:1;font-size:15px">Talk to Encore about this drawing</b><span class="tag ok">{{ designer }} · Encore</span></div>
+    <div id="pmsgs" aria-live="polite">
+      {% set older = chat[:-6] if chat|length > 6 else [] %}
+      {% if older %}<details style="align-self:center;text-align:center"><summary class="tag dim" style="cursor:pointer">&uarr; Earlier · {{ older|length }} message{{ 's' if older|length != 1 }}</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;text-align:left">{% for e in older %}{% include "portal/_chatline.html" %}{% endfor %}</div></details>{% endif %}
+      {% for e in (chat[-6:] if chat|length > 6 else chat) %}{% include "portal/_chatline.html" %}{% endfor %}
+      {% if d.status == 'changes' %}<div class="tag ask" style="align-self:center;text-align:center;white-space:normal">Your change request is with {{ designer }} at Encore. The drawing will come back to you as a new revision for approval; you can add more changes below.</div>{% endif %}
+    </div>
     {% if d.status == 'approved' %}
-    <div class="card"><span class="tag ok">Approved</span><div>Approved by {{ d.ap.name }} on {{ d.ap.on }}. This drawing is locked for manufacturing.</div>
-      <div class="small sub">Need a change now? Contact your Encore sales person; changes after approval may affect cost and delivery date.</div></div>
+    <div class="appr" style="margin-bottom:12px"><b>Approved by {{ d.ap.name }} on {{ d.ap.on }}.</b><span class="sub small">This drawing is locked for manufacturing. Need a change now? Contact your Encore sales person; changes after approval may affect cost and delivery date.</span></div>
     {% else %}
-    {% if d.status == 'changes' %}<div class="card"><span class="tag ask">Changes asked</span><div class="small">{{ d.ap.note }}</div><div class="small sub">Asked by {{ d.ap.name }} on {{ d.ap.on }}. Our team is making the changes; the drawing will come back to you as a new revision for approval. You can add more changes below.</div></div>
-    {% for x in d.replies %}<div class="card" style="border-color:{{ '#B91C1C' if x.kind == 'reject' else '#0E6B5C' }}"><span class="tag {{ 'bad' if x.kind == 'reject' else 'ok' }}">{{ {'reply': 'Encore replied', 'reject': 'Change not made', 'reissued': 'Revised drawing sent'}[x.kind] }}</span><div class="small">{{ x.text }}</div><div class="small sub">{{ x.by }} · {{ x.at.strftime('%d %b %Y') }}</div></div>{% endfor %}
-    {% else %}
-    <div class="card">
-      <h2>What would you like to do?</h2>
-      <div class="row"><a class="btn" href="#approve">Approve this drawing</a><a class="btn ask" href="#change">Ask for a change</a></div>
-    </div>
-    {% endif %}
-
-    <form class="card" id="change" method="post" action="{{ base }}/d/{{ d.r.id }}/changes" enctype="multipart/form-data" onsubmit="packMarks()">
-      <h2>Ask for a change</h2>
-      <div class="sub">Tap "Mark a spot" on the drawing, then say what to change at each number.</div>
-      <div id="marklist" class="f" style="gap:8px"></div>
-      <input type="hidden" name="marks" id="marks" value="[]">
-      <div class="f"><label for="nt">Anything else</label><textarea id="nt" name="note"></textarea></div>
-      <div class="f"><label for="nm2">Your name</label><input id="nm2" name="name" value="{{ a.name }}" autocomplete="name"></div>
-      <div class="f"><label for="fl">Attach photo or file (optional)</label><input id="fl" type="file" name="file"></div>
-      <div class="row"><button class="btn ask">Send change request</button><a class="btn link" href="{{ base }}/d/{{ d.r.id }}">Cancel</a></div>
-    </form>
-
     {% if d.status == 'waiting' %}
-    <div class="card" id="approve">
-      <h2>Approve this drawing</h2>
-      {% if not a.can_approve %}
-      <div class="sub">Your email can view and comment on this drawing. Approval is given by the person your company named to us.</div>
+    <details class="appr" id="approve" {{ 'open' if code_sent or error or form.code }}>
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none"><b style="flex-grow:1">Approve Rev {{ d.r.rev }}</b><span class="btn" style="min-height:34px;padding:0 12px">Approve with email code</span></summary>
+      {% if not a.can_approve %}<span class="sub small">Your email can view and comment on this drawing. Approval is given by the person your company named to us.</span>
       {% else %}
-      <form method="post" action="{{ base }}/approve#approve" class="f" style="gap:10px">
+      <form method="post" action="{{ base }}/approve#approve" style="display:flex;flex-direction:column;gap:6px">
         <input type="hidden" name="rid" value="{{ d.r.id }}">
-        <div class="f"><label for="nm">Your name</label><input id="nm" name="name" value="{{ form.name or a.name }}" autocomplete="name"></div>
-        <div class="f"><label for="dg">Designation</label><input id="dg" name="designation" value="{{ form.designation }}"></div>
-        <div class="f"><label for="cd">One-time code from your email</label><input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></div>
-        <button class="btn sec" name="do" value="code">{{ 'Send a new code' if code_sent else 'Email me a code' }}</button>
-        {% if code_sent %}<div class="okmsg">We emailed a 6-digit code to {{ email }}. It is valid for 10 minutes.</div>{% endif %}
+        <div class="row" style="gap:6px"><label class="sr" for="nm" style="position:absolute;left:-9999px">Your name</label><input id="nm" name="name" value="{{ form.name or a.name }}" placeholder="Your name" autocomplete="name" style="flex:1 1 140px;width:auto">
+          <label class="sr" for="dg" style="position:absolute;left:-9999px">Designation</label><input id="dg" name="designation" value="{{ form.designation }}" placeholder="Designation" style="flex:1 1 120px;width:auto"></div>
+        {% if code_sent %}<div class="okmsg small">We emailed a 6-digit code to {{ email }}. It is valid for 10 minutes.</div>{% endif %}
+        <div class="row" style="gap:6px;flex-wrap:nowrap"><label class="sr" for="cd" style="position:absolute;left:-9999px">6-digit code from your email</label><input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" style="flex:1 1 auto;width:auto">
+          <button class="pbtn" name="do" value="code" style="white-space:nowrap">{{ 'New code' if code_sent else 'Email me a code' }}</button></div>
         <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" value="1" style="width:20px;min-height:20px;margin-top:2px" {{ 'checked' if form.agree }}>
-          <span>I approve this drawing ({{ d.r.number }} Rev {{ d.r.rev }}) for manufacturing as shown.</span></label>
-        <div class="row"><button class="btn" name="do" value="approve">Confirm approval</button><a class="btn link" href="{{ base }}/d/{{ d.r.id }}">Cancel</a></div>
+          <span class="small">I approve this drawing ({{ d.r.number }} Rev {{ d.r.rev }}) for manufacturing as shown.</span></label>
+        <button class="btn" name="do" value="approve">Approve</button>
       </form>
       {% endif %}
-    </div>
+    </details>
     {% endif %}
+    <form method="post" action="{{ base }}/d/{{ d.r.id }}/changes" enctype="multipart/form-data" id="pform" class="pcmp">
+      <div id="pchips" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      <input type="hidden" name="marks" id="marks" value="[]"><input type="hidden" name="name" value="{{ a.name }}">
+      <label class="sr" for="nt" style="position:absolute;left:-9999px">Your message</label>
+      <textarea id="nt" name="note" rows="2" placeholder="{{ 'Still want a change? Click the drawing or type…' if d.status == 'waiting' else 'Click the drawing to mark a spot, or type your change…' }}"></textarea>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label class="pbtn" for="fl" style="font-weight:600">Attach photo</label><input id="fl" type="file" name="file" style="position:absolute;left:-9999px">
+        <span id="fln" class="sub small" style="flex-grow:1"></span>
+        <button class="btn ask" style="min-height:38px">Send change request &uarr;</button>
+      </div>
+    </form>
+    {% if d.status == 'waiting' and a.can_approve %}<div class="sub small" style="text-align:center;padding:0 12px 10px">No changes? <a href="#approve" onclick="var a=document.getElementById('approve');a.open=true;document.getElementById('nm').focus();return false;"><b>Approve this drawing &rsaquo;</b></a></div>{% endif %}
     {% endif %}
-  </div>
+  </section>
 </div>
 <script>
-var z = 100, marking = false, marks = [], SHEET = {{ sheet }}, START = {{ (marks|map(attribute='no')|max) if marks else 0 }};
+var z = 100;
 function zoom(dz){ z = Math.max(50, Math.min(400, z + dz)); document.getElementById('sheet').style.width = z + '%'; document.getElementById('zp').textContent = z + '%'; }
-function markMode(){ marking = !marking; var b = document.getElementById('markbtn'); b.textContent = marking ? 'Tap the drawing where the change is' : '+ Mark a spot to change'; document.getElementById('sheet').style.cursor = marking ? 'crosshair' : 'default'; }
-document.getElementById('img').addEventListener('click', function(e){
-  if (!marking) return;
-  var r = this.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 100, y = (e.clientY - r.top) / r.height * 100;
-  var n = START + marks.length + 1, dot = document.createElement('span');
-  dot.textContent = n; dot.style.cssText = 'position:absolute;left:' + x + '%;top:' + y + '%;transform:translate(-50%,-50%);background:#1D4ED8;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700';
-  document.getElementById('sheet').appendChild(dot);
-  var f = document.createElement('div'); f.className = 'f';
-  f.innerHTML = '<label for="mk' + n + '">Mark ' + n + '</label><input id="mk' + n + '" placeholder="What should change here?">';
-  document.getElementById('marklist').appendChild(f);
-  marks.push({x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, sheet: SHEET, n: n});
-  markMode(); document.getElementById('mk' + n).focus();
-});
-function packMarks(){ document.getElementById('marks').value = JSON.stringify(marks.map(function(m){ return {x: m.x, y: m.y, sheet: m.sheet, text: document.getElementById('mk' + m.n).value}; })); }
+(function(){
+var m = document.getElementById('pmsgs'); if (m) m.scrollTop = m.scrollHeight;                    /* newest at the bottom */
+var q = document.getElementById('swq'); if (q) q.addEventListener('input', function(){ var v = q.value.toLowerCase().trim();
+  document.querySelectorAll('.sw a[data-name]').forEach(function(a){ a.style.display = !v || a.getAttribute('data-name').indexOf(v) >= 0 ? '' : 'none'; }); });
+var fl = document.getElementById('fl'); if (fl) fl.addEventListener('change', function(){ document.getElementById('fln').textContent = fl.files.length ? fl.files[0].name : ''; });
+var img = document.getElementById('img'), pop = document.getElementById('ppop'); if (!pop) return;
+var staged = [], at = null, SHEET = {{ sheet }}, START = {{ (marks|map(attribute='no')|max) if marks else 0 }}, chips = document.getElementById('pchips');
+function close(){ pop.style.display = 'none'; at = null; }
+img.addEventListener('click', function(e){ var r = img.getBoundingClientRect(); at = {x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100};
+  pop.style.left = Math.min(at.x, 70) + '%'; pop.style.top = Math.min(at.y, 80) + '%'; pop.style.display = 'flex';
+  document.getElementById('popn').textContent = START + staged.length + 1; document.getElementById('poptext').value = ''; document.getElementById('poptext').focus(); });
+document.getElementById('popx').addEventListener('click', close);
+function add(){ if (!at) return; var n = START + staged.length + 1, t = document.getElementById('poptext').value.trim();
+  var item = {x: Math.round(at.x * 100) / 100, y: Math.round(at.y * 100) / 100, sheet: SHEET, text: t, n: n}; staged.push(item);
+  var dot = document.createElement('span'); dot.className = 'ppin new'; dot.textContent = n; dot.style.left = item.x + '%'; dot.style.top = item.y + '%'; document.getElementById('sheet').appendChild(dot); item.dot = dot;
+  var c = document.createElement('span'); c.className = 'pchip'; var nn = document.createElement('span'); nn.className = 'n'; nn.textContent = n;
+  var tx = document.createElement('span'); tx.textContent = t || 'marked here'; var x = document.createElement('button'); x.type = 'button'; x.innerHTML = '&times;'; x.setAttribute('aria-label', 'Remove marker ' + n);
+  x.addEventListener('click', function(){ staged.splice(staged.indexOf(item), 1); c.remove(); dot.remove(); });
+  c.appendChild(nn); c.appendChild(tx); c.appendChild(x); chips.appendChild(c); close(); document.getElementById('nt').focus(); }
+document.getElementById('popadd').addEventListener('click', add);
+document.getElementById('poptext').addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); add(); } else if (e.key === 'Escape'){ close(); } });
+document.getElementById('pform').addEventListener('submit', function(e){
+  if (!staged.length && !document.getElementById('nt').value.trim()){ e.preventDefault(); document.getElementById('nt').placeholder = 'Mark a spot on the drawing or type what you would like changed'; document.getElementById('nt').focus(); return; }
+  document.getElementById('marks').value = JSON.stringify(staged.map(function(m){ return {x: m.x, y: m.y, sheet: m.sheet, text: m.text}; })); });
+})();
 </script>
 {% endblock %}
