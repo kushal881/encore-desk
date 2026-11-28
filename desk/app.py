@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .nodrawing import classify
@@ -53,7 +53,43 @@ def engines_refresh(user=User):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "engines": engines.version()}
+    return {"ok": True, "engines": engines.version(), "bucket": storage.configured()}
+
+
+@app.get("/storage", response_class=HTMLResponse)
+def storage_page(done: str = "", user=User):
+    """Administrator: is the storage bucket set up, how many files it keeps, and a button to copy older files into it."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only an administrator can do this")
+    from html import escape
+    with db.Session() as s:
+        kept = s.query(db.StoredFile).count()
+        revs = s.query(db.Revision).all()
+        missing = sum(1 for r in revs if r.files.get("pdf") and not storage.key_of(r.files["pdf"]))
+        logs = s.scalars(select(db.FileLog).order_by(db.FileLog.id.desc()).limit(30)).all()
+    on = storage.configured()
+    rows = "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+        escape(T.env.filters["when"](g.at)), escape(g.who), "Portal" if g.side == "portal" else "Desk", g.action, escape(g.name)) for g in logs)
+    body = ("<h1>Storage bucket</h1>"
+            + ("<p class='ok'>The private storage bucket <b>%s</b> is set up. Files open through links that work for %d minutes.</p>" % (escape(storage.bucket()), storage.minutes()) if on
+               else "<p class='no'>No storage bucket is set up yet: files are kept on the desk's disk only. In Railway add the bucket's BUCKET, ACCESS_KEY_ID, SECRET_ACCESS_KEY, ENDPOINT and REGION to the web service.</p>")
+            + "<p>Files kept in the bucket: <b>%d</b>. Issued drawings not in the bucket yet: <b>%d</b>.</p>" % (kept, missing)
+            + ("<p class='ok'>Copied %s file(s) to the bucket.</p>" % escape(done) if done else "")
+            + ("<form method='post' action='/storage/keep-all'><button>Copy older files to the bucket</button></form>" if on else "")
+            + "<h2>Last views and downloads</h2><table><tr><th>When</th><th>Who</th><th>Where</th><th>What</th><th>File</th></tr>%s</table>" % rows
+            + "<p><a href='/'>← Back to the desk</a></p>")
+    return HTMLResponse("<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Storage · Encore drawing desk</title>"
+                        "<style>body{font-family:Inter,system-ui,sans-serif;background:#F4F3EF;color:#17191C;margin:0;padding:24px}main{max-width:900px;margin:auto;background:#fff;border:1px solid #E3E1DA;border-radius:12px;padding:24px}"
+                        ".ok{color:#0E6B5C}.no{color:#9A4508;background:#FDF1E2;padding:10px;border-radius:8px}button{min-height:44px;padding:0 18px;border-radius:10px;background:#0E6B5C;color:#fff;border:none;font:inherit;font-weight:600;cursor:pointer}"
+                        "table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid #E3E1DA;padding:6px;text-align:left}a{color:#0E6B5C}</style></head><body><main>" + body + "</main></body></html>")
+
+
+@app.post("/storage/keep-all")
+def storage_keep_all(user=User):
+    if user.role != "admin":
+        raise HTTPException(403, "Only an administrator can do this")
+    n = keep_everything()
+    return RedirectResponse("/storage?done=%d" % n, status_code=303)
 
 
 STAGES = dict(drawing="Drawings in progress", issued="Issued, to be sent to client", sent="With client for approval",
@@ -610,11 +646,67 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         if done:
             s.add(db.Step(order_id=o.id, kind="issued", note=", ".join(done), by=user.name))
         s.commit()
+    if done:
+        keep_issued(o.id)
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
+
+
+def _folder(s, client_id):
+    """The client's folder in the storage bucket, named from the client's first drawing number. None before any issue."""
+    first = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == client_id).order_by(db.Revision.id)).first()
+    c = s.get(db.Client, client_id)
+    return storage.client_folder(first.number if first else "", c.name if c else "")
+
+
+def keep_issued(order_id):
+    """Puts the order's issued revisions that are not in the storage bucket yet into it (PDF, DXF, a preview per sheet);
+    earlier revisions of the same drawing move to Old Revisions/. Nothing happens when no bucket is set."""
+    if not storage.configured():
+        return 0
+    n = 0
+    with db.Session() as s:
+        o = s.get(db.Order, order_id)
+        folder = _folder(s, o.client_id)
+        for l in o.lines:
+            for i, r in enumerate(l.revisions):
+                if r.files.get("pdf") and not storage.key_of(r.files["pdf"]):
+                    later = i + 1 < len(l.revisions)
+                    n += storage.keep_revision(folder, r.number, r.rev, r.files, earlier=[x.files for x in l.revisions[:i]])
+                    if later:                                # an old revision kept late: it belongs in Old Revisions/
+                        for kind in ("pdf", "dxf"):
+                            k = storage.key_of(r.files.get(kind))
+                            if k:
+                                storage.move(r.files[kind], storage.old_key(k))
+    return n
+
+
+def keep_everything():
+    """Copies every kept file the bucket does not have yet: issued revisions, production drawings, bills of material,
+    approval proofs. For files made before the bucket was set up. -> number of files copied."""
+    if not storage.configured():
+        return 0
+    n = 0
+    with db.Session() as s:
+        orders = list(s.scalars(select(db.Order)))
+    for o in orders:
+        n += keep_issued(o.id)
+        with db.Session() as s:
+            folder = _folder(s, o.client_id)
+            if not folder:
+                continue
+            for pf in s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id, db.ProductionFile.error == "")):
+                n += bool(not storage.key_of(pf.path) and storage.keep(pf.path, "%s/Bill of Material/%s" % (folder, storage.safe(pf.name))))
+            for ps in s.scalars(select(db.ProductionSet).join(db.OrderLine).where(db.OrderLine.order_id == o.id)):
+                for f in ps.files:
+                    n += bool(not storage.key_of(f.get("pdf")) and storage.keep(f.get("pdf"), "%s/Other/Production/%d-%s" % (folder, ps.id, storage.safe(f.get("name") or os.path.basename(f.get("pdf", ""))))))
+            for ap in s.scalars(select(db.Approval).where(db.Approval.order_id == o.id, db.Approval.proof != "")):
+                n += bool(not storage.key_of(ap.proof) and storage.keep(ap.proof, "%s/Other/Approvals/%s" % (folder, os.path.basename(ap.proof))))
+    return n
 
 
 def _big(pdf_path, page=0):
     """A sharp picture of one sheet for viewing inside the desk, made from the PDF once and kept beside it."""
+    pdf_path = storage.local(pdf_path) or pdf_path
     out = pdf_path[:-4] + (".view.png" if page == 0 else ".view%d.png" % page)
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(pdf_path):
         import pymupdf
@@ -633,17 +725,20 @@ def _pages(pdf_path):
 
 
 @app.get("/revisions/{rid}/{kind}")
-def revision_file(rid: int, kind: str, download: int = 0, page: int = 0, user=User):
+def revision_file(request: Request, rid: int, kind: str, download: int = 0, page: int = 0, user=User):
     if kind not in ("png", "pdf", "dxf", "big"):
         raise HTTPException(404)
     with db.Session() as s:
         r = s.get(db.Revision, rid)
         path, name = (r.files.get("pdf" if kind == "big" else kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
-    if not path or not os.path.exists(path):
+        oid = s.get(db.OrderLine, r.line_id).order_id if r else 0
+    if not path or not (os.path.exists(path) or storage.key_of(path)):
         raise HTTPException(404)
-    if kind == "big":
-        return FileResponse(_big(path, page))
-    return FileResponse(path, filename=None if kind == "png" else name, content_disposition_type="attachment" if download or kind == "dxf" else "inline")
+    if kind in ("big", "png"):
+        if not storage.local(path):
+            raise HTTPException(404)
+        return FileResponse(_big(path, page) if kind == "big" else path)
+    return storage.serve(request, path, name, download=bool(download) or kind == "dxf", who=user.name, order_id=oid)
 
 
 @app.get("/drawings/{did}/{kind}")
@@ -1096,7 +1191,7 @@ def _current(o):
 
 def _combined(o):
     """The combined PDF of the issued set, made from the issued revisions in serial order. -> (path, file name) or None."""
-    cur = [r for _, r in _current(o) if r.files.get("pdf") and os.path.exists(r.files["pdf"])]
+    cur = [r for _, r in _current(o) if r.files.get("pdf") and storage.local(r.files["pdf"])]
     if not cur:
         return None
     name = issuing.combined_name(o.client.name)
@@ -1134,12 +1229,12 @@ def _back(ref, error=""):
 
 
 @app.get("/orders/{ref}/combined.pdf")
-def combined_pdf(ref: str, user=User):
+def combined_pdf(request: Request, ref: str, user=User):
     o = load(ref)
     got = _combined(o)
     if not got:
         raise HTTPException(404, "Nothing has been issued yet")
-    return FileResponse(got[0], filename=got[1], content_disposition_type="inline")
+    return storage.serve(request, got[0], got[1], who=user.name, order_id=o.id)
 
 
 @app.post("/orders/{ref}/access")
@@ -1229,7 +1324,7 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
         return _back(ref, "For an approval by phone, write a note: who called, when, and what was said.")
     ap = db.Approval(order_id=o.id, revision_id=r.id, outcome=outcome, name=name[:200], designation=(form.get("designation") or "").strip()[:200],
                      email=(form.get("email") or "").strip()[:200], how=(form.get("how") or "email")[:40], on=(form.get("on") or datetime.date.today().isoformat())[:20],
-                     note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(r.files["pdf"]) if os.path.exists(r.files.get("pdf", "")) else "",
+                     note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(storage.local(r.files.get("pdf")) or "") if storage.local(r.files.get("pdf")) else "",
                      ip=request.client.host if request.client else "", by=user.name)
     proof = form.get("proof")
     if proof is not None and getattr(proof, "filename", ""):
@@ -1240,6 +1335,10 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "wb").write(data)
             ap.proof, ap.proof_name = path, proof.filename[:200]
+            with db.Session() as s:
+                folder = _folder(s, o.client_id)
+            if folder:
+                storage.keep(path, "%s/Other/Approvals/%s" % (folder, os.path.basename(path)))
     with db.Session() as s:
         s.add(ap)
         s.add(db.Message(order_id=o.id, who="desk", text="%s Rev %s: %s by %s (%s, %s), recorded by %s." % (
@@ -1256,12 +1355,12 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
 
 
 @app.get("/approvals/{aid}/proof")
-def approval_proof(aid: int, user=User):
+def approval_proof(request: Request, aid: int, user=User):
     with db.Session() as s:
         ap = s.get(db.Approval, aid)
-    if ap is None or not ap.proof or not os.path.exists(ap.proof):
+    if ap is None or not ap.proof:
         raise HTTPException(404)
-    return FileResponse(ap.proof, filename=ap.proof_name or "approval")
+    return storage.serve(request, ap.proof, ap.proof_name or "approval", download=True, who=user.name, order_id=ap.order_id)
 
 
 # ---- Specify (screen 4) ------------------------------------------------------------------------------------------------
@@ -1528,7 +1627,7 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
     details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline.strip() or "TBC")
-    made, failed = [], []
+    made, failed, made_sets = [], [], []
     ok = next((st for st in reversed(o.steps) if st.kind == "approved"), None)
     approved_on = "" if (o.approval_pending or ok is None) else ok.at.replace(tzinfo=ok.at.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y").upper()
     with db.Session() as s:
@@ -1549,11 +1648,17 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
                 failed.append("product %d (%s)" % (l.no, str(e)[:120])); continue
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name))
+            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name)
+            s.add(ps_)
+            made_sets.append(ps_)
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
         s.commit()
+        folder = _folder(s, o.client_id)
+    for ps_ in made_sets if folder else []:                          # kept in the storage bucket, after the record is saved
+        for f in ps_.files:
+            storage.keep(f.get("pdf"), "%s/Other/Production/%d-%s" % (folder, ps_.id, storage.safe(f.get("name") or os.path.basename(f.get("pdf", "")))))
     return _after(request, ref)
 
 
@@ -1581,22 +1686,25 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
         s.add(db.Message(order_id=o.id, who="desk", text=("Bill of material made%s by %s." % (" with panel-saw cutting" if on else "", user.name)) if not pf.error
                          else "The bill of material could not be made: %s" % pf.error))
         s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not pf.error:
+        storage.keep(pf.path, "%s/Bill of Material/%s" % (folder, storage.safe(pf.name)))
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
 @app.get("/production-files/{fid}")
-def production_file(fid: int, user=User):
+def production_file(request: Request, fid: int, user=User):
     with db.Session() as s:
         pf = s.get(db.ProductionFile, fid)
-    if pf is None or pf.error or not os.path.exists(pf.path):
+    if pf is None or pf.error:
         raise HTTPException(404)
-    return FileResponse(pf.path, filename=pf.name)
+    return storage.serve(request, pf.path, pf.name, download=True, who=user.name, order_id=pf.order_id)
 
 
 def _set_file(sid, i):
     with db.Session() as s:
         ps = s.get(db.ProductionSet, sid)
-        if ps is None or not (0 <= i < len(ps.files)) or not os.path.exists(ps.files[i]["pdf"]):
+        if ps is None or not (0 <= i < len(ps.files)) or not storage.local(ps.files[i]["pdf"]):
             raise HTTPException(404)
         line = s.get(db.OrderLine, ps.line_id)
         order_ = s.get(db.Order, line.order_id)
@@ -1612,9 +1720,9 @@ def set_view(request: Request, sid: int, i: int, user=User):
 
 
 @app.get("/sets/{sid}/{i}/pdf")
-def set_pdf(sid: int, i: int, download: int = 0, user=User):
+def set_pdf(request: Request, sid: int, i: int, download: int = 0, user=User):
     ps, f, line, ref, rev = _set_file(sid, i)
-    return FileResponse(f["pdf"], filename=f.get("name") or "drawing.pdf", content_disposition_type="attachment" if download else "inline")
+    return storage.serve(request, f["pdf"], f.get("name") or "drawing.pdf", download=bool(download), who=user.name, order_id=line.order_id)
 
 
 @app.get("/sets/{sid}/{i}/page/{n}")

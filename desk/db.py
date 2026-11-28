@@ -400,6 +400,32 @@ class Approval(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class StoredFile(Base):
+    """A file the desk keeps in the private storage bucket (storage.py): where it was made on the desk's disk, and its
+    name in the bucket. The disk copy is only a working copy; the bucket copy is the one kept."""
+    __tablename__ = "stored_file"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(600), unique=True)          # the local path recorded in the drawing / revision
+    key: Mapped[str] = mapped_column(Text)                                # its name in the bucket
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class FileLog(Base):
+    """Every view and download of a kept file, by staff or by a client on the portal (brief: log every view, download, approval)."""
+    __tablename__ = "file_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    who: Mapped[str] = mapped_column(String(200), default="")             # staff name, or the client's email
+    side: Mapped[str] = mapped_column(String(10), default="desk")         # desk | portal
+    action: Mapped[str] = mapped_column(String(20), default="view")       # view | download
+    name: Mapped[str] = mapped_column(Text, default="")                   # the file name shown
+    key: Mapped[str] = mapped_column(Text, default="")                    # bucket name, "" = served from the desk's disk
+    order_id: Mapped[int] = mapped_column(Integer, default=0)
+    ip: Mapped[str] = mapped_column(String(60), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def _default_sql(col, dialect):
     """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
     d = col.default
