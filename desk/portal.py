@@ -46,9 +46,21 @@ def _ser(salt):
 
 
 def listed(email):
-    """The access-list rows of one email, every order. Empty = this email cannot sign in."""
+    """The access-list rows of one email, every order that is not archived. Empty = this email cannot sign in.
+    An archived order's rows are kept (Reopen gives the same people access again) but count for nothing (issue #50)."""
     with db.Session() as s:
-        return list(s.scalars(select(db.PortalAccess).where(db.PortalAccess.email == (email or "").strip().lower())))
+        return list(s.scalars(select(db.PortalAccess).join(db.Order, db.Order.id == db.PortalAccess.order_id)
+                              .where(db.PortalAccess.email == (email or "").strip().lower(), db.Order.archived_at.is_(None))))
+
+
+def losing_access(order_id):
+    """The client emails on this order that are on no other active order: archiving it ends their portal access."""
+    with db.Session() as s:
+        emails = [a.email for a in s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == order_id).order_by(db.PortalAccess.id))]
+    return [e for e in dict.fromkeys(emails) if not any(a.order_id != order_id for a in listed(e))]
+
+
+GONE = "This order is no longer available. Please contact your Encore sales person."
 
 
 def current(request: Request):
@@ -146,6 +158,8 @@ def _access(email, ref):
         a = s.scalar(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id, db.PortalAccess.email == email)) if o else None
     if a is None:
         raise HTTPException(404, "Not found")
+    if o.archived_at:                                                     # archived (issue #50): gone for the client
+        raise HTTPException(404, GONE)
     return _desk().load(ref), a
 
 
@@ -210,7 +224,7 @@ def portal_root(request: Request):
 
 @router.get("/login", response_class=HTMLResponse)
 def login(request: Request, error: str = ""):
-    msg = {"link": "This sign-in link has expired or is no longer valid. Enter your email to get a code."}.get(error, "")
+    msg = {"link": "This sign-in link has expired or is no longer valid. Enter your email to get a code.", "gone": GONE}.get(error, "")
     return page(request, "login.html", "", step="email", error=msg, to="")
 
 
@@ -244,6 +258,8 @@ def link(request: Request, token: str):
         o = s.get(db.Order, a.order_id) if a else None
     if a is None or o is None:
         return RedirectResponse("/portal/login?error=link", status_code=303)
+    if o.archived_at:
+        return RedirectResponse("/portal/login?error=gone", status_code=303)
     return _signed_in(RedirectResponse("/portal/orders/%s" % o.source_ref, status_code=303), a.email, False)
 
 
