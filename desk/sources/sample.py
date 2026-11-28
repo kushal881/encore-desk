@@ -13,7 +13,7 @@ class SampleSource:
             raise KeyError(ref)
         d = json.load(open(path, encoding="utf-8"))
         return SourceOrder(source=d["source"], ref=d["ref"], client_name=d["client"]["name"], client_contact=d["client"].get("contact", ""),
-                           delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""),
+                           delivery=d.get("delivery", []), salesperson=d.get("salesperson", ""), job_order=d.get("job_order", ""), date=d.get("date", ""), delivery_date=d.get("delivery_date", ""),
                            lines=self._lines(d["lines"]))
 
     @staticmethod

@@ -146,7 +146,8 @@ def load(ref):
             except OdooError as e:
                 raise HTTPException(502, "Odoo could not be read: %s" % e)
             c = s.scalar(select(db.Client).where(db.Client.name == src.client_name)) or db.Client(name=src.client_name, contact=src.client_contact)
-            o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery)
+            o = db.Order(client=c, source=src.source, source_ref=src.ref, job_order=src.job_order, salesperson=src.salesperson, delivery=src.delivery,
+                         delivery_date=getattr(src, "delivery_date", "") or "")
             total = 0
             for l in src.lines:
                 if l.no_drawing:                                   # bought-out, service, installation, delivery: listed, never drawn
@@ -985,7 +986,7 @@ def _permitted(o, l):
 
 
 # ---- Approvals (screen 7) ------------------------------------------------------------------------------------------------
-APPROVAL_TABS = (("engine", "Engine changes"), ("after", "Changes after client approval"), ("revision", "Revision raises"))
+APPROVAL_TABS = (("engine", "Engine changes"), ("after", "Changes after client approval"), ("revision", "Revision raises"), ("production", "Production changes"))
 
 
 @app.get("/approvals", response_class=HTMLResponse)
@@ -1003,7 +1004,9 @@ def approvals(request: Request, tab: str = "engine", show: int = 0, user=User):
             "after": [dict(kind="after_approval", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
                            status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "after_approval"],
             "revision": [dict(kind="revision", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
-                              status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "revision"]}
+                              status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "revision"],
+            "production": [dict(kind="production", id=r.id, title=r.text, product=r.product, order_ref=r.order_ref, asked_by=r.asked_by, at=r.asked_at,
+                                status=r.status, option="", decided_by=r.decided_by, note=r.note, line_no=r.line_no) for r in chg_ if r.kind == "production"]}
     counts = {k: sum(1 for x in v if x["status"] == "asked") for k, v in rows.items()}
     sel = next((x for x in rows[tab] if x["id"] == show), None) or next((x for x in rows[tab] if x["status"] == "asked"), None) or (rows[tab][0] if rows[tab] else None)
     return T.TemplateResponse(request, "approvals.html", ctx(user, nav="appr", tab=tab, tabs=APPROVAL_TABS, rows=rows[tab], counts=counts, sel=sel,
@@ -1015,7 +1018,7 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
     """A (this client only: the product's file) / B (send to engine work: a generic option, off by default, built as an
     engine branch and approved in encore-approved; the desk never changes engines) / approve / reject.
     Every decision creates a task for the person who asked."""
-    if kind not in ("engine", "after_approval", "revision") or decision not in ("a", "b", "approve", "reject"):
+    if kind not in ("engine", "after_approval", "revision", "production") or decision not in ("a", "b", "approve", "reject"):
         raise HTTPException(404)
     if not auth.can_decide(user, kind):
         raise HTTPException(403, "Only Kushal decides this" if kind != "revision" else "Only an administrator decides this")
@@ -1038,7 +1041,9 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
                 raise HTTPException(400, "This request cannot take that decision now")
             r.status = "approved" if decision == "approve" else "rejected"
             text = ({"after_approval": "Allowed: change Product %d in the change panel; issuing it makes a new revision, which the client approves again. %s",
-                     "revision": "Revision allowed for Product %d. %s"}[kind] if decision == "approve" else "Rejected for Product %d: keep the drawing as it is. %s") % (r.line_no, r.text)
+                     "revision": "Revision allowed for Product %d. %s",
+                     "production": "Allowed: the new production drawing of Product %d is made and production gets a stop alert. %s"}[kind]
+                    if decision == "approve" else "Rejected for Product %d: keep the drawing as it is. %s") % (r.line_no, r.text)
             line_no, src = r.line_no, "change:%d" % r.id
         r.decided_by, r.decided_at = user.name, db.now()
         r.note = note or r.note
@@ -1048,7 +1053,11 @@ def approval_decide(kind: str, rid: int, decision: str, note: str = Form(""), us
             if o_:
                 s.add(db.Message(order_id=o_.id, who="desk", text="%s decided by %s: %s" % ("Engine request" if kind == "engine" else "Change request", user.name, text)))
         s.commit()
-    tab = {"engine": "engine", "after_approval": "after", "revision": "revision"}[kind]
+    if kind == "production":                                           # screen 11: make the next P and send the stop alert
+        from .production import apply_approved
+        with db.Session() as s:
+            apply_approved(s.get(db.ChangeRequest, rid), user.name)
+    tab = {"engine": "engine", "after_approval": "after", "revision": "revision", "production": "production"}[kind]
     return RedirectResponse("/approvals?tab=%s&show=%d" % (tab, rid), status_code=303)
 
 
@@ -1527,7 +1536,10 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
     o = load(ref)
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
-    details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline.strip() or "TBC")
+    deadline = deadline.strip() or (o.delivery_date if kind == "PRODUCTION" else "")
+    if kind == "PRODUCTION" and not deadline:                  # decision 3: the deadline is Odoo's Delivery Date
+        raise HTTPException(400, "Ask sales to enter the delivery date in Odoo (or type the production deadline here)")
+    details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline or "TBC")
     made, failed = [], []
     ok = next((st for st in reversed(o.steps) if st.kind == "approved"), None)
     approved_on = "" if (o.approval_pending or ok is None) else ok.at.replace(tzinfo=ok.at.tzinfo or datetime.timezone.utc).astimezone(IST).strftime("%d %b %Y").upper()
@@ -1538,18 +1550,22 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
             r = l.last_rev
             if r is None:
                 continue
-            sp = __import__("copy").deepcopy(r.spec)
+            prev = s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind, db.ProductionSet.revision_id == r.id)
+                             .order_by(db.ProductionSet.id.desc())).first()
+            # made again for the same revision: keeps its P number, release and construction changes (screen 11)
+            sp = __import__("copy").deepcopy(prev.spec if prev is not None and prev.spec else r.spec)
             sp["drawing_set"], sp["production"] = kind, dict(details)
             if approved_on:                                        # the client's approval, when it has been recorded for this issue
                 sp["drawing"].update(approved="CLIENT", approval_date=approved_on)
             edir, ver = engines.dir_for(r.engine_version)
             try:
-                files = engines.draw_set(sp, "%d/line%d/%s/rev%s" % (o.id, l.no, kind.lower(), r.rev), edir)
+                files = engines.draw_set(sp, "%d/line%d/%s/rev%s-p%d" % (o.id, l.no, kind.lower(), r.rev, prev.prod_no if prev else 1), edir)
             except RuntimeError as e:
                 failed.append("product %d (%s)" % (l.no, str(e)[:120])); continue
+            keep = dict(prod_no=prev.prod_no, released_by=prev.released_by, released_at=prev.released_at) if prev is not None else {}
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name))
+            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep))
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
@@ -1783,3 +1799,7 @@ def remove_order(ref: str, user=User):
     with db.Session() as s:
         s.delete(s.get(db.Order, o.id)); s.commit()
     return RedirectResponse("/", status_code=303)
+
+
+from .production import router as _production                        # screen 11: Production
+app.include_router(_production)

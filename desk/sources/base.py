@@ -25,6 +25,7 @@ class SourceOrder:
     salesperson: str = ""
     job_order: str = ""
     date: str = ""
+    delivery_date: str = ""     # the sales order's Delivery Date: the production deadline ("" = not entered yet)
     lines: list = field(default_factory=list)
 
 

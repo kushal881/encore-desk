@@ -31,9 +31,9 @@ def level(user):
 
 def can_decide(user, kind):
     """Who decides which request: engine changes and changes after client approval only the administrator;
-    revision raises also a secondary administrator."""
+    revision raises and production (construction) changes after release also a secondary administrator."""
     lv = level(user)
-    return lv == "admin" or (lv == "admin2" and kind == "revision")
+    return lv == "admin" or (lv == "admin2" and kind in ("revision", "production"))
 
 
 class NotSignedIn(Exception):

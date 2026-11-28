@@ -7,7 +7,8 @@
       <div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}><b>Product {{ l.no }} · {{ l.name.split('(')[0] }}</b>
         {% if l.last_rev and l.last_rev.id != ps.revision_id %}<span class="tag bad">Made from an older revision. Make again.</span>{% endif %}
         {% for f in ps.files %}<div><a href="/sets/{{ ps.id }}/{{ loop.index0 }}">{{ f.title }}</a> <span class="sub">({{ f.pages }} sheet{{ '' if f.pages == 1 else 's' }})</span> · <a href="/sets/{{ ps.id }}/{{ loop.index0 }}/pdf?download=1">PDF</a></div>{% endfor %}
-        <div class="sub">Job order {{ ps.details.job_order }} · deadline {{ ps.details.deadline }} · {{ ps.made_by }}, {{ ps.made_at|when }}</div>
+        <div class="sub">{% if kind == 'production' %}P{{ ps.prod_no }}{% if ps.released_at %} · released{% endif %} · {% endif %}Job order {{ ps.details.job_order }} · deadline {{ ps.details.deadline }} · {{ ps.made_by }}, {{ ps.made_at|when }}</div>
+        {% if kind == 'production' and l.last_rev and l.last_rev.id == ps.revision_id %}<div><a class="btn" style="padding:4px 12px;margin-top:4px" href="/orders/{{ o.source_ref }}/production/{{ l.no }}">Open production sheet &rsaquo;</a></div>{% endif %}
       </div>
       {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
       {% if o.stage in ('production', 'completed') %}
@@ -19,7 +20,8 @@
           <label class="small" for="jd{{ kind }}">Job order date</label>
           <input class="sm" type="text" id="jd{{ kind }}" name="job_order_date" value="{{ today }}">
           <label class="small" for="dl{{ kind }}">{{ 'Production deadline' if kind == 'production' else 'Required by' }}</label>
-          <input class="sm" type="text" id="dl{{ kind }}" name="deadline" placeholder="for example 10 DEC 2026">
+          <input class="sm" type="text" id="dl{{ kind }}" name="deadline" value="{{ o.delivery_date if kind == 'production' else '' }}" placeholder="for example 10 DEC 2026">
+          {% if kind == 'production' and not o.delivery_date %}<div class="small" style="color:#9A4508">Odoo has no delivery date for this order. Ask sales to enter it in Odoo, or type the deadline here.</div>{% endif %}
           <button class="sm primary">{{ 'Make again' if sets else 'Make ' + title|lower }}</button>
         </form>
         <div class="sub small">Made from each product's latest issued revision. No client details appear on these sheets.</div>

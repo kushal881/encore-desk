@@ -31,7 +31,8 @@
           <div class="opt"><div style="font-weight:600">Option A · this client only</div><div class="small">The change goes in this project's product file. The engine is untouched.</div></div>
           <div class="opt"><div style="font-weight:600">Option B · engine change (generic)</div><div class="small">A new optional setting, <b>off by default</b>; existing drawings unchanged. Built as an engine branch that must pass the engine checks, then comes to you as a proposal in encore-approved to merge.</div></div>
         </div>
-        {% elif sel.kind == 'after_approval' %}<div class="small">Allowing it unlocks this client-approved drawing for one change. Issuing it makes a new revision, which the client approves again.</div>{% endif %}
+        {% elif sel.kind == 'after_approval' %}<div class="small">Allowing it unlocks this client-approved drawing for one change. Issuing it makes a new revision, which the client approves again.</div>
+        {% elif sel.kind == 'production' %}<div class="small">A construction change on a production drawing that is already on the shop floor. The client drawing stays exactly as approved (checked by the engine). Allowing it makes the next production drawing (P1 &rarr; P2) and sends a stop alert to production, the administrators and the salesperson. <a href="/orders/{{ sel.order_ref }}/production/{{ sel.line_no }}#panel">See the change</a></div>{% endif %}
         <div class="small">Your decision creates a task for {{ sel.asked_by }}: approve, apply the change and regenerate; reject, keep the drawing and inform sales.</div>
         <label for="nt" class="small">Note to {{ sel.asked_by }} (optional)</label>
         <textarea id="nt" name="note" rows="2" style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px"></textarea>
