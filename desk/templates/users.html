@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Users · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <div><div class="sub small">Administrator</div><h1 style="margin:0;font-size:22px">Users &amp; roles</h1></div>
+  {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
+  <div class="card">
+    <div style="font-weight:600">Add a person</div>
+    <form method="post" action="/users/add" class="row" style="align-items:flex-end">
+      <span style="display:flex;flex-direction:column;flex:1 1 200px"><label class="small" for="nm">Name</label><input type="text" id="nm" name="name" required></span>
+      <span style="display:flex;flex-direction:column;flex:1 1 260px"><label class="small" for="em">Email (@{{ domain }})</label><input type="text" id="em" name="email" required placeholder="name@{{ domain }}"></span>
+      <span style="display:flex;flex-direction:column;flex:0 1 220px"><label class="small" for="rl">Role</label>
+        <select id="rl" name="role">{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'drawing' }}>{{ t }}</option>{% endfor %}</select></span>
+      <button class="primary">Add</button>
+    </form>
+    <div class="sub small">They sign in with Google using that address. Addresses starting with design@, production@ or sales@ get that role automatically on first sign-in.</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600">People ({{ people|length }})</div>
+    <div class="scroll"><table>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr>
+      {% for u in people %}
+      <tr {% if not u.active %}style="opacity:.6"{% endif %}>
+        <td><b>{{ u.name }}</b>{% if u.id == me %} <span class="sub small">(you)</span>{% endif %}</td>
+        <td class="small">{{ u.email }}</td>
+        <td><form method="post" action="/users/{{ u.id }}/role" style="display:flex;gap:6px">
+          <label class="sr" for="r{{ u.id }}">Role of {{ u.name }}</label>
+          <select id="r{{ u.id }}" name="role" style="flex:1 1 180px;min-height:36px" {{ 'disabled' if u.id == me }}>{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == u.role }}>{{ t }}</option>{% endfor %}{% if u.role not in roles %}<option selected>{{ u.role }}</option>{% endif %}</select>
+          {% if u.id != me %}<button class="sm">Save</button>{% endif %}</form>
+          <div class="sub small">{{ what.get(u.role, '') }}</div></td>
+        <td><span class="tag {{ 'ok' if u.active else 'dim' }}">{{ 'Active' if u.active else 'Switched off' }}</span></td>
+        <td class="sub small" style="white-space:nowrap">{{ u.last_sign_in|when or 'never' }}</td>
+        <td>{% if u.id != me %}<form method="post" action="/users/{{ u.id }}/{{ 'off' if u.active else 'on' }}" {% if u.active %}data-confirm="Switch {{ u.name }} off? They cannot sign in until switched on again. Nothing they did is deleted."{% endif %}><button class="sm {{ 'danger' if u.active }}">{{ 'Switch off' if u.active else 'Switch on' }}</button></form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    <div class="sub small">People are never deleted, so their names stay in the history of every project.</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600">Changes</div>
+    {% for x in log %}<div class="small" style="display:flex;gap:8px"><span class="sub" style="white-space:nowrap">{{ x.at|when }}</span><span>{{ x.text }} · by {{ x.by }}</span></div>
+    {% else %}<div class="sub small">No changes yet.</div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

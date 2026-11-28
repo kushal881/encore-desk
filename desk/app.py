@@ -1622,7 +1622,7 @@ def step(request: Request, ref: str, kind: str, note: str = Form(""), user=User)
     if kind == "approved" and not note:
         raise HTTPException(400, "Enter who approved it at the client and how (for example: Mr Singh, by email)")
     if kind == "released" and o.stage != "approved":
-        if user.role not in ("admin", "drawing"):
+        if user.role not in ("admin", "admin2", "drawing"):
             raise HTTPException(403, "Only an administrator or a drawing user can release before the client has approved")
         if not note:
             raise HTTPException(400, "Enter the reason for releasing before client approval")
@@ -2046,3 +2046,7 @@ app.include_router(_quotes)
 
 from .clients import router as _clients                              # issue #34: client approvals column
 app.include_router(_clients)
+
+
+from .users import router as _users                                  # issue #40: Users & roles
+app.include_router(_users)

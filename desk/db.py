@@ -18,6 +18,16 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserLog(Base):
+    """Every change on the Users screen (issue #40): who added, changed the role of, switched off or on whom, and when."""
+    __tablename__ = "user_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Client(Base):
     __tablename__ = "client"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -133,8 +143,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(200), unique=True)
     name: Mapped[str] = mapped_column(String(120))
-    role: Mapped[str] = mapped_column(String(20), default="drawing")      # admin | drawing | coordinator
+    role: Mapped[str] = mapped_column(String(20), default="drawing")      # admin | admin2 | drawing | coordinator | sales | production
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_sign_in: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     engines_dismissed: Mapped[str] = mapped_column(String(20), default="")   # the newer engine version whose notice they closed
 
 
