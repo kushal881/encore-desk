@@ -14,7 +14,8 @@ DOMAIN = os.environ.get("DESK_DOMAIN", "encoreprimefurniture.com")
 ON_SERVER = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
 DEV = os.environ.get("DESK_DEV_LOGIN") == "1" and not ON_SERVER           # pick-a-user sign-in for building; never on the server
 DEFAULT_USERS = "kushal@encoreprimefurniture.com|Kushal Singhal|admin;sushil@encoreprimefurniture.com|Sushil Singhal|drawing;info@encoreprimefurniture.com|Anchal Dawar|coordinator"
-ROLES = {"admin": "Administrator", "drawing": "Designer", "coordinator": "Sales coordinator", "sales": "Salesperson", "production": "Production"}
+ROLES = {"admin": "Administrator", "admin2": "Secondary administrator", "drawing": "Designer", "coordinator": "Sales coordinator",
+         "sales": "Salesperson", "production": "Production"}
 # roles by email (Kushal 28-Nov-2026): design@encore... -> Designer, production@encore... -> Production, sales@encore... -> Salesperson.
 # An account not on the user list whose address starts with one of these words is added with that role at its first sign-in;
 # people already on the list keep the role the administrator gave them.
@@ -66,7 +67,7 @@ def level(user):
     """admin | admin2 (secondary administrator) | staff"""
     if user.role == "admin":
         return "admin"
-    return "admin2" if (user.email or "").lower() in SECONDARY else "staff"
+    return "admin2" if user.role == "admin2" or (user.email or "").lower() in SECONDARY else "staff"
 
 
 def can_decide(user, kind):
@@ -86,6 +87,13 @@ def seed(s):
             email, name, role = (x.strip() for x in row.split("|"))
             s.add(db.User(email=email.lower(), name=name, role=role))
         s.commit()
+    # issue #40: the secondary administrators listed in DESK_SECONDARY_ADMINS become the Secondary administrator role
+    # (once; afterwards the Users screen is where roles change)
+    for u in s.scalars(select(db.User).where(db.User.role.in_(("drawing", "coordinator")))):
+        if (u.email or "").lower() in SECONDARY:
+            u.role = "admin2"
+            s.add(db.UserLog(user_id=u.id, text="Role set to Secondary administrator (was listed as secondary administrator)", by="desk"))
+    s.commit()
 
 
 def current_user(request: Request):
@@ -130,7 +138,15 @@ def dev_login(request: Request, uid: int):
     if not DEV:
         raise HTTPException(404)
     request.session["uid"] = uid
+    _signed_in(uid)
     return RedirectResponse("/", status_code=303)
+
+
+def _signed_in(uid):
+    with db.Session() as s:
+        u = s.get(db.User, uid)
+        if u is not None:
+            u.last_sign_in = db.now(); s.commit()
 
 
 def _redirect_uri(request):
@@ -177,6 +193,7 @@ def callback(request: Request, code: str = "", state: str = ""):
             return RedirectResponse("/login?error=notlisted")
         request.session.clear()
         request.session["uid"] = u.id
+        u.last_sign_in = db.now(); s.commit()
     return RedirectResponse("/")
 
 

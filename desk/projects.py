@@ -31,6 +31,9 @@ def project_stage(st, lines):
 def attention(s, o, st, stage, lines, today=None):
     """The one thing that needs someone on this project, in a few words, or ''. Most urgent first."""
     today = today or datetime.datetime.now(datetime.timezone.utc)
+    q = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
+    if q:                                                              # they lock issue and production: first
+        return "%d quotation change%s" % (q, "" if q == 1 else "s")
     if s.scalar(select(db.EngineRequest.id).where(db.EngineRequest.order_ref == o.source_ref, db.EngineRequest.status == "asked").limit(1)):
         return "Engine request pending"
     if s.scalar(select(db.ChangeRequest.id).where(db.ChangeRequest.order_ref == o.source_ref, db.ChangeRequest.status == "asked").limit(1)):
@@ -44,13 +47,9 @@ def attention(s, o, st, stage, lines, today=None):
     ids = [l.id for l in lines]
     if ids and s.scalar(select(db.AiTurn.id).where(db.AiTurn.line_id.in_(ids), db.AiTurn.status == "trial").limit(1)):
         return "AI change waiting: Accept or Undo"
-    latest = {l.revisions[-1].id: l for l in lines if l.revisions}
-    if latest:
-        last_answer = {}
-        for a in s.scalars(select(db.Approval).where(db.Approval.order_id == o.id).order_by(db.Approval.id)):
-            last_answer[a.revision_id] = a.outcome
-        if any(last_answer.get(rid) == "changes" for rid in latest):
-            return "Client asked for changes"
+    from .app import _client_changes                                  # open: not re-issued or declined yet (issue #34)
+    if any(_client_changes(s, l.revisions[-1].id) for l in lines if l.revisions and not l.cancelled_at):
+        return "Client asked for changes"
     q = sum(1 for l in lines for x in l.questions if not x.answer)
     if q and stage <= 3:
         return "%d question%s to answer" % (q, "" if q == 1 else "s")

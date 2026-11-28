@@ -271,6 +271,53 @@ def bom(specs, key, edir=None, panel_saw=False, client="Client"):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def has_cutting(edir=None):
+    """True when the approved engines have the cutting-diagram and panel-label command (tool/board_cutting.py make)."""
+    f = os.path.join(edir or ENGINES_DIR or "", "tool", "board_cutting.py")
+    try:
+        return "def make(" in open(f, encoding="utf-8").read()
+    except OSError:
+        return False
+
+
+def cutting(specs, key, edir=None, client="Client"):
+    """The approved engines' cutting command (tool/board_cutting.py) for a whole order: board cutting diagrams (fence plan,
+    one page per board, numbered saw cuts) and 60 x 40 panel labels, from the same cut list as the bill of material with
+    the panel-saw rules. specs = {drawing number: issued specification}.
+    -> dict(diagrams=path, labels=path, labels_count=n) under FILES/key, or raises RuntimeError with the reason."""
+    edir = edir or ENGINES_DIR
+    tool = os.path.join(edir or "", "tool")
+    if not has_cutting(edir):
+        raise RuntimeError("The approved engines (%s) have no cutting-diagram command yet. Approve the cutting diagrams + panel labels "
+                           "proposal in encore-approved, then update the engines here." % version_label())
+    work = tempfile.mkdtemp(prefix="desk_cut_")
+    try:
+        os.makedirs(os.path.join(work, "Other"))
+        safe = re.sub(r'[<>:"/\\|?*]', "", client).strip() or "Client"
+        serials = []
+        for number, sp in specs.items():
+            json.dump(sp, open(os.path.join(work, "Other", "%s-%s.json" % (number, safe)), "w", encoding="utf-8"), indent=1)
+            serials.append(str(int(number.rsplit("-", 1)[1])))
+        out = os.path.join(FILES, key)
+        shutil.rmtree(out, ignore_errors=True); os.makedirs(out, exist_ok=True)
+        env = {k: v for k, v in os.environ.items() if k not in ("ENCORE_ENGINE_APPROVAL_RUN", "ENCORE_PANEL_SAW")}   # the lock check always applies
+        cmd = [sys.executable, "-W", "ignore", os.path.join(tool, "board_cutting.py")] + sorted(serials, key=int) + ["--client=" + work, "--out=" + out]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, cwd=tool, env=env)
+        pdfs = sorted(glob.glob(os.path.join(out, "*.pdf")))
+        dia = next((p for p in pdfs if "cutting diagrams" in os.path.basename(p).lower()), None)
+        lab = next((p for p in pdfs if "labels" in os.path.basename(p).lower()), None)
+        if r.returncode != 0 or not (dia and lab):
+            if "nothing to cut" in r.stdout.lower():
+                raise RuntimeError("These products have no board panels: nothing to cut on the panel saw.")
+            lines = [l for l in (r.stderr + "\n" + r.stdout).splitlines() if l.strip()]
+            msg = next((l for l in reversed(lines) if "Error" in l or "STOP" in l or "serial" in l), lines[-1] if lines else "The engine gave no output.")
+            raise RuntimeError(msg.split("Error: ")[-1].strip()[:400])
+        m = re.search(r"(\d+) labels", r.stdout)
+        return dict(diagrams=dia, labels=lab, labels_count=int(m.group(1)) if m else 0)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def draw_set(spec, key, edir=None):
     """A production or vendor set: the engine writes several PDFs (the complete product and one set per department).
     -> [dict(title, pdf, pages)] under FILES/key, the complete-product sheet first."""
