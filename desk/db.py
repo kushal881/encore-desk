@@ -518,6 +518,43 @@ class PortalCode(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+# Columns that hold an order / line id WITHOUT a database link, kept on purpose when an order is removed (issue #50):
+# logs and one-time codes stay as history; nothing refuses the delete because of them.
+UNLINKED_KEPT = {("file_log", "order_id"), ("portal_code", "order_id"), ("client_action", "approval_id")}
+
+
+def _children(table):
+    """Every (table, column) whose foreign key points at table."""
+    return [(t, fk.parent) for t in Base.metadata.sorted_tables for fk in t.foreign_keys if fk.column.table is table]
+
+
+def purge(s, table, ids):
+    """Deletes rows of table (by id) and, first, every row anywhere that points at them, following every foreign key -
+    so a table added later can never block the delete again (issue #50). Runs in the caller's transaction. -> rows deleted."""
+    from sqlalchemy import select as _select
+    ids = list(ids)
+    if not ids:
+        return 0
+    n = 0
+    for child, col in _children(table):
+        if child is table:
+            continue
+        pk = list(child.primary_key.columns)[0]
+        n += purge(s, child, s.execute(_select(pk).where(col.in_(ids))).scalars().all())
+    n += s.execute(table.delete().where(list(table.primary_key.columns)[0].in_(ids))).rowcount
+    return n
+
+
+def delete_order(s, order_id):
+    """Removes one order and everything that belongs to it, in one transaction (the caller commits)."""
+    return purge(s, Order.__table__, [order_id])
+
+
+def delete_line(s, line_id):
+    """Removes one product (order line) and everything that belongs to it (the caller commits)."""
+    return purge(s, OrderLine.__table__, [line_id])
+
+
 def _default_sql(col, dialect):
     """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
     d = col.default

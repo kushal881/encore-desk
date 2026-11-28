@@ -1912,7 +1912,10 @@ def remove_line(ref: str, no: int, reason: str = Form(""), user=User):
             raise HTTPException(400, "Product %d has an issued drawing. Removing it after issue is a quotation change: it gets a Cancelled stamp and the set is reissued." % no)
         o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, description=l.description, reason="Removed: " + reason, no=l.no, by=user.name))
         o.messages.append(db.Message(who="desk", text="Product %d (%s) was removed from the drawings by %s. Reason: %s. It can be added back." % (no, l.name.split("(")[0].strip(), user.name, reason)))
-        s.delete(l); s.commit()
+        lid = l.id
+        s.flush(); s.expunge_all()                                   # the message and the No-drawing line are written; now the product
+        db.delete_line(s, lid)                                       # with its previews, AI turns, reviews, marks ... (issue #50)
+        s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
@@ -1959,8 +1962,14 @@ def remove_order(ref: str, user=User):
     o = load(ref)
     if any(l.revisions for l in o.lines):
         raise HTTPException(400, "This project has issued drawings and cannot be removed. Mark it completed instead.")
-    with db.Session() as s:
-        s.delete(s.get(db.Order, o.id)); s.commit()
+    from sqlalchemy.exc import SQLAlchemyError
+    try:
+        with db.Session() as s:                                      # every table that belongs to the order, in one go (issue #50)
+            db.delete_order(s, o.id)
+            s.commit()
+    except SQLAlchemyError as e:
+        print("Remove order %s failed: %s" % (ref, str(e)[:300]), flush=True)
+        raise HTTPException(409, "The project could not be removed: something still refers to it. Nothing was changed. Tell Kushal (issue #50).")
     return RedirectResponse("/", status_code=303)
 
 
