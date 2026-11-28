@@ -573,6 +573,10 @@ def _draw_lines(o, s, who, only=None):
             d.spec = make_spec(s, o, l, edir=edir)
             d.files = engines.draw(d.spec, "%d/line%d/preview" % (o.id, l.no), edir)
             d.status = "preview"
+            try:
+                storage.previews(d.files["pdf"])                       # a light picture per sheet now, so the viewer opens at once
+            except Exception:
+                pass
         except (spec.CannotDraw, RuntimeError) as e:
             d.status, d.error = "failed", str(e)
             d.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
@@ -770,10 +774,26 @@ def _pages(pdf_path):
         return len(doc)
 
 
+def _sheet(pdf_path, page):
+    """The light picture of one sheet (made when the engine drew it, or now for older drawings), or None."""
+    pv = storage.preview_paths(pdf_path)
+    if not 0 <= page < len(pv):
+        return None
+    p = storage.local(pv[page]) or pv[page]
+    return p if os.path.exists(p) else None
+
+
 @app.get("/revisions/{rid}/{kind}")
 def revision_file(request: Request, rid: int, kind: str, download: int = 0, page: int = 0, user=User):
-    if kind not in ("png", "pdf", "dxf", "big"):
+    if kind not in ("png", "pdf", "dxf", "big", "sheet"):
         raise HTTPException(404)
+    if kind == "sheet":                                                # fast: the light picture of one sheet
+        with db.Session() as s:
+            r = s.get(db.Revision, rid)
+        got = _sheet(r.files.get("pdf"), page) if r and r.files.get("pdf") else None
+        if got is None:
+            raise HTTPException(404)
+        return FileResponse(got)
     with db.Session() as s:
         r = s.get(db.Revision, rid)
         path, name = (r.files.get("pdf" if kind == "big" else kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
@@ -789,8 +809,15 @@ def revision_file(request: Request, rid: int, kind: str, download: int = 0, page
 
 @app.get("/drawings/{did}/{kind}")
 def drawing_file(did: int, kind: str, download: int = 0, page: int = 0, user=User):
-    if kind not in ("png", "pdf", "dxf", "big"):
+    if kind not in ("png", "pdf", "dxf", "big", "sheet"):
         raise HTTPException(404)
+    if kind == "sheet":
+        with db.Session() as s:
+            d = s.get(db.Drawing, did)
+        got = _sheet(d.files.get("pdf"), page) if d and d.files and d.files.get("pdf") and os.path.exists(d.files["pdf"]) else None
+        if got is None:
+            raise HTTPException(404)
+        return FileResponse(got)
     with db.Session() as s:
         d = s.get(db.Drawing, did)
         path = d.files.get("pdf" if kind == "big" else kind) if d else None
@@ -895,8 +922,10 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     else:
         pages = _pages(sh["pdf"]) if sh["pdf"] and os.path.exists(sh["pdf"]) else 1
     sheet = max(1, min(s, pages))
-    if prod is None:
-        img = None if sh["failed"] else "%s/big?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
+    big = None
+    if prod is None:                                                   # the light sheet picture first; the sharp one when zoomed in
+        img = None if sh["failed"] else "%s/sheet?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
+        big = None if sh["failed"] else "%s/big?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
     else:
         img = (prod["img"] % (sheet - 1)) + "?v=%d" % prod["stamp"] if prod["kind"] != "none" else None
     skey = viewer.sheet_key(sh["key"], sheet)
@@ -923,7 +952,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     box = _changed_box(sh, cmp_) if cmp_ else None
     return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
                               panel=_panel_state(o, l, sh, mode), turns=turns, cmp=cmp_, box=box, ai_on=assistant.configured(),
-                              rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
+                              rev_q=rev_q, mode=mode, prod=prod, img=img, big=big, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
                               prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked or l.ai_waiting, mode,
                                                                                          approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,

@@ -67,7 +67,7 @@
     {% endif %}
     <div id="sheet">
       <div id="wrap" style="position:relative;width:100%">
-        <img id="img" src="{{ img }}" alt="{{ 'Production' if mode == 'prod' else 'Client' }} drawing for product {{ l.no }}, {{ title }}, sheet {{ sheet }} of {{ pages }}" style="display:block;width:100%;background:#fff" draggable="false">
+        <img id="img" src="{{ img }}" {% if big %}data-big="{{ big }}"{% endif %} alt="{{ 'Production' if mode == 'prod' else 'Client' }} drawing for product {{ l.no }}, {{ title }}, sheet {{ sheet }} of {{ pages }}" style="display:block;width:100%;background:#fff" draggable="false">
         {% for m in marks %}<span class="pin" style="left:{{ m.x }}%;top:{{ m.y }}%" title="{{ m.label }}">{{ m.no }}</span>{% endfor %}
         <span class="pin new" id="newpin" style="display:none">{{ next_no }}</span>
       </div>
@@ -196,7 +196,8 @@
 {% if img %}
 <script>
 (function(){var w=document.getElementById('wrap'),o=document.getElementById('zval'),sh=document.getElementById('sheet'),img=document.getElementById('img'),z=100;
-function set(v){z=Math.max(25,Math.min(400,Math.round(v)));w.style.width=z+'%';o.textContent=z+'%';}
+function set(v){z=Math.max(25,Math.min(400,Math.round(v)));w.style.width=z+'%';o.textContent=z+'%';
+if(z>150&&img.dataset.big&&img.getAttribute('src')!==img.dataset.big){img.src=img.dataset.big;}}   /* sharp picture only when zoomed in */
 function fit(){if(!img.naturalWidth)return set(100);var h=sh.clientHeight||window.innerHeight*0.7,fw=h*img.naturalWidth/img.naturalHeight/sh.clientWidth*100;set(Math.min(100,fw));}
 document.getElementById('zin').addEventListener('click',function(){set(z*1.25)});
 document.getElementById('zout').addEventListener('click',function(){set(z/1.25)});
