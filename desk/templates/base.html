@@ -108,11 +108,13 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
   {% if is_admin %}<a href="/users" class="item {{ 'on' if nav == 'users' }}">Users</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
   {% endif %}
+  <a href="/guide" class="item {{ 'on' if nav == 'guide' }}">Guide</a>
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>
     <form method="post" action="/logout"><button class="sm">Sign out</button></form></div>
 </nav>
 <div class="content">
 <div class="pagehead">{% if not hide_back %}<button type="button" class="sm" onclick="if(history.length>1){history.back()}else{location.href='/'}" aria-label="Back to the previous page">&larr; Back</button>{% endif %}{% block crumb %}{% endblock %}
+{% if help_page is defined and help_page %}{% set hp = guide_help.get(help_page) %}{% if hp %}<a href="/guide/{{ hp[0] }}#{{ hp[1] }}" class="btn" style="min-width:32px;min-height:32px;padding:0 10px;border-radius:16px;font-weight:700" aria-label="Help for this page in the guide" title="Help for this page">?</a>{% endif %}{% endif %}
 {% if bell is defined %}<details class="bell" style="margin-left:auto;position:relative">
   <summary aria-label="Notifications: {{ bell[0] }} open" style="list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border:1px solid #D6D3CA;border-radius:10px;background:#fff;cursor:pointer;color:#17191C">
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -151,5 +153,6 @@ document.getElementById('askno').addEventListener('click',function(){d.close();p
 document.getElementById('askyes').addEventListener('click',function(){d.close();if(!pending)return;pending.dataset.ok='1';if(pending.requestSubmit){pending.requestSubmit(by||undefined);}else{pending.submit();}});
 document.addEventListener('submit',function(e){var b=e.submitter;if(b&&!e.defaultPrevented){setTimeout(function(){b.disabled=true;b.textContent='Working...';},0);}});})();
 </script>
+{% if tour_tags %}{{ tour_tags }}{% endif %}
 </body>
 </html>

@@ -362,7 +362,7 @@ def prodchange_page(cid: int, n: int, user=User):
 
 
 @router.get("/production", response_class=HTMLResponse)
-def production_home(request: Request, user=User):
+def production_home(request: Request, tour: int = 0, user=User):
     """Production's home page: every product of the orders released to production, with its production drawing (P),
     whether it is released to the shop floor, and the stop alerts waiting for this person."""
     from .app import stage_of
@@ -381,4 +381,6 @@ def production_home(request: Request, user=User):
                                  job=header_value((ps.details.get("job_order") if ps else o.job_order) or "", "Job no. not set"),
                                  deadline=header_value((ps.details.get("deadline") if ps else o.delivery_date) or "", "Deadline not set")))
         alerts = list(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open").order_by(db.Task.id.desc())))
-    return T.TemplateResponse(request, "production_home.html", ctx(user, rows=rows, alerts=alerts, nav="production", hide_back=True))
+    from .tour import for_desk                                         # issue #43: production's first-time tour
+    return T.TemplateResponse(request, "production_home.html", ctx(user, rows=rows, alerts=alerts, nav="production", hide_back=True,
+                                                                    tour_tags=for_desk(user, bool(tour)) if user.role == "production" else ""))

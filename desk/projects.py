@@ -83,8 +83,15 @@ def rows(s):
         last = max([o.read_at] + [x.at for x in o.steps] + [r.issued_at for l in lines for r in l.revisions]
                    + [m.at for m in o.messages] + [q.answered_at for l in lines for q in l.questions if q.answered_at],
                    key=lambda d: d.replace(tzinfo=None))
+        try:                                                             # issue #44: the order checklist's step
+            from .app import load
+            from .checklist import steps, summary
+            cur, no, total = summary(steps(load(o.source_ref)))
+            check = "Step %d/%d" % (no, total) if cur else "All %d steps done" % total
+        except Exception:
+            check = ""
         out.append(dict(ref=o.source_ref, client=o.client.name, folder=folder(o), salesperson=o.salesperson or "", st=n, stage="%d · %s" % (n, STEPS[n - 1]),
-                        done=sum(1 for l in lines if l.revisions), total=len(lines), flag=attention(s, o, st, n, lines), last=last))
+                        done=sum(1 for l in lines if l.revisions), total=len(lines), flag=attention(s, o, st, n, lines), last=last, check=check))
     return out
 
 
