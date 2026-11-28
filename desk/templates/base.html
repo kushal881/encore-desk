@@ -141,5 +141,6 @@ document.getElementById('askno').addEventListener('click',function(){d.close();p
 document.getElementById('askyes').addEventListener('click',function(){d.close();if(!pending)return;pending.dataset.ok='1';if(pending.requestSubmit){pending.requestSubmit(by||undefined);}else{pending.submit();}});
 document.addEventListener('submit',function(e){var b=e.submitter;if(b&&!e.defaultPrevented){setTimeout(function(){b.disabled=true;b.textContent='Working...';},0);}});})();
 </script>
+{% if tour_tags %}{{ tour_tags }}{% endif %}
 </body>
 </html>

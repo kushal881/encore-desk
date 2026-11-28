@@ -17,7 +17,7 @@
     <nav class="card" aria-label="Contents" style="flex:1 1 220px;max-width:300px;position:sticky;top:12px">
       <div style="font-weight:600">Contents</div>
       {% for a, t in toc %}<a class="small" href="#{{ a }}">{{ t }}</a>{% endfor %}
-      {% if which == 'staff' %}<a class="small" href="/?tour=1" style="border-top:1px solid #EEECE6;padding-top:6px">Take the tour</a>{% endif %}
+      {% if which == 'staff' %}<a class="small" href="{{ '/production?tour=1' if is_production else '/?tour=1' }}" style="border-top:1px solid #EEECE6;padding-top:6px">Take the tour</a>{% endif %}
     </nav>
     <article class="card gd" style="flex:999 1 520px;min-width:0;padding:20px 24px">{{ body }}</article>
   </div>

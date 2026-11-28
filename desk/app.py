@@ -350,7 +350,7 @@ def ctx(user, **kw):
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, show: str = "active", focus: str = "", user=User):
+def home(request: Request, show: str = "active", focus: str = "", tour: int = 0, user=User):
     """The dashboard: every project the desk holds, where each stands, and what is waiting."""
     if user.role == "production":                                       # production's own home page
         return RedirectResponse("/production", status_code=303)
@@ -404,7 +404,8 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
     samples = [r for r in SampleSource().list_refs() if r not in known]
     quotes = [q for q in ODOO.open_quotations() if q["ref"] not in known] if ODOO.configured else []
     odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, mysteps=mysteps[:12], rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
+    from .tour import for_desk                                         # issue #43: first-time tour
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, tour_tags=for_desk(user, bool(tour)), mysteps=mysteps[:12], rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
                                                                   hide_back=not focus and show == "active"))
 
 
@@ -2133,3 +2134,7 @@ app.include_router(_users)
 
 from .guide import router as _guide                                  # issue #42: the Guide
 app.include_router(_guide)
+
+
+from .tour import router as _tour                                    # issue #43: first-time tour
+app.include_router(_tour)
