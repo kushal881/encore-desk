@@ -394,9 +394,10 @@ def order_set(request: Request, ref: str, done: str = ""):
 def _set_page(request, email, o, a, ds, done="", form=None, error="", code_sent=False, picked=()):
     """The order page (issue #85: built for 100 drawings): progress, search, filter chips, area groups, tick and approve."""
     from .portalreq import of_order, STATUS                             # issue #47: the client's add / remove requests
+    from .references import listed as refs_listed                       # issue #72: only references ticked "show to client"
     todo = being_drawn(o, ds)
     return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form=form or {}, error=error, code_sent=code_sent, tab="orders",
-                reqs=of_order(o.id), req_status=STATUS, todo=todo, groups=groups(ds, todo), picked=set(picked))
+                reqs=of_order(o.id), req_status=STATUS, todo=todo, groups=groups(ds, todo), picked=set(picked), refs=refs_listed(o.id, client=True))
 
 
 def _approve(request, o, a, picked, name, designation):
@@ -541,6 +542,12 @@ async def ask_changes(request: Request, ref: str, rid: int):
             folder = _desk()._folder(s, o.client_id)
         if folder:
             storage.keep(proof, "%s/Other/Approvals/%s" % (folder, os.path.basename(proof)))
+        from . import references                                        # issue #72: the client's attachment joins the references
+        try:
+            references.add(o, l.no, proof_name, open(proof, "rb").read(), "Attached by %s with a change request on %s Rev %s" % (who, r.number, r.rev),
+                           "Client: %s" % email, source="portal", show_client=True)
+        except HTTPException:
+            pass                                                        # a file type the reference list does not take: kept with the approval only
     _tell_staff(o, "Changes asked on the portal: %s · %s" % (o.source_ref, o.client.name),
                 "%s (%s) asked for changes on Product %d, %s Rev %s:\n%s" % (who, email, l.no, r.number, r.rev, full))
     numbered = "\n".join(texts + (["Other: " + note] if note else []))
@@ -556,6 +563,18 @@ def _rev(o, rid):
     if d is None:
         raise HTTPException(404, "Not found")
     return d
+
+
+@router.get("/orders/{ref}/references/{fid}")
+def reference_file(request: Request, ref: str, fid: int):
+    """A client reference staff ticked "show to client" (issue #72); any other is not found."""
+    email = current(request)
+    o, a = _access(email, ref)
+    with db.Session() as s:
+        r = s.get(db.Reference, fid)
+    if r is None or r.order_id != o.id or not r.show_client:
+        raise HTTPException(404, "Not found")
+    return storage.serve(request, r.path, r.name, download=r.kind in ("cad", "photo"), who=email, side="portal", order_id=o.id)
 
 
 @router.get("/orders/{ref}/d/{rid}/sheet/{n}")

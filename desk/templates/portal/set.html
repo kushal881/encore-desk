@@ -119,6 +119,13 @@ count();
 </script>
 {% endif %}
 
+{% if refs %}
+<div class="card">
+  <h2>Your references</h2>
+  <div class="sub">Sketches, photos and files we are working from.</div>
+  {% for r in refs %}<div><a href="/portal/orders/{{ o.source_ref }}/references/{{ r.id }}">{{ r.name }}</a>{% if r.line_no %} · Product {{ r.line_no }}{% endif %}{% if r.note %} · {{ r.note }}{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
 <div class="row">
   {% if ds %}<a class="btn sec" href="/portal/orders/{{ o.source_ref }}/set.pdf">Download full set PDF</a>{% endif %}
   <div class="small sub">Only the emails these drawings were sent to can open them. Need a colleague to review? Ask your Encore sales person to add their email.</div>
