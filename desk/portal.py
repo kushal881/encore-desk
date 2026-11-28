@@ -296,7 +296,36 @@ async def reorder(request: Request, ref: str):
         s.add(db.Message(order_id=o.id, who="desk", text=text))
         s.commit()
     _tell_staff(o, "Reorder asked: %s · %s" % (ref, o.client.name), text)
+    items = "\n".join("- %s (%s)%s" % (d["name"], d["code"], ", quantity %s" % (form.get("qty_%d" % d["l"].no) or "").strip()[:40]
+                                         if (form.get("qty_%d" % d["l"].no) or "").strip() else "") for d in picked)
+    _ack(o, email, ACK_REORDER[0].format(quote=ref), ACK_REORDER[1].format(name=a.name or email, items=items))
     return RedirectResponse("/portal/past?o=%s&sent=1" % ref, status_code=303)
+
+
+ACK_CHANGES = ("We received your changes: {quote} · {number} Rev {rev}",
+               "Dear {name},\n\nWe received the changes you asked for on {when}:\n{notes}\n\nWe will send a revised drawing for your approval. "
+               "The drawing as it stands is not approved and will not be manufactured.\n\nRegards,\nEncore Prime Furniture")
+ACK_REORDER = ("We received your reorder request: {quote}",
+               "Dear {name},\n\nWe received your request to reorder:\n{items}\n\nYour Encore sales person will send you a quotation. "
+               "This is not an order until you confirm that quotation.\n\nRegards,\nEncore Prime Furniture")
+# Draft wording from the legal review (issue #51, R3); Kushal may adjust it after the lawyer.
+
+
+def _ack(o, to, subject, body):
+    """An acknowledgement to the client who asked (issue #51 R3), from info@. Sent once, when the request is made; a failed
+    email never stops the request, and the order's history says whether it went."""
+    try:
+        issuing.send([to], [], subject, body)
+        text = "Acknowledgement emailed to %s: %s" % (to, subject)
+    except RuntimeError as e:
+        text = "The acknowledgement to %s could not be emailed (%s); the request itself is recorded." % (to, e)
+    with db.Session() as s:
+        s.add(db.Message(order_id=o.id, who="desk", text=text)); s.commit()
+
+
+def _now_text():
+    import datetime as _d
+    return _d.datetime.now(_d.timezone(_d.timedelta(hours=5, minutes=30))).strftime("%d %b %Y, %H:%M")
 
 
 def _tell_staff(o, subject, body):
@@ -464,6 +493,9 @@ async def ask_changes(request: Request, ref: str, rid: int):
             storage.keep(proof, "%s/Other/Approvals/%s" % (folder, os.path.basename(proof)))
     _tell_staff(o, "Changes asked on the portal: %s · %s" % (o.source_ref, o.client.name),
                 "%s (%s) asked for changes on Product %d, %s Rev %s:\n%s" % (who, email, l.no, r.number, r.rev, full))
+    numbered = "\n".join(texts + (["Other: " + note] if note else []))
+    _ack(o, email, ACK_CHANGES[0].format(quote=o.source_ref, number=r.number, rev=r.rev),
+         ACK_CHANGES[1].format(name=who, when=_now_text(), notes=numbered))
     return RedirectResponse("/portal/orders/%s/d/%d?done=changes" % (ref, rid), status_code=303)
 
 
