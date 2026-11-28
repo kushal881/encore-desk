@@ -25,7 +25,7 @@ PREFIX_ROLES = (("design", "drawing"), ("production", "production"), ("sales", "
 # the administrator's controls, production included; a salesperson everything but the administrator's controls and the
 # production drawings; production only what is about production.
 PRODUCTION_PATHS = (r"^/orders/[^/]+/production(/|$)", r"^/production$", r"^/sets/", r"^/production-files/", r"^/prodpreview/", r"^/prodchange/",
-                    r"^/orders/[^/]+/sets/", r"^/orders/[^/]+/bom$", r"^/orders/[^/]+/view/\d+/production$")
+                    r"^/orders/[^/]+/sets/", r"^/orders/[^/]+/bom$", r"^/orders/[^/]+/view/\d+/production$", r"^/orders/[^/]+/board-labels$")
 PRODUCTION_ALSO = (r"^/$", r"^/photos/", r"^/tasks/\d+/done$", r"^/static/", r"^/guide", r"^/notifications")       # what production users also reach
 
 

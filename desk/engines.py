@@ -318,6 +318,54 @@ def cutting(specs, key, edir=None, client="Client"):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def has_board_labels(edir=None):
+    """True when the approved engines can make board labels (issue #61 / engines #38: board_cutting.py --board-labels)."""
+    f = os.path.join(edir or ENGINES_DIR or "", "tool", "board_cutting.py")
+    try:
+        return "def board_labels(" in open(f, encoding="utf-8").read()
+    except OSError:
+        return False
+
+
+def board_labels(specs, key, edir=None, client="Client", job="", deadline="", replaces=""):
+    """The approved engines' board labels for a whole order: one label per full board, in cutting sequence, from the same
+    panel-saw board plan as the cutting diagrams (tool/board_cutting.py --board-labels). No client details go on a label;
+    replaces = the earlier set they replace ("P1"), printed on them. specs = {drawing number: issued specification}.
+    -> dict(pdf=path, boards=n, by_material=[(material, n)]) under FILES/key, or raises RuntimeError with the reason.
+    The command prints "BOARDS <n>" and one "MATERIAL<TAB><name><TAB><n>" line per material."""
+    edir = edir or ENGINES_DIR
+    tool = os.path.join(edir or "", "tool")
+    if not has_board_labels(edir):
+        raise RuntimeError("The approved engines (%s) have no board labels yet. Approve the board labels proposal in encore-approved, "
+                           "then update the engines here." % version_label())
+    work = tempfile.mkdtemp(prefix="desk_blab_")
+    try:
+        os.makedirs(os.path.join(work, "Other"))
+        safe = re.sub(r'[<>:"/\\|?*]', "", client).strip() or "Client"
+        serials = []
+        for number, sp in specs.items():
+            json.dump(sp, open(os.path.join(work, "Other", "%s-%s.json" % (number, safe)), "w", encoding="utf-8"), indent=1)
+            serials.append(str(int(number.rsplit("-", 1)[1])))
+        out = os.path.join(FILES, key)
+        shutil.rmtree(out, ignore_errors=True); os.makedirs(out, exist_ok=True)
+        env = {k: v for k, v in os.environ.items() if k not in ("ENCORE_ENGINE_APPROVAL_RUN", "ENCORE_PANEL_SAW")}
+        cmd = [sys.executable, "-W", "ignore", os.path.join(tool, "board_cutting.py")] + sorted(serials, key=int) + [
+            "--client=" + work, "--out=" + out, "--board-labels", "--job=" + (job or "TBC"), "--deadline=" + (deadline or "TBC")] + (["--replaces=" + replaces] if replaces else [])
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, cwd=tool, env=env)
+        pdf = next((p for p in sorted(glob.glob(os.path.join(out, "*.pdf"))) if "board labels" in os.path.basename(p).lower()), None)
+        if r.returncode != 0 or not pdf:
+            if "nothing to cut" in r.stdout.lower():
+                raise RuntimeError("These products have no board panels: no boards to label.")
+            lines = [l for l in (r.stderr + "\n" + r.stdout).splitlines() if l.strip()]
+            msg = next((l for l in reversed(lines) if "Error" in l or "STOP" in l or "serial" in l), lines[-1] if lines else "The engine gave no output.")
+            raise RuntimeError(msg.split("Error: ")[-1].strip()[:400])
+        m = re.search(r"^BOARDS (\d+)", r.stdout, re.M)
+        mats = [(a, int(b)) for a, b in re.findall(r"^MATERIAL\t([^\t]+)\t(\d+)", r.stdout, re.M)]
+        return dict(pdf=pdf, boards=int(m.group(1)) if m else sum(n for _, n in mats), by_material=mats)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def draw_set(spec, key, edir=None):
     """A production or vendor set: the engine writes several PDFs (the complete product and one set per department).
     -> [dict(title, pdf, pages)] under FILES/key, the complete-product sheet first."""

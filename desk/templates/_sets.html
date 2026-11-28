@@ -61,5 +61,23 @@
       {% endif %}
       {% endif %}
     </div>
+    <div class="label">Board labels</div>
+    <div class="card" id="boardlabels">
+      {% for x in board_sets %}<div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}>
+        {% if x.withdrawn %}<span class="tag dim">P{{ x.p }} withdrawn</span> <s>{{ x.f.name }}</s>
+        {% else %}<a href="/production-files/{{ x.f.id }}"><b>{{ x.f.name }}</b></a> <a class="small" href="/production-files/{{ x.f.id }}" target="_blank" rel="noopener">Print again</a>{% endif %}
+        <div class="sub">{{ x.f.summary }} · from {{ x.f.revisions }} · {{ x.f.made_by }}, {{ x.f.made_at|when }}</div></div>
+      {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
+      {% if o.stage in ('production', 'completed') %}
+      {% if not has_board_labels %}
+      <div class="small" style="color:#9A4508">Waiting for the engines: approve the board labels proposal, then update the engines here.</div>
+      {% elif not (bom_files|selectattr('kind', 'equalto', 'bom')|rejectattr('error')|list) %}
+      <div class="small" style="color:#9A4508">Make the bill of material first (with panel-saw cutting): the board labels follow its board plan.</div>
+      {% else %}
+      <form method="post" action="/orders/{{ o.source_ref }}/board-labels" style="border-top:1px solid #EEECE6;padding-top:8px"><button class="sm primary">Make board labels</button></form>
+      <div class="sub small">One label per full board, in cutting sequence, for the store team: job order no., deadline, Board n of N, material, size and the cutting-diagram page. No client details. If the issued drawings change, the next set (P2) replaces the old labels.</div>
+      {% endif %}
+      {% endif %}
+    </div>
     {% endif %}
 {% endif %}
