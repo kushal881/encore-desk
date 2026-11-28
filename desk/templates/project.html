@@ -12,6 +12,11 @@
         <div style="flex-grow:1"><div style="font-size:18px;font-weight:600">{{ o.client.name }}</div>
           <div class="sub">{{ o.source_ref }}{% if o.client.contact %} · {{ o.client.contact }}{% endif %} · Salesperson {{ o.salesperson or 'not given' }} · Job order {{ o.job_order or 'not given' }}</div>
           {% if o.delivery %}<div class="sub small">Delivery: {{ o.delivery|join(', ') }}</div>{% endif %}</div>
+        {% if is_admin %}<details class="small" style="flex-basis:100%"><summary style="cursor:pointer;color:#B91C1C">Delete this test project permanently</summary>
+          <form method="post" action="/orders/{{ o.source_ref }}/delete-permanently" class="row" style="margin-top:8px;align-items:center" data-confirm="Delete {{ o.source_ref }} permanently?\nEvery drawing, revision, approval, email record and stored file of this project is deleted and cannot be brought back from the desk. Nothing changes in Odoo." data-yes="Yes, delete permanently">
+            <label class="small" for="delc">Type {{ o.source_ref }} to confirm</label><input type="text" id="delc" name="confirm" autocomplete="off" style="flex:0 1 220px">
+            <button class="sm danger">Delete permanently</button></form>
+          <div class="sub small">For test projects only. Real projects: use Mark completed or Archive.</div></details>{% endif %}
         {% if is_admin and not issued %}<form method="post" action="/orders/{{ o.source_ref }}/remove" data-confirm="Remove {{ o.source_ref }} from the desk?\nIts answers and previews here are deleted. Nothing changes in Odoo, and the order can be opened again." data-yes="Yes, remove"><button class="sm danger">Remove from the desk</button></form>{% endif %}
       </div>
       <div class="sub small">{{ issued }} of {{ o.lines|length }} drawings issued · engines in use: {{ latest }}</div>
