@@ -26,6 +26,13 @@ The Encore Prime Furniture drawing desk (live on Railway, to be served at design
 - If a screen needs something the engine doesn't provide, stop and list it for Kushal. Don't work around it.
 - Keep answers short and plain. Kushal is not a developer: explain what to check, not how the code works.
 
+## Before every PR (Kushal, 28-Nov-2026)
+- Check these cases and add a test for each: **old data from earlier versions** (tables, previews and drawings made by an earlier desk or engine version), **a drawing with an AI change still waiting** (Accept / Undo not pressed), **an approved or locked drawing**, **an empty or missing value**.
+- Every PR description ends with a 5-line "click this, expect that" list for staging.
+
+## Issue queue (Kushal, 28-Nov-2026)
+When Kushal says "work the issue queue": read the open GitHub issues in this repo, oldest first. Fix each one on its own branch and PR (engine work: as `engine-…` branches through encore-approved). Then comment on the issue with the PR or proposal number and the staging check list. **Never close an issue yourself**; Kushal or the reviewing chat closes it after testing.
+
 ## Known state (27-Nov-2026)
 - Railway (Pro plan, project `worthy-creation`, service `web`) deploys `main` automatically. A 5 GB volume is mounted at `/data`; `FILES_DIR=/data/files`, so generated files survive redeploys. Postgres and the web volume have daily, weekly and monthly backups. Moving files to the private Storage Bucket (see brief) is still planned, for the portal and signed links.
 - **Run tests with `python tests/run_all.py`**, never a plain `pytest` over the whole folder: each test file sets up its own temporary database and must run in its own process. The drawing tests need `ENGINES_DIR` pointing at a copy of the approved engines.
