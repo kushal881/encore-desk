@@ -86,7 +86,7 @@ def _draw():
 
 
 def _key(v):
-    return v.split('name="shown" value="')[1].split('"')[0]
+    return v.split('data-key="')[1].split('"')[0]
 
 
 def test_viewer_page():
@@ -94,11 +94,11 @@ def test_viewer_page():
         import pytest; pytest.skip("ENGINES_DIR not set")
     _draw()
     v = c.get(A + "/view/2").text
-    assert "Step 4 of 8 · Review · 2 of 3 drawn products" in v and "Preview, not issued" in v
+    assert "Step 4 of 8 · Review" in v and "Product 2 · 2 of 3 drawn" in v and "Preview, not issued" in v
     assert v.count('class="tag ok">Pass</span>') == 3 and "Automatic checks" in v
     assert "Looks right — mark ready to issue" in v and 'id="zfit"' in v and "Sheet 1 / 1" in v
-    assert 'href="/orders/Q-2026-10-444/view/1">&larr; Previous drawing' in v and 'href="/orders/Q-2026-10-444/view/3">Next drawing &rarr;' in v
-    assert c.get(A + "/view/1").text.count("Previous drawing") == 0
+    assert 'href="/orders/Q-2026-10-444/view/1" aria-label="Previous product"' in v and 'href="/orders/Q-2026-10-444/view/3" aria-label="Next product"' in v
+    assert c.get(A + "/view/1").text.count("Previous product") == 0
     assert c.get(A + "/view/2?s=9").status_code == 200                          # a sheet past the end shows the last sheet
     assert c.get("/drawings/2/big?page=0").status_code == 200 and c.get("/drawings/2/big?page=7").status_code == 404
     assert "Not checked yet" in c.get(A + "/work").text
@@ -109,7 +109,8 @@ def test_viewer_page():
     assert c.post(A + "/marks/2", data={"shown": key + "s2", "x": "50", "y": "50", "label": "on sheet 2", "sheet": "2"}).status_code == 200
     assert c.post(A + "/marks/2", data={"shown": key + "x2", "x": "50", "y": "50"}).status_code == 400
     v = c.get(A + "/view/2").text
-    assert "left shutter" in v and "on sheet 2" not in v and v.count('class="pin" style="left:') == 1
+    # pins are per sheet; the message box lists every marker not sent yet, a marker of another sheet with its sheet (issue #82)
+    assert "left shutter" in v and v.count('class="pin" data-mark=') == 1 and "on sheet 2 <span class=\"sub\">(sheet 2)</span>" in v
 
     # mark ready: only the drawing shown, only when the checks pass
     assert c.post(A + "/view/2/ready", data={"shown": "d1"}).status_code == 400
@@ -138,7 +139,7 @@ def test_failed_and_old_drawings():
     assert "Production drawing</span>" in v and "+ Add numbered marker" not in v        # no production drawing, no markers
     assert c.post(A + "/view/1/ready", data={"shown": "d1"}).status_code == 400
     assert c.post(A + "/view/1/production").status_code == 400
-    assert 'href="/orders/Q-2026-10-444/view/1"' in c.get(A + "/work").text                  # still reachable from the tabs
+    assert 'href="/orders/Q-2026-10-444/view/1"' in c.get(A + "/products").text              # still reachable from the Products tab
 
     # a preview made before the desk recorded checks: draw it again from the viewer
     with db.Session() as s:

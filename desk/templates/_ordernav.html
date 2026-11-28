@@ -3,26 +3,13 @@
   <b>{{ o.source_ref }}</b> <span class="sub">{{ o.client.name }}</span>
   <span style="flex-grow:1"></span>
   <a class="tab {{ 'on' if tab == 'overview' }}" href="/orders/{{ o.source_ref }}">Overview</a>
+  <a class="tab {{ 'on' if (tab or '')[:1] == 'p' }}" href="/orders/{{ o.source_ref }}/products" {% if (tab or '')[:1] == 'p' %}aria-current="page"{% endif %}>Products · {{ o.lines|length + o.not_drawn|length }}</a>
   <a class="tab {{ 'on' if tab == 'specify' }}" href="/orders/{{ o.source_ref }}/specify">Specify</a>
   <a class="tab {{ 'on' if tab == 'work' }}" href="/orders/{{ o.source_ref }}/work">Questions and changes{% if o.client_open %} <span class="count" title="The client asked for changes">{{ o.client_open }}</span>{% endif %}</a>
   <a class="tab {{ 'on' if tab == 'issue' }}" href="/orders/{{ o.source_ref }}/issue">Issue and approval</a>
   <a class="tab {{ 'on' if tab == 'changes' }}" href="/orders/{{ o.source_ref }}/changes">Quotation changes{% if o.quote_open %} <span class="count">{{ o.quote_open }}</span>{% endif %}</a>
-  {% if o.lines|selectattr('drawing')|list or o.lines|selectattr('revisions')|list %}
-  <details class="drawmenu" style="position:relative">
-    <summary class="tab {{ 'on' if (tab or '').startswith('p') }}" style="list-style:none;cursor:pointer;padding:6px 12px;border-radius:6px;color:{{ '#fff' if (tab or '').startswith('p') else '#0E6B5C' }};{% if (tab or '').startswith('p') %}background:#17191C{% endif %}">Drawings{% for x in o.lines if tab == 'p' ~ x.no %}: Product {{ x.no }}{% endfor %} &#9662;</summary>
-    <div role="menu" style="position:absolute;left:0;top:38px;z-index:30;width:min(420px,92vw);max-height:70vh;overflow:auto;background:#fff;border:1px solid #E3E1DA;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.15);padding:6px">
-      {% for x in o.lines|sort(attribute='no') if x.revisions or x.drawing %}
-      <a role="menuitem" href="/orders/{{ o.source_ref }}/view/{{ x.no }}" style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:8px;text-decoration:none;color:#17191C;{% if tab == 'p' ~ x.no %}background:#F4FAF8;font-weight:600{% endif %}">
-        <span style="flex:1 1 auto;min-width:0">Product {{ x.no }} · {{ x.name.split('(')[0] }}{% if x.last_rev %} · Rev {{ x.last_rev.rev }}{% endif %}</span>
-        <span class="tag {{ {'Approved':'ok','Issued':'info','Changes asked':'ask','Could not draw':'bad','Cancelled':'dim'}.get(x.nav_status, 'dim') }}">{{ x.nav_status }}</span></a>
-      {% endfor %}
-    </div>
-  </details>
-  {% endif %}
 </nav>
-<script>document.addEventListener('click',function(e){document.querySelectorAll('details.drawmenu[open]').forEach(function(d){if(!d.contains(e.target))d.removeAttribute('open')})});
-document.querySelectorAll('details.drawmenu').forEach(function(d){d.addEventListener('toggle',function(){if(!d.open)return;var m=d.querySelector('[role=menu]');
-m.style.left='0';m.style.right='auto';var r=m.getBoundingClientRect();if(r.right>window.innerWidth-8){m.style.left='auto';m.style.right='0';}})});</script>
+
 {% if o.quote_open and tab != 'changes' %}<div role="alert" style="background:#FDE8E8;color:#B91C1C;padding:10px 24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;border-bottom:1px solid #F5C2C2">
   <b>The quotation changed in Odoo: {{ o.quote_open }} change{{ '' if o.quote_open == 1 else 's' }} to handle.</b> <span>Issue and production are locked until drawings and quotation match.</span>
   <a class="btn" style="padding:4px 12px;margin-left:auto;border-color:#B91C1C;color:#B91C1C" href="/orders/{{ o.source_ref }}/changes">Open quotation changes</a></div>{% endif %}

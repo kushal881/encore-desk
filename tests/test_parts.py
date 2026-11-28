@@ -66,19 +66,20 @@ def test_markers_name_their_part():
     key = v.split('name="shown" value="')[1].split('"')[0]
     x, y = centre("shutter1")
     v = c.post(A + "/marks/2", data={"shown": key, "x": "%.2f" % (x * 100), "y": "%.2f" % (y * 100), "label": ""}).text
-    assert 'value="Shutter (front view)"' in v and "On: Shutter (front view)" in v           # no note: the part's name
+    assert "Shutter (front view)</span><button" in v                                           # no note: the part's name (a chip, issue #82)
+    assert c.get(A + "/view/2/part", params={"shown": key, "x": x * 100, "y": y * 100}).json() == {"part": "Shutter (front view)"}   # the marker box
     x, y = centre("top", "iso")
     v = c.post(A + "/marks/2", data={"shown": key, "x": "%.2f" % (x * 100), "y": "%.2f" % (y * 100), "label": "make it white"}).text
-    assert 'value="make it white"' in v and "On: Top (isometric)" in v
+    assert "make it white</span><button" in v
     h = c.post(A + "/change", data={"text": "At 1 and 2 make it 1500 long", "line": "2", "shown": key}).text
     assert "[Markers: 1 = Shutter (front view); 2 = make it white, on Top (isometric)]" in h
     # a marker on another sheet, or on a drawing without a part map, names no part
     v = c.post(A + "/marks/2", data={"shown": key + "s2", "x": "41", "y": "28", "label": "", "sheet": "2"}).text
     with db.Session() as s:
-        assert s.query(db.Mark).filter_by(no=3).one().label == ""
+        assert s.query(db.Mark).filter_by(no=3).one().label == "marked here"                 # never an empty chip (issue #82)
         d = s.get(db.Drawing, 2); d.files = {k: v for k, v in d.files.items() if k != "parts"}; s.commit()
     v = c.get(A + "/view/2").text
-    assert "On: " not in v and "For example: screen should be L800" in v
+    assert "Leave empty to use the part it sits on" not in v and "For example: screen should be L800" in v
 
 
 if __name__ == "__main__":

@@ -126,18 +126,20 @@ def test_panel(monkeypatch):
     assert _turns()[-1].status == "undone" and _drawing().spec == before.spec
     assert c.post(A + "/view/2/ai/%d/accept" % t1.id).status_code == 400
 
-    # Accept: the trial becomes the drawing and the change is recorded
-    c.post(A + "/view/2/ai", data={"text": "two shelves please", "marker": "0"})
-    t2 = _turns()[-1]
+    # Accept: the trial becomes the drawing and the change is recorded. A second send while one waits carries it along
+    # (issue #82: only one trial waits at a time), so the earlier message can no longer be accepted on its own.
     c.post(A + "/view/2/ai", data={"text": "two shelves please", "marker": "0"})
     t3 = _turns()[-1]
+    c.post(A + "/view/2/ai", data={"text": "two shelves please", "marker": "0"})
+    t2 = _turns()[-1]
+    assert _turns()[t3.id - 1].status == "merged" and len(t2.parts) == 2 and t2.parts[0]["carried"]
     c.post(A + "/view/2/ai/%d/accept" % t2.id)
     d = _drawing()
     assert d.spec["model"]["shelves"] == 2 and d.files["pdf"] == t2.files["pdf"] and d.status == "preview"
     with db.Session() as s:
         ch = s.query(db.Change).filter_by(status="confirmed").one()
         assert ch.values == {"model.shelves": 2} and ch.understood == "Shelves %d -> 2" % shelves
-    assert c.post(A + "/view/2/ai/%d/accept" % t3.id).status_code == 400       # made on the drawing before: ask again
+    assert c.post(A + "/view/2/ai/%d/accept" % t3.id).status_code == 400       # carried into the later message: not on its own
     w = c.get(A + "/work").text
     assert "Accepted by Sushil Singhal from the change panel" in w
 
@@ -180,6 +182,8 @@ def test_issued_then_approved(monkeypatch):
     if not engines.ENGINES_DIR:
         import pytest; pytest.skip("ENGINES_DIR not set")
     _setup(monkeypatch)
+    REPLY.update(kind="change", said="Shelves -> 3", answer="", changes=[dict(path="model.shelves", value="3")])
+    c.post(A + "/view/2/ai", data={"text": "three shelves", "marker": "0"})
     assert "Accept or Undo the change first" in c.get(A + "/issue").text        # a proposal left waiting blocks issue
     for tr in [x for x in _turns() if x.status == "trial"]:
         c.post(A + "/view/2/ai/%d/undo" % tr.id)

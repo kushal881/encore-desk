@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Products · {{ o.source_ref }}{% endblock %}
+{% block crumb %}{% endblock %}
+{% block body %}
+{% include "_ordernav.html" %}
+{# Products tab (issue #84): every product in one list, 100+ at a time. #}
+<style>
+.ptools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 24px 0}
+.pchipf{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid #D6D3CA;background:#fff;font:600 13px Inter,sans-serif;color:#17191C;cursor:pointer}
+.pchipf[aria-pressed=true]{background:#17191C;color:#fff;border-color:#17191C}
+.pchipf .c{font-weight:700;color:inherit;opacity:.75}
+.plist{margin:10px 24px 0;background:#fff;border:1px solid #E3E1DA;border-radius:12px;overflow:hidden}
+.prow{display:grid;grid-template-columns:32px 48px minmax(0,1fr) 160px 60px 90px 170px;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid #F0EEE8;font-size:14px}
+.prow.head{border-top:0;font-size:11px;font-weight:700;letter-spacing:.05em;color:#5B5F66;text-transform:uppercase;background:#FAF9F6}
+.prow a{color:#17191C;text-decoration:none}.prow a:hover{text-decoration:underline}
+.pgrp>summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:center;padding:8px 12px;background:#F7F6F2;border-top:1px solid #E3E1DA;font-weight:600;font-size:13px}
+.pgrp>summary::before{content:"\25B8";display:inline-block;width:12px}.pgrp[open]>summary::before{content:"\25BE"}
+.pbulk{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 24px 16px;padding:10px 14px;background:#F3FAF8;border:1px solid #BFE0D6;border-top:0;border-radius:0 0 12px 12px}
+@media (max-width:820px){.prow{grid-template-columns:28px 40px minmax(0,1fr) 120px}.prow .hide-s{display:none}}
+</style>
+<div class="ptools">
+  <label class="sr" for="pq">Search products</label>
+  <input type="search" id="pq" placeholder="Search {{ rows|length }} products: name, number, area…" style="flex:0 1 340px;min-height:38px" autocomplete="off">
+  {% for k, label in chips %}<button type="button" class="pchipf" data-f="{{ k }}" aria-pressed="{{ 'true' if k == 'all' else 'false' }}">{{ label }} <span class="c">{{ counts[k] }}</span></button>{% endfor %}
+</div>
+<form method="post" action="/orders/{{ o.source_ref }}/issue" id="pform" data-confirm="Issue the ticked drawings that are ready?\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
+  <input type="hidden" name="back" value="issue"><input type="hidden" name="nos" id="pnos">
+  <div class="plist" role="table" aria-label="Products">
+    <div class="prow head" role="row"><span><input type="checkbox" id="pall" aria-label="Tick every product shown" style="width:18px;min-height:18px"></span><span>#</span><span>Product</span><span>Area</span><span class="hide-s">Qty</span><span class="hide-s">Drawn by</span><span>Status</span></div>
+    {% for area, rs, ready in groups %}
+    <details class="pgrp" open>
+      <summary><span>{{ area }} · {{ rs|length }} product{{ 's' if rs|length != 1 }}</span><span class="sub small" style="font-weight:400">{{ ready }} ready</span></summary>
+      {% for r in rs %}
+      <div class="prow" role="row" data-key="{{ r.key }}" data-bridge="{{ 1 if r.bridge else 0 }}" data-text="{{ (r.no ~ ' ' ~ r.name ~ ' ' ~ r.areas)|lower }}">
+        <span>{% if r.pick %}<input type="checkbox" class="pick" value="{{ r.no }}" data-ready="{{ 1 if r.issuable else 0 }}" aria-label="Tick Product {{ r.no }}" style="width:18px;min-height:18px">{% endif %}</span>
+        <b>{{ r.no if r.no else '' }}</b>
+        <span style="min-width:0"><a href="{{ r.url }}">{{ ('Product %d · '|format(r.no)) if r.no and r.key != 'nodrawing' else '' }}{{ r.name }}</a></span>
+        <span class="sub small">{{ r.areas or '—' }}</span>
+        <span class="hide-s">{{ '%g'|format(r.qty) }}</span>
+        <span class="hide-s sub small">{{ r.by }}</span>
+        <span><span class="tag {{ r.cls }}">{{ r.text }}</span>{% if r.bridge %} <span class="tag bad">BRIDGE</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </details>
+    {% endfor %}
+    <div id="pnone" class="sub small" style="display:none;padding:14px">No product matches.</div>
+  </div>
+  <div class="pbulk" aria-live="polite">
+    <b id="pcount">0 selected</b>
+    <span class="sub small">Select: <a href="#" data-sel="ready">Ready</a> · <a href="#" data-sel="review">Your review</a> · <a href="#" data-sel="none">None</a></span>
+    <span style="flex-grow:1"></span>
+    <a class="btn" id="popen" href="#" style="pointer-events:none;opacity:.5">Open first for review &rsaquo;</a>
+    {% if not folder_no %}<label class="sr" for="pfold">Server folder number</label><input id="pfold" name="folder_no" inputmode="numeric" placeholder="Folder no." style="width:110px;min-height:38px">{% endif %}
+    <button class="primary" id="pissue" disabled>Issue 0 to client</button>
+  </div>
+</form>
+<script>
+(function(){
+var rows=[].slice.call(document.querySelectorAll('.prow[data-key]')),q=document.getElementById('pq'),f='all',picks=[].slice.call(document.querySelectorAll('.pick'));
+function show(){var v=q.value.toLowerCase().trim(),n=0;rows.forEach(function(r){var k=r.getAttribute('data-key'),ok=(f==='all'||k===f||(f==='bridge'&&r.getAttribute('data-bridge')==='1'))&&(!v||r.getAttribute('data-text').indexOf(v)>=0);r.style.display=ok?'':'none';if(ok)n++;});
+  document.querySelectorAll('.pgrp').forEach(function(g){g.style.display=[].some.call(g.querySelectorAll('.prow'),function(r){return r.style.display!=='none'})?'':'none';});
+  document.getElementById('pnone').style.display=n?'none':'block';}
+q.addEventListener('input',show);
+document.querySelectorAll('.pchipf').forEach(function(b){b.addEventListener('click',function(){f=b.getAttribute('data-f');document.querySelectorAll('.pchipf').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});show();});});
+function count(){var sel=picks.filter(function(p){return p.checked}),rd=sel.filter(function(p){return p.getAttribute('data-ready')==='1'});
+  document.getElementById('pcount').textContent=sel.length+' selected'+(sel.length&&rd.length<sel.length?' ('+rd.length+' ready)':'');
+  var b=document.getElementById('pissue');b.textContent='Issue '+rd.length+' to client';b.disabled=!rd.length;document.getElementById('pnos').value=rd.map(function(p){return p.value}).join(' ');
+  var o=document.getElementById('popen');if(sel.length){o.href='/orders/{{ o.source_ref }}/view/'+sel[0].value;o.style.pointerEvents='';o.style.opacity='';}else{o.href='#';o.style.pointerEvents='none';o.style.opacity='.5';}}
+picks.forEach(function(p){p.addEventListener('change',count)});
+document.getElementById('pall').addEventListener('change',function(e){picks.forEach(function(p){if(p.closest('.prow').style.display!=='none')p.checked=e.target.checked});count();});
+document.querySelectorAll('[data-sel]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();var s=a.getAttribute('data-sel');
+  picks.forEach(function(p){var k=p.closest('.prow').getAttribute('data-key');p.checked=s==='ready'?k==='ready':s==='review'?k==='review':false});count();});});
+count();
+})();
+</script>
+{% endblock %}
