@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_references.html" import refs_box %}
 {% set help_page = 'specify' %}
 {% block title %}Specify product {{ l.no }} · {{ o.source_ref }}{% endblock %}
 {% block crumb %}{% endblock %}
@@ -98,6 +99,7 @@
       {% elif summary %}<form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="primary">Draw the preview &rarr;</button></form>
       {% endif %}
     </div>
+    {{ refs_box(o, l.no, "/orders/%s/specify/%d#references"|format(o.source_ref, l.no), True) }}
   </div>
 </div>
 <script>

@@ -1,0 +1,51 @@
+{# Client references (issue #72). refs_box(o, line_no, back, compact): thumbnails, open / tick / remove, and the upload form.
+   line_no 0 = the whole order and every product (project page); a number = that product and the whole order. #}
+{% macro refs_box(o, line_no, back, compact=False) %}
+{% set rs = references_for(o.id, line_no if line_no else none, role) %}
+{% set staff_up = role != 'Production' %}
+<div class="card" id="references">
+  <div style="font-weight:600">Client references{% if rs %} ({{ rs|length }}){% endif %}</div>
+  {% if not rs %}<div class="sub small">No sketches, photos or files from the client yet.</div>{% endif %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax({{ '110px' if compact else '150px' }},1fr));gap:10px">
+  {% for r in rs %}
+    <div style="border:1px solid #E3E1DA;border-radius:8px;padding:6px;min-width:0">
+      <a href="/references/{{ r.id }}" target="_blank" rel="noopener">
+        {% if r.thumb %}<img src="/references/{{ r.id }}/thumb" alt="Client reference: {{ r.name }}" loading="lazy" style="width:100%;aspect-ratio:1.3;object-fit:contain;background:#FAFAF7;border-radius:4px">
+        {% else %}<div style="aspect-ratio:1.3;display:flex;align-items:center;justify-content:center;background:#F1EFE9;border-radius:4px;font-weight:600">{{ {'cad':'DXF / DWG','photo':'Photo (HEIC)','pdf':'PDF','image':'Picture'}[r.kind] }}</div>{% endif %}
+      </a>
+      <div class="small" style="overflow-wrap:anywhere"><b>{{ 'Product %d'|format(r.line_no) if r.line_no else 'Whole order' }}</b> · {{ r.name }}</div>
+      {% if r.note %}<div class="sub small">{{ r.note }}</div>{% endif %}
+      <div class="sub small">{{ r.by }}, {{ r.at|when }}{% if r.show_client %} · <span class="tag info">client sees it</span>{% endif %}{% if r.for_production %} · <span class="tag ok">for production</span>{% endif %}</div>
+      {% if staff_up and not compact %}
+      <form method="post" action="/references/{{ r.id }}/flags" class="small" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <input type="hidden" name="back" value="{{ back }}">
+        <label><input type="checkbox" name="show_client" value="1" {{ 'checked' if r.show_client }}> show to client</label>
+        <label><input type="checkbox" name="for_production" value="1" {{ 'checked' if r.for_production }}> for production</label>
+        <button class="sm">Save</button>
+        <button class="sm" formaction="/references/{{ r.id }}/remove" data-confirm="Remove {{ r.name }} from the client references?" data-yes="Yes, remove">Remove</button>
+      </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  {% if staff_up %}
+  <details style="margin-top:8px"><summary class="small">Add a client reference</summary>
+    <form method="post" action="/orders/{{ o.source_ref }}/references" enctype="multipart/form-data" class="refup" style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+      <style>.refup > *,.refup > input[type=text],.refup > select{flex:0 0 auto}</style>
+      <input type="hidden" name="back" value="{{ back }}">
+      <label class="small" for="rf{{ line_no }}">Photo, PDF, DXF or DWG (25 MB at most)</label>
+      <input type="file" id="rf{{ line_no }}" name="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,.dxf,.dwg,image/*" required>
+      <label class="small" for="rn{{ line_no }}">Note</label>
+      <input class="sm" type="text" id="rn{{ line_no }}" name="note" placeholder="For example: client hand sketch, kitchen wall A">
+      <label class="small" for="rl{{ line_no }}">For</label>
+      <select class="sm" id="rl{{ line_no }}" name="line_no" style="min-height:34px;font-size:13px">
+        <option value="0"{% if not line_no %} selected{% endif %}>The whole order</option>
+        {% for l in o.lines %}<option value="{{ l.no }}"{% if l.no == line_no %} selected{% endif %}>Product {{ l.no }} · {{ l.name.split('(')[0] }}</option>{% endfor %}
+      </select>
+      <label class="small"><input type="checkbox" name="for_production" value="1"> for production</label>
+      <label class="small"><input type="checkbox" name="show_client" value="1"> show to client on the portal</label>
+      <div><button class="sm primary">Add reference</button></div>
+    </form></details>
+  {% endif %}
+</div>
+{% endmacro %}
