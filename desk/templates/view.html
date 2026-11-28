@@ -30,7 +30,8 @@
       </div>
       <nav class="seg" aria-label="Which drawing">
         <a class="{{ 'on' if mode == 'client' }}" href="{{ url(mode='client', s=1) }}" {% if mode == 'client' %}aria-current="page"{% endif %}>Client drawing</a>
-        {% if sh.failed %}<span class="off" title="There is no drawing yet">Production drawing</span>
+        {% if not sees_production %}
+        {% elif sh.failed %}<span class="off" title="There is no drawing yet">Production drawing</span>
         {% else %}<a class="{{ 'on' if mode == 'prod' }}" href="{{ url(mode='prod', s=1) }}" {% if mode == 'prod' %}aria-current="page"{% endif %}>Production drawing</a>{% endif %}
       </nav>
     </div>

@@ -364,3 +364,26 @@ def prodchange_page(cid: int, n: int, user=User):
     if pc is None or not pc.files:
         raise HTTPException(404)
     return _pdf_page(pc.files[0]["pdf"], n)
+
+
+@router.get("/production", response_class=HTMLResponse)
+def production_home(request: Request, user=User):
+    """Production's home page: every product of the orders released to production, with its production drawing (P),
+    whether it is released to the shop floor, and the stop alerts waiting for this person."""
+    from .app import stage_of
+    rows = []
+    with db.Session() as s:
+        for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
+            st, _ = stage_of(o.steps, any(l.revisions for l in o.lines))
+            if st not in ("production", "completed"):
+                continue
+            for l in o.lines:
+                if not l.revisions or l.cancelled_at:
+                    continue
+                r = l.revisions[-1]
+                ps = next((x for x in reversed(l.sets) if x.kind == "PRODUCTION" and x.revision_id == r.id and x.files), None)
+                rows.append(dict(ref=o.source_ref, no=l.no, name=l.name.split("(")[0].strip(), done=st == "completed", ps=ps,
+                                 job=header_value((ps.details.get("job_order") if ps else o.job_order) or "", "Job no. not set"),
+                                 deadline=header_value((ps.details.get("deadline") if ps else o.delivery_date) or "", "Deadline not set")))
+        alerts = list(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open").order_by(db.Task.id.desc())))
+    return T.TemplateResponse(request, "production_home.html", ctx(user, rows=rows, alerts=alerts, nav="production", hide_back=True))

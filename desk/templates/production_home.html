@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Production · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <h1 style="margin:0;font-size:22px">Production</h1>
+  {% if alerts %}
+  <div class="card" role="alert" style="border-color:#B91C1C">
+    <div style="font-weight:600;color:#B91C1C">Waiting for you ({{ alerts|length }})</div>
+    {% for t in alerts %}<div class="small" style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:6px{% endif %}">
+      <span style="flex:1 1 auto">{{ t.text }}</span>
+      <form method="post" action="/tasks/{{ t.id }}/done"><button class="sm">Done</button></form></div>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="card">
+    <div style="font-weight:600">Products in production ({{ rows|length }})</div>
+    {% if rows %}
+    <div class="scroll"><table>
+      <tr><th>Order</th><th>Product</th><th>Job no.</th><th>Deadline</th><th>Production drawing</th><th></th></tr>
+      {% for r in rows %}
+      <tr>
+        <td><b>{{ r.ref }}</b>{% if r.done %}<div class="sub small">completed</div>{% endif %}</td>
+        <td>Product {{ r.no }} · {{ r.name }}</td>
+        <td class="small">{{ r.job }}</td><td class="small">{{ r.deadline }}</td>
+        <td>{% if r.ps %}<span class="tag {{ 'ok' if r.ps.released_at else 'ask' }}">P{{ r.ps.prod_no }} · {{ 'released' if r.ps.released_at else 'not released yet' }}</span>{% else %}<span class="tag dim">Not made yet</span>{% endif %}</td>
+        <td>{% if r.ps %}<a class="btn" style="padding:6px 14px" href="/orders/{{ r.ref }}/production/{{ r.no }}">Open</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<div class="sub">No order is in production right now.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

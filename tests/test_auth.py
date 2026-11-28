@@ -37,5 +37,26 @@ def test_sign_in_rules():
     assert c.get("/orders/Q-2026-10-444", follow_redirects=False).headers["location"] == "/login"
 
 
+
+def test_role_mailboxes():
+    """design@ / production@ / sales@ addresses are added with their role at the first sign-in (Kushal 28-Nov-2026)."""
+    for email, role, home in (("design@encoreprimefurniture.com", "drawing", "/"), ("production@encoreprimefurniture.com", "production", "/"),
+                              ("sales2@encoreprimefurniture.com", "sales", "/")):
+        c, to = _try(dict(email=email, email_verified=True, name="Role box"))
+        assert to == home
+        with db.Session() as s:
+            assert s.query(db.User).filter_by(email=email).one().role == role
+    c, _ = _try(dict(email="production@encoreprimefurniture.com", email_verified=True))
+    assert c.get("/", follow_redirects=False).headers["location"] == "/production"          # production's own home page
+    with db.Session() as s:                                                              # a listed person keeps the role given to them
+        s.add(db.User(email="design.lead@encoreprimefurniture.com", name="Lead", role="coordinator")); s.commit()
+    _try(dict(email="design.lead@encoreprimefurniture.com", email_verified=True))
+    with db.Session() as s:
+        assert s.query(db.User).filter_by(email="design.lead@encoreprimefurniture.com").one().role == "coordinator"
+        s.query(db.User).filter_by(email="production@encoreprimefurniture.com").one().active = False; s.commit()
+    assert _try(dict(email="production@encoreprimefurniture.com", email_verified=True))[1] == "/login?error=notlisted"   # switched off stays off
+    assert _try(dict(email="designs@gmail.com", email_verified=True))[1] == "/login?error=notlisted"                     # outside the company
+
+
 if __name__ == "__main__":
     test_sign_in_rules(); print("auth tests pass")

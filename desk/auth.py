@@ -14,7 +14,47 @@ DOMAIN = os.environ.get("DESK_DOMAIN", "encoreprimefurniture.com")
 ON_SERVER = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
 DEV = os.environ.get("DESK_DEV_LOGIN") == "1" and not ON_SERVER           # pick-a-user sign-in for building; never on the server
 DEFAULT_USERS = "kushal@encoreprimefurniture.com|Kushal Singhal|admin;sushil@encoreprimefurniture.com|Sushil Singhal|drawing;info@encoreprimefurniture.com|Anchal Dawar|coordinator"
-ROLES = {"admin": "Administrator", "drawing": "Drawing user", "coordinator": "Sales coordinator"}
+ROLES = {"admin": "Administrator", "drawing": "Designer", "coordinator": "Sales coordinator", "sales": "Salesperson", "production": "Production"}
+# roles by email (Kushal 28-Nov-2026): design@encore... -> Designer, production@encore... -> Production, sales@encore... -> Salesperson.
+# An account not on the user list whose address starts with one of these words is added with that role at its first sign-in;
+# people already on the list keep the role the administrator gave them.
+PREFIX_ROLES = (("design", "drawing"), ("production", "production"), ("sales", "sales"))
+
+# What each role sees (Kushal 28-Nov-2026): the administrator everything; designers and the sales coordinator everything but
+# the administrator's controls, production included; a salesperson everything but the administrator's controls and the
+# production drawings; production only what is about production.
+PRODUCTION_PATHS = (r"^/orders/[^/]+/production(/|$)", r"^/production$", r"^/sets/", r"^/production-files/", r"^/prodpreview/", r"^/prodchange/",
+                    r"^/orders/[^/]+/sets/", r"^/orders/[^/]+/bom$", r"^/orders/[^/]+/view/\d+/production$")
+PRODUCTION_ALSO = (r"^/$", r"^/photos/", r"^/tasks/\d+/done$", r"^/static/")       # what production users also reach
+
+
+def role_for_email(email):
+    """The role an unlisted @DOMAIN account gets from the start of its address, or None."""
+    local = (email or "").lower().split("@")[0]
+    return next((role for word, role in PREFIX_ROLES if local.startswith(word)), None)
+
+
+def sees_production(user):
+    return user.role != "sales"
+
+
+def sees_client(user):
+    return user.role != "production"
+
+
+def allowed(user, path, query=""):
+    """Whether this user may open this address (checked on every request, so a hidden link cannot be typed in)."""
+    import re as _re
+    prod = any(_re.search(p, path) for p in PRODUCTION_PATHS) or (_re.search(r"^/orders/[^/]+/view/\d+$", path) and "mode=prod" in (query or ""))
+    if user.role == "production":
+        return prod or any(_re.search(p, path) for p in PRODUCTION_ALSO)
+    if user.role == "sales":
+        return not prod
+    return True
+
+
+class NotAllowed(Exception):
+    pass
 
 
 # secondary administrators (decision 8): approve requests and day-to-day changes, but no engine changes, no role changes and
@@ -55,6 +95,8 @@ def current_user(request: Request):
         with db.Session() as s:
             u = s.get(db.User, uid)
             if u and u.active:
+                if not allowed(u, request.url.path, request.url.query):
+                    raise NotAllowed(u.role)
                 return u
     raise NotSignedIn()
 
@@ -128,6 +170,9 @@ def callback(request: Request, code: str = "", state: str = ""):
         return RedirectResponse("/login?error=notlisted")
     with db.Session() as s:
         u = s.scalar(select(db.User).where(db.User.email == email, db.User.active == True))       # noqa: E712
+        if u is None and role_for_email(email) and s.scalar(select(db.User).where(db.User.email == email)) is None:
+            u = db.User(email=email, name=(who.get("name") or email.split("@")[0]).strip()[:120], role=role_for_email(email))
+            s.add(u); s.commit()                                         # a role mailbox (design@, production@, sales@)
         if u is None:
             return RedirectResponse("/login?error=notlisted")
         request.session.clear()
