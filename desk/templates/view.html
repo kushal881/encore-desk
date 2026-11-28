@@ -180,7 +180,7 @@
     </div>
     <div class="card">
       <div style="font-weight:600">Versions of this drawing</div>
-      {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current %}
+      {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current and not locked %}
       <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span>{% if not shown %} <span class="tag info">shown</span>{% endif %}</div>{% endif %}
       {% for r in l.revisions|reverse %}
       <div class="small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}

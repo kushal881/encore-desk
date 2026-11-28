@@ -84,9 +84,39 @@ def test_issue_rules(monkeypatch):
     v = c.get(A + "/view/1").text
     assert "Approved by the client" in v and "mark ready to issue</button>" not in v and "so it is locked" in v
     with db.Session() as s:                                    # even with a newer preview drawn after approval
-        s.query(db.OrderLine).filter_by(no=1).one().drawing.engine_version = "v12"; s.commit()
+        d1 = s.query(db.OrderLine).filter_by(no=1).one().drawing
+        d1.engine_version, d1.made_at = "v12", db.now(); s.commit()
     assert "mark ready to issue</button>" not in c.get(A + "/view/1").text
     assert "Product 1: approved by the client, locked" in c.get(A + "/issue").text
+    # retest 28-Nov 09:35: an approved drawing shows Rev A, issued and approved, nothing else
+    v = c.get(A + "/view/1").text
+    assert "Rev A" in v and "Preview, not issued" not in v and "Current preview</a>" not in v
+    v = c.get(A + "/issue").text
+    assert "issued and approved" in v and "changed since, not issued" not in v.split("Issued drawings")[1].split("Combined PDF")[0].split("Product 2")[0]
+
+
+def test_issued_before_the_fix():
+    """Old data on staging: Rev A issued before the desk moved the product's drawing to the issued revision, so the product
+    still holds the older preview (made on v6). The viewer shows Rev A and nothing says "changed since"; a change confirmed
+    after the issue is still a change."""
+    if not engines.ENGINES_DIR:
+        pytest.skip("ENGINES_DIR not set")
+    import datetime
+    c.post("/login/dev/2")
+    with db.Session() as s:                                    # product 2 (issued, not approved): put back the old preview, as on staging
+        l2 = s.query(db.OrderLine).filter_by(no=2).one()
+        r2 = s.query(db.Revision).filter_by(line_id=l2.id).one()
+        l2.drawing.engine_version, l2.drawing.spec = "v6", dict(l2.drawing.spec, model=dict(l2.drawing.spec["model"], L=1500))
+        l2.drawing.made_at = r2.issued_at - datetime.timedelta(hours=1); s.commit()
+    v = c.get(A + "/view/2").text
+    assert "Rev A" in v and "Preview, not issued" not in v and "Current preview</a>" not in v
+    iss = c.get(A + "/issue").text.split("Issued drawings")[1].split("Combined PDF")[0]
+    assert "Product 2" in iss and "changed since, not issued" not in iss
+    with db.Session() as s:                                    # a change confirmed after the issue: it is listed as changed
+        l2 = s.query(db.OrderLine).filter_by(no=2).one()
+        s.add(db.Change(line_id=l2.id, typed="Product 2: 2 shelves", values={"model.shelves": 2}, status="confirmed", by="Sushil Singhal")); s.commit()
+    iss = c.get(A + "/issue").text.split("Issued drawings")[1].split("Combined PDF")[0]
+    assert "changed since, not issued" in iss
 
 
 if __name__ == "__main__":

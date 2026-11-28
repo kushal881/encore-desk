@@ -39,7 +39,7 @@
 
     {% if cur %}
     <div class="label">Issued drawings ({{ cur|length }})</div>
-    {% for l, r in cur %}<div class="small">{{ r.number }} · Product {{ l.no }} · {{ l.name.split('(')[0] }} · Rev {{ r.rev }}{% if not l.issued_current %} <span class="tag ask">changed since, not issued</span>{% endif %}</div>{% endfor %}
+    {% for l, r in cur %}<div class="small">{{ r.number }} · Product {{ l.no }} · {{ l.name.split('(')[0] }} · Rev {{ r.rev }}{% if l.no in locked %} <span class="tag ok">issued and approved</span>{% elif not l.issued_current %} <span class="tag ask">changed since, not issued</span>{% endif %}</div>{% endfor %}
     <div class="small">Combined PDF <a href="/orders/{{ o.source_ref }}/combined.pdf" target="_blank" rel="noopener">{{ combined }}</a> is made in serial order.</div>
 
     <form method="post" action="/orders/{{ o.source_ref }}/email" class="card" style="background:#FAFAF8;gap:10px">
