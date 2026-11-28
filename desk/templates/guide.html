@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Encore drawing desk{% endblock %}
+{% block body %}
+<style>
+.gdoc h2{font-size:18px;margin:24px 0 8px;scroll-margin-top:16px}.gdoc h3{font-size:15px;margin:16px 0 6px}
+.gdoc p,.gdoc li{line-height:1.6}.gdoc ol,.gdoc ul{padding-left:22px}
+.gdoc table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}.gdoc td,.gdoc th{border-bottom:1px solid #E3E1DA;padding:8px;text-align:left;vertical-align:top}
+.gdoc th{color:#5B5F66;font-weight:600}.gdoc code{background:#F1EFE9;border-radius:4px;padding:1px 5px}
+.gtabs{display:flex;gap:6px;flex-wrap:wrap}.gtabs a{min-height:44px;display:inline-flex;align-items:center;padding:0 14px;border-radius:8px;text-decoration:none;border:1px solid #E3E1DA;background:#fff;color:#3A3E45;font-weight:500}
+.gtabs a.on{background:#E3F1EE;color:#0E6B5C;border-color:#BFDDD6;font-weight:600}
+</style>
+<div class="page">
+  <div class="row" style="justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div><div class="sub small">How to use the drawing desk</div><h1 style="margin:0;font-size:22px">{{ title }}</h1></div>
+    {% if directors %}<div class="gtabs">
+      <a href="/guide" class="{{ 'on' if guide == 'staff' }}">Staff Guide</a>
+      <a href="/guide/directors" class="{{ 'on' if guide == 'directors' }}">Directors Guide</a>
+    </div>{% endif %}
+  </div>
+  {% if missing %}
+  <div class="card"><b>The guide is not available just now.</b><div class="sub">Its text could not be found on the server. Ask Kushal; everything else in the desk works as normal.</div></div>
+  {% else %}
+  {% if sections %}
+  <div class="card"><div class="label">Contents</div>
+    <ol style="margin:4px 0 0;padding-left:20px;line-height:2">{% for id, name in sections %}<li><a href="#{{ id }}">{{ name|replace(name.split(' ')[0] ~ ' ', '', 1) if name.split(' ')[0].endswith('.') else name }}</a></li>{% endfor %}</ol>
+  </div>
+  {% endif %}
+  <div class="card gdoc">{{ html|safe }}</div>
+  {% endif %}
+</div>
+{% endblock %}

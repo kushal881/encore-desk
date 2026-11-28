@@ -21,6 +21,7 @@ a{color:#0E6B5C}
 .content{flex:999 1 560px;min-width:0;display:flex;flex-direction:column}
 .pagehead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 24px 0}
 .pagehead:empty{display:none}
+.helpq{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:32px;border-radius:50%;border:1px solid #BFDDD6;background:#E3F1EE;color:#0E6B5C;font-weight:700;text-decoration:none}
 @media (max-width:820px){.sidenav{max-width:none;flex-basis:100%;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid #E3E1DA}.sidenav .brand{padding:0 6px}.sidenav .me{margin:0 0 0 auto;border:0;padding:0;flex-direction:row;align-items:center}}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 24px;background:#17191C;color:#fff}
 .bar .dim{color:#D6D3CA}
@@ -103,11 +104,12 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
   {% if not is_admin %}<a href="/my-requests" class="item {{ 'on' if nav == 'mine' }}">My requests{% if my_tasks %}<span class="count" style="margin-left:auto">{{ my_tasks }}</span>{% endif %}</a>{% endif %}
   {% if is_approver %}<a href="/approvals" class="item {{ 'on' if nav == 'appr' }}">Approvals{% if approvals_waiting %}<span class="count" style="margin-left:auto">{{ approvals_waiting }}</span>{% endif %}</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
+  <a href="/guide" class="item {{ 'on' if nav == 'guide' }}">Guide</a>
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>
     <form method="post" action="/logout"><button class="sm">Sign out</button></form></div>
 </nav>
 <div class="content">
-<div class="pagehead">{% if not hide_back %}<button type="button" class="sm" onclick="if(history.length>1){history.back()}else{location.href='/'}" aria-label="Back to the previous page">&larr; Back</button>{% endif %}{% block crumb %}{% endblock %}</div>
+<div class="pagehead">{% if not hide_back %}<button type="button" class="sm" onclick="if(history.length>1){history.back()}else{location.href='/'}" aria-label="Back to the previous page">&larr; Back</button>{% endif %}{% block crumb %}{% endblock %}{% set _help = help_for(request.url.path, is_approver) if request is defined and help_for is defined else None %}{% if _help %}<a href="{{ _help.url }}" class="helpq" title="Guide: {{ _help.label }}" aria-label="Help: {{ _help.label }} (opens the guide)">?</a>{% endif %}</div>
 {% block body %}{% endblock %}
 {% if engines_popup %}
 <div role="dialog" aria-label="New engines version" style="position:fixed;right:16px;bottom:16px;max-width:340px;background:#fff;border:1px solid #E3E1DA;border-left:4px solid #9A4508;border-radius:12px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:50;display:flex;flex-direction:column;gap:8px">

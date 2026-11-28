@@ -2,6 +2,13 @@
 {% block title %}Dashboard · Encore drawing desk{% endblock %}
 {% block body %}
 <div class="page">
+  {% if guide_card %}
+  <div class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px;border-left:4px solid #0E6B5C">
+    <div style="flex:1 1 260px"><b>{{ 'Directors guide' if is_approver else 'New here?' }}</b> <span class="sub">{{ 'Approvals, engines and keeping the desk running, step by step.' if is_approver else 'How a project goes from Odoo quotation to production, step by step.' }}</span></div>
+    <a class="btn" href="{{ '/guide/directors' if is_approver else '/guide' }}" style="min-height:44px;display:inline-flex;align-items:center;padding:0 16px;border-radius:10px;background:#0E6B5C;color:#fff;text-decoration:none;font-weight:600">{{ 'Directors guide ›' if is_approver else 'Read the guide ›' }}</a>
+    <form method="post" action="/guide/dismiss" style="margin:0"><button class="sm" aria-label="Hide this card">Hide</button></form>
+  </div>
+  {% endif %}
   <div class="tiles">
     {% for k, n, t in (('active', count.active, 'Active projects'), ('pending', count.pending, 'Drawings pending'), ('with_client', count.with_client, 'Waiting for client approval'), ('approved', count.approved, 'Approved, not yet released'), ('production', count.production, 'In production')) %}
     <a class="tile {{ 'on' if focus == k }}" href="/?focus={{ k }}#drawings" aria-label="{{ n }} {{ t }}. Show the drawings."><div class="n">{{ n }}</div><div class="sub">{{ t }}</div></a>

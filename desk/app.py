@@ -318,6 +318,7 @@ def ctx(user, **kw):
     lv = auth.level(user)
     newer = engines.NEWER if user.role == "admin" else ""                # a newer approved engine version: administrators only
     kw.setdefault("engines_newer", newer)
+    kw.setdefault("guide_card", not getattr(user, "guide_dismissed", False))
     kw.setdefault("engines_popup", bool(newer) and (getattr(user, "engines_dismissed", "") or "") != newer)
     return dict(user=user.name, role=auth.ROLES.get(user.role, user.role) if lv != "admin2" else "Secondary administrator", is_admin=user.role == "admin",
                 is_approver=lv in ("admin", "admin2"), approvals_waiting=waiting + ch_waiting, my_tasks=tasks, engine_version=engines.version(), requests_waiting=waiting, **kw)
@@ -1992,5 +1993,7 @@ from .quotes import router as _quotes                                # screen 8:
 app.include_router(_quotes)
 
 
+from .guide import router as _guide                                    # issue #42: the Guide (staff / directors)
+app.include_router(_guide)
 from .clients import router as _clients                              # issue #34: client approvals column
 app.include_router(_clients)
