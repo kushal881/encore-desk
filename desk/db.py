@@ -408,6 +408,7 @@ class Mark(Base):
     label: Mapped[str] = mapped_column(Text, default="")
     by: Mapped[str] = mapped_column(String(120), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    turn_id: Mapped[int] = mapped_column(Integer, default=0)            # issue #82: the AI message it went out with (0 = a chip not sent yet)
 
 
 class Review(Base):
@@ -454,6 +455,8 @@ class AiTurn(Base):
     error: Mapped[str] = mapped_column(Text, default="")                 # why the engine refused the trial
     engine_version: Mapped[str] = mapped_column(String(80), default="")
     change_id: Mapped[int] = mapped_column(Integer, default=0)           # the confirmed change made on Accept
+    parts: Mapped[list] = mapped_column(JSON, default=list)              # issue #82: one line per marker / typed text of one send
+                                                                         # [dict(marker, typed, kind, said, values, answer, dropped)]
     by: Mapped[str] = mapped_column(String(120), default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 

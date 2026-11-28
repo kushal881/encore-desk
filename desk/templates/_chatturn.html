@@ -1,0 +1,34 @@
+{# One message and its reply in the drawing page's chat (issue #82). tr.lines: one line per marker / typed text. #}
+{% set ln_ = tr.lines %}
+<div class="bub">
+  {% if ln_|selectattr('marker')|rejectattr('carried')|list %}<div style="display:flex;flex-wrap:wrap;gap:4px">{% for x in ln_ if x.marker and not x.carried %}<span class="chip" data-mark="{{ x.marker }}"><span class="n">{{ x.marker }}</span>{{ (tr.parts[x.k].typed.split(': ', 1)[1] if tr.parts and ': ' in tr.parts[x.k].typed else '')[:60] }}</span>{% endfor %}</div>{% endif %}
+  {% for x in ln_ if not x.marker and not x.carried %}<div>{{ tr.parts[x.k].typed if tr.parts else tr.typed }}</div>{% endfor %}
+  <span class="sub" style="font-size:11px;align-self:flex-end">{{ tr.by.split(' ')[0] if tr.by else 'You' }} · {{ tr.at|when }}</span>
+</div>
+<div class="ai">
+  <span class="av">AI</span>
+  <div style="display:flex;flex-direction:column;gap:6px;flex-grow:1;min-width:0">
+    {% set nch = ln_|selectattr('state', 'in', ['waiting', 'accepted'])|list|length %}
+    {% set nbr = ln_|selectattr('state', 'equalto', 'bridge')|list|length %}
+    {% if tr.status == 'failed' %}<div class="small" style="color:#B91C1C">The engine refused it: {{ tr.error }}. Undo a line, or change the request.</div>
+    {% elif tr.status == 'merged' %}<div class="small sub">Carried into the next message, so all waiting changes are drawn together.</div>
+    {% elif nch or nbr or tr.status in ('expired', 'undone', 'withdrawn') %}<div class="small">{% if tr.status == 'trial' %}Done {{ nch }} of {{ ln_|rejectattr('carried')|list|length }}. The engine redrew it{% if tr.can_accept %} and all automatic checks pass{% else %}: {% for c in tr.rows if c.state != 'pass' %}{{ c.title|lower }}: {{ c.text|lower }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}.{% elif tr.status == 'accepted' %}Accepted.{% elif tr.status in ('undone', 'withdrawn') %}Undone.{% elif tr.status == 'expired' %}Dropped: {% if l.last_rev %}Rev {{ l.last_rev.rev }}{% else %}the drawing{% endif %} was issued after this proposal.{% endif %}{% if nbr %} {{ nbr }} can't be drawn by the engine yet: they go to the bridge.{% endif %}</div>{% endif %}
+    {% if ln_|selectattr('state', 'ne', 'answer')|list %}
+    <div class="res">
+      {% for x in ln_ if x.state != 'answer' %}
+      <div class="r {{ x.state }}" {% if x.marker %}data-mark="{{ x.marker }}"{% endif %}>
+        {% if x.marker %}<span class="n">{{ x.marker }}</span>{% endif %}
+        <span class="t" style="flex-grow:1;min-width:0">{{ x.text }}{% if x.carried %} <span class="sub">(earlier)</span>{% endif %}</span>
+        {% if x.state == 'waiting' %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/drop/{{ x.k }}"><button class="vbtn" style="min-height:26px;padding:0 8px">Undo</button></form>
+        {% elif x.state == 'accepted' %}<span class="tag ok">&#10003;</span>
+        {% elif x.state == 'bridge' %}<a class="tag" style="background:#FBEFE3;color:#9A4508;border:1px solid #E7B98A;text-decoration:none" href="/orders/{{ o.source_ref }}/work#bridge{{ l.no }}">&rarr; Bridge</a>
+        {% elif x.state == 'dropped' %}<span class="tag dim">Undone</span>{% elif x.state == 'failed' %}<span class="tag bad">Not drawn</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% for x in ln_ if x.state == 'answer' and x.text %}<div class="small" style="background:#E6EDFB;padding:6px 10px;border-radius:10px">{% if x.marker %}<b>{{ x.marker }}.</b> {% endif %}{{ x.text }}</div>{% endfor %}
+    {% if tr.status == 'accepted' and not tr.parts %}<div><form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="vbtn" style="min-height:26px">Undo</button></form></div>{% endif %}
+  </div>
+</div>
+{% if tr.status == 'accepted' %}<div class="tag ok" style="align-self:center">&#10003; Accepted {{ nch }} change{{ 's' if nch != 1 }} · preview redrawn{% if tr.parts %} · <form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button style="border:0;background:none;color:#0E6B5C;text-decoration:underline;cursor:pointer;font:inherit;padding:0;min-height:0">undo</button></form>{% endif %}</div>{% endif %}
