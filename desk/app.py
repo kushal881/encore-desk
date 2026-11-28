@@ -351,6 +351,7 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
     """The dashboard: every project the desk holds, where each stands, and what is waiting."""
     if user.role == "production":                                       # production's own home page
         return RedirectResponse("/production", status_code=303)
+    mysteps = []
     rows, items, count = [], [], dict(active=0, pending=0, with_client=0, approved=0, production=0, completed=0)
     titles = dict(active="All drawings of active projects", pending="Drawings pending", with_client="Drawings waiting for client approval", approved="Drawings approved, not yet released", production="Drawings in production")
     focus = focus if focus in titles else ""
@@ -382,7 +383,15 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
                                           url=("/orders/%s/view/%d" % (o.source_ref, l.no)) if can_view else "/orders/%s/work" % o.source_ref))
             if (st == "completed") == (show == "completed"):
                 try:
-                    gd = guide(load(o.source_ref))
+                    lo = load(o.source_ref)
+                    gd = guide(lo)
+                    if st != "completed":                                # issue #44: "My next steps" from the checklists
+                        from .checklist import steps as _cl, summary as _cs, involved as _inv
+                        if _inv(lo, user):
+                            cur, no, total = _cs(_cl(lo, auth.sees_production(user)))
+                            if cur:
+                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["title"], state=cur["state"],
+                                                    block=cur["block"], url=cur["url"] or "/orders/%s" % o.source_ref, label=cur["label"] or "Open"))
                 except Exception:
                     gd = dict(title="", step=0)
                 rows.append(dict(next=gd["title"], ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
@@ -392,7 +401,7 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
     samples = [r for r in SampleSource().list_refs() if r not in known]
     quotes = [q for q in ODOO.open_quotations() if q["ref"] not in known] if ODOO.configured else []
     odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, mysteps=mysteps[:12], rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
                                                                   hide_back=not focus and show == "active"))
 
 
@@ -529,7 +538,8 @@ def project(request: Request, ref: str, user=User):
         todo.append(("%d engine request%s for this order not built yet" % (er, "" if er == 1 else "s"), "See", "/engine-requests"))
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    from .checklist import steps as _checklist_steps                    # issue #44
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
                               bom_files=_bom_files(o),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
