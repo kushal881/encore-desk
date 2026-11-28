@@ -785,6 +785,7 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         s.commit()
     if done:
         keep_issued(o.id)
+        references.keep_all(o.id)                                      # issue #72: the client's folder exists now
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
 
 
@@ -1126,7 +1127,7 @@ def _changed_box(sh, tr):
 
 
 @app.post("/orders/{ref}/view/{no}/ai")
-def ai_ask(ref: str, no: int, text: str = Form(""), marker: int = Form(0), user=User):
+def ai_ask(ref: str, no: int, text: str = Form(""), marker: int = Form(0), use_refs: str = Form(""), user=User):
     """Send (issue #82, chat style): every marker chip not sent yet plus the typed text go out as ONE message. The assistant
     reads each on its own (one line each in the reply); every change it understood goes into ONE trial drawing, which the
     engine draws once. The drawing stays as it is until someone presses Accept all. A trial still waiting is carried into
@@ -1167,8 +1168,9 @@ def ai_ask(ref: str, no: int, text: str = Form(""), marker: int = Form(0), user=
         for p_ in (w.parts or [dict(marker=0, typed=w.typed, kind="change", said=w.said, values=w.values, answer="", dropped=False)]):
             if p_.get("kind") == "change" and not p_.get("dropped"):
                 parts_.append(dict(p_, carried=True))
+    pictures = references.images_for_ai(o.id, l.no) if use_refs else []   # issue #72: the client's sketches and photos, when ticked
     for mk, it in items:
-        reply = assistant.ask(it, product, current.get("model", {}), marks, edir, history)
+        reply = assistant.ask(it, product, current.get("model", {}), marks, edir, history, images=pictures)
         parts_.append(dict(marker=mk, typed=it, kind=reply["kind"], said=reply["said"], values=reply["values"],
                            answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""),
                            dropped=False))
@@ -1946,10 +1948,9 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
             keep = dict(prod_no=prev.prod_no, released_by=prev.released_by, released_at=prev.released_at) if prev is not None else {}
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name)
-            s.add(ps_)
+            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep)
+            s.add(ps_)                                                 # one set per product: the same record goes to the bucket
             made_sets.append(ps_)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep))
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
@@ -2453,6 +2454,10 @@ app.include_router(_guide)
 
 from .tour import router as _tour                                    # issue #43: first-time tour
 app.include_router(_tour)
+
+
+from . import references                                              # issue #72: client references
+app.include_router(references.router)
 
 
 from . import bridge                                                  # issue #73: bridge products (drawings made outside the engine)

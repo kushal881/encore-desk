@@ -74,6 +74,25 @@ class PortalTour(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Reference(Base):
+    """A client reference (issue #72): a sketch, photo, site measurement, PDF or CAD file the client gave us, for the whole
+    order (line_no 0) or one product. Never on the portal unless show_client; production sees it only if for_production."""
+    __tablename__ = "reference"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"), index=True)     # removed with the order (Remove from the desk)
+    line_no: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(10), default="")            # image | photo (heic) | pdf | cad
+    path: Mapped[str] = mapped_column(Text, default="")
+    thumb: Mapped[str] = mapped_column(Text, default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    by: Mapped[str] = mapped_column(String(120), default="")
+    source: Mapped[str] = mapped_column(String(10), default="desk")      # desk | portal
+    show_client: Mapped[bool] = mapped_column(Boolean, default=False)
+    for_production: Mapped[bool] = mapped_column(Boolean, default=False)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Client(Base):
     __tablename__ = "client"
     id: Mapped[int] = mapped_column(primary_key=True)
