@@ -113,6 +113,16 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
 <div class="content">
 <div class="pagehead">{% if not hide_back %}<button type="button" class="sm" onclick="if(history.length>1){history.back()}else{location.href='/'}" aria-label="Back to the previous page">&larr; Back</button>{% endif %}{% block crumb %}{% endblock %}</div>
 {% block body %}{% endblock %}
+{% if engines_popup %}
+<div role="dialog" aria-label="New engines version" style="position:fixed;right:16px;bottom:16px;max-width:340px;background:#fff;border:1px solid #E3E1DA;border-left:4px solid #9A4508;border-radius:12px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:50;display:flex;flex-direction:column;gap:8px">
+  <div style="font-weight:600">Engines {{ engines_newer }} is approved and ready</div>
+  <div class="sub small">Issued drawings stay on their version; only new previews use {{ engines_newer }}.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <form method="post" action="/engines/refresh" style="margin:0"><button class="primary">Update now</button></form>
+    <form method="post" action="/engines/dismiss" style="margin:0"><button>Later</button></form>
+  </div>
+</div>
+{% endif %}
 </div>
 </div>
 <dialog id="ask" aria-labelledby="askt">

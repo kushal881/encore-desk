@@ -135,6 +135,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(20), default="drawing")      # admin | drawing | coordinator
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    engines_dismissed: Mapped[str] = mapped_column(String(20), default="")   # the newer engine version whose notice they closed
 
 
 class Finish(Base):
