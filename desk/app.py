@@ -2150,6 +2150,45 @@ def remove_order(ref: str, user=User):
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/orders/{ref}/delete-permanently")
+def delete_permanently(ref: str, confirm: str = Form(""), user=User):
+    """Deletes a TEST project for good, at any stage: every database row that belongs to it (drawings, revisions,
+    approvals, emails log, quotation versions, portal access...) and its files in the storage bucket. Administrator only,
+    and only when the quotation number is typed to confirm. Odoo is not touched. Kept: file view logs and one-time codes
+    (history, see db.UNLINKED_KEPT). For clearing test data before go-live (Kushal, 28-Nov-2026)."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator can delete a project")
+    o = load(ref)
+    if confirm.strip() != o.source_ref:
+        raise HTTPException(400, "Type the quotation number exactly (%s) to delete it permanently. Nothing was changed." % o.source_ref)
+    from sqlalchemy.exc import SQLAlchemyError
+    removed_keys = []
+    try:
+        with db.Session() as s:
+            folder = _folder(s, o.client_id)
+            others = s.scalar(select(db.Order.id).where(db.Order.client_id == o.client_id, db.Order.id != o.id).limit(1))
+            prefix = os.path.join(engines.FILES, str(o.id)) + os.sep
+            for sf in s.scalars(select(db.StoredFile)).all():
+                if sf.path.startswith(prefix) or (folder and not others and sf.key.startswith(folder + "/")):
+                    removed_keys.append(sf.key)
+                    s.delete(sf)
+            db.delete_order(s, o.id)
+            s.commit()
+    except SQLAlchemyError as e:
+        print("Delete order %s failed: %s" % (ref, str(e)[:300]), flush=True)
+        raise HTTPException(409, "The project could not be deleted. Nothing was changed.")
+    if storage.configured():
+        for k in removed_keys:
+            try:
+                storage.client().delete_object(Bucket=storage.bucket(), Key=k)
+            except Exception as e:                                         # noqa: BLE001
+                print("Storage: could not delete %s (%s)" % (k, type(e).__name__), flush=True)
+    import shutil
+    shutil.rmtree(os.path.join(engines.FILES, str(o.id)), ignore_errors=True)
+    print("Deleted permanently by %s: %s (%d stored files)" % (user.email, ref, len(removed_keys)), flush=True)
+    return RedirectResponse("/", status_code=303)
+
+
 from .newproject import router as _newproject                        # screen 2: New project and Remake
 app.include_router(_newproject)
 from .projects import router as _projects                            # screen 3a: Projects
