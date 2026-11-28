@@ -161,7 +161,9 @@ def drawings(o):
     for n, (l, r) in enumerate(cur, 1):
         ap = desk._approval_of(r)
         item = (r.spec or {}).get("item", {})
+        from .clients import replies_for                                    # issue #34: Encore's answers to the client
         out.append(dict(l=l, r=r, ap=ap, status=status_of(ap), sheet=n, total=len(cur), name=item.get("product_name") or l.name,
+                        replies=replies_for(ap.id if ap is not None and ap.outcome == "changes" else 0),
                         code=item.get("product_code", ""), qty=item.get("qty", int(l.qty or 0)),
                         finishes=[(sw.get("use", ""), sw.get("code", "")) for sw in (r.spec or {}).get("swatches", []) if sw.get("code")]))
     return out
