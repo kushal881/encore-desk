@@ -126,5 +126,44 @@ def test_change_after_client_approval():
     assert _tasks("Anchal Dawar")[-1][0].startswith("Revision allowed for Product 1")
 
 
+
+def test_allowed_change_opens_the_panel_in_production():
+    """Staging, Q-2026-11-506 (28-Nov 10:04): the order was approved and released to production; after Kushal allowed a change
+    the panel stayed locked, and a change-panel proposal made before Rev A was issued kept the product "waiting" with no
+    Accept / Undo to clear it. Allowing must open the panel at any stage; a proposal older than the issue is dropped."""
+    if not engines.ENGINES_DIR:
+        pytest.skip("ENGINES_DIR not set")
+    import datetime
+    as_(SUSHIL)
+    with db.Session() as s:                                    # the client approves the other drawings: the order is approved
+        line = {l.no: l.id for l in s.query(db.OrderLine)}
+        r1 = s.query(db.Revision).filter_by(line_id=line[1]).order_by(db.Revision.id.desc()).first()
+        others = [r.id for no in (1, 3) for r in [s.query(db.Revision).filter_by(line_id=line[no]).order_by(db.Revision.id.desc()).first()] if r]
+        # the old proposal: made on Product 1 before its Rev A was issued (the 1500 test), never accepted or undone
+        s.add(db.AiTurn(line_id=line[1], shown="d1", typed="make it 1500 long", kind="change", said="Length 1200 -> 1500", status="trial",
+                        values={"model.L": 1500}, at=r1.issued_at - datetime.timedelta(hours=1))); s.commit()
+    for rid in others:
+        c.post("%s/answer-from-client/%d" % (A, rid), data={"outcome": "approved", "name": "Mr Singh", "how": "email", "on": "2026-11-28"},
+               files={"proof": ("reply.eml", b"Approved", "message/rfc822")})
+    as_(KUSHAL)
+    c.post(A + "/step/released", data={"note": ""})
+    from desk.app import load
+    assert load("Q-2026-10-444").stage == "production"
+    v = c.get(A + "/view/1").text
+    assert "so it is locked" in v and "Accept or Undo the change first" not in v              # the old proposal no longer blocks
+    with db.Session() as s:
+        assert s.query(db.AiTurn).filter_by(line_id=line[1], status="trial").count() == 0
+    as_(SUSHIL)
+    c.post(A + "/view/1/permission", data={"text": "Client wants it 1500 long"})
+    with db.Session() as s:
+        cr = s.query(db.ChangeRequest).filter_by(kind="after_approval", line_no=1).one().id
+    as_(KUSHAL)
+    c.post("/approvals/after_approval/%d/approve" % cr)
+    as_(SUSHIL)
+    v = c.get(A + "/view/1").text
+    assert 'action="/orders/Q-2026-10-444/view/1/ai"' in v and "so it is locked" not in v      # open, although in production
+    assert "Accept or Undo the change first" not in v and "Dropped: Rev A was issued after this proposal" in v
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

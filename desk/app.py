@@ -193,6 +193,8 @@ def load(ref):
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
             l.photo = ph.id if ph else None
             l.photo_v = int(ph.at.timestamp()) if ph else 0
+            if l.last_rev:
+                _expire_old_trials(l)
             l.ai_waiting = s.scalar(select(db.AiTurn.id).where(db.AiTurn.line_id == l.id, db.AiTurn.status == "trial").limit(1)) is not None
             d_ = l.drawing                                           # marked ready to issue in the viewer (that exact preview)
             l.review = s.scalars(select(db.Review).where(db.Review.line_id == l.id, db.Review.shown == "d%d" % int(d_.made_at.timestamp())).order_by(db.Review.id.desc())).first() \
@@ -764,6 +766,20 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
 
 
 # ---- the AI change panel ---------------------------------------------------------------------------------------------
+def _expire_old_trials(l):
+    """A proposal from the change panel made before the last issue can never be accepted (the drawing changed under it):
+    it is dropped automatically, so it does not keep the product waiting (staging, Q-2026-11-506: the 1500 proposal
+    made before Rev A was issued)."""
+    issued = l.last_rev.issued_at.replace(tzinfo=None)
+    with db.Session() as s2:
+        old = [t for t in s2.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id, db.AiTurn.status == "trial"))
+               if t.at and t.at.replace(tzinfo=None) < issued]
+        for t in old:
+            t.status = "expired"
+        if old:
+            s2.commit()
+
+
 def _panel_state(o, l, sh, mode):
     """Whether the change panel is open on the drawing shown. -> "" when it is, otherwise the reason in plain words."""
     if mode == "prod":
@@ -772,10 +788,10 @@ def _panel_state(o, l, sh, mode):
         return "This product is an exact remake of a past drawing, so it is not changed here."
     if sh["r"] is not None and not l.issued_current and l.drawing and l.drawing.status == "preview":
         return "This is an older issued revision. Open the current drawing to change it."
+    if _permitted(o, l):                                                # Kushal allowed a change after approval: open,
+        return ""                                                       # whatever stage the order is at
     if l.revisions and o.stage in ("approved", "production", "completed") and not o.approval_pending:
         return "The client has approved this drawing, so it is locked. A change now needs Kushal's permission (a change after approval)."
-    if _permitted(o, l):
-        return ""
     ap = _approval_of(l.last_rev)
     if ap is not None and ap.outcome == "approved":
         return "The client approved Rev %s on %s (%s), so it is locked. A change now needs Kushal's permission (a change after approval)." % (l.last_rev.rev, ap.on, ap.name)

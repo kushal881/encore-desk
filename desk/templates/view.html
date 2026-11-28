@@ -153,7 +153,7 @@
             <a class="sm" style="align-self:center" href="{{ url(s=1) }}{{ '&' if '?' in url(s=1) else '?' }}compare={{ tr.id }}#compare">Compare</a>
           </div>
           {% elif tr.status == 'accepted' %}<div><span class="tag ok">Accepted</span> <form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form></div>
-          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% endif %}
+          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% elif tr.status == 'expired' %}<span class="tag dim">Dropped: {% if l.last_rev %}Rev {{ l.last_rev.rev }}{% else %}the drawing{% endif %} was issued after this proposal</span>{% endif %}
         </div>
         {% endif %}
       </div>
