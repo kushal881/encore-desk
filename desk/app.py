@@ -185,6 +185,8 @@ def load(ref):
                     l.engine_for = c.values["use_engine"]
             l.issued_current = bool(l.last_rev and l.drawing and l.drawing.status == "preview" and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
                                     and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
+            if not l.issued_current and l.last_rev and l.drawing and l.drawing.status == "preview" and _stale_preview(l):
+                l.issued_current = True                              # a preview left from before the issue: the issued revision replaced it
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
                                        and l.last_rev.engine_version != engines.version() and not l.remake)
             _ = l.sets, l.marks, l.areas
@@ -669,6 +671,21 @@ def _view_url(ref, no, rev=0, sheet=1, mode="client"):
     return "/orders/%s/view/%d%s" % (ref, no, "?" + q if q else "")
 
 
+def _stale_preview(l):
+    """Old data (issued before the desk moved the product's drawing to the issued revision, 28-Nov-2026): a preview made before
+    the last issue, with no change confirmed since, is not a newer drawing; the issued revision replaced it."""
+    issued = l.last_rev.issued_at.replace(tzinfo=None)
+    if l.drawing.made_at is None or l.drawing.made_at.replace(tzinfo=None) >= issued:
+        return False
+    return not any(c.status == "confirmed" and c.at and c.at.replace(tzinfo=None) > issued for c in l.changes)
+
+
+def _locked(o, l):
+    """The client approved the last issued revision and Kushal has not allowed a change: the drawing is locked."""
+    ap = _approval_of(l.last_rev) if l.last_rev else None
+    return bool(ap and ap.outcome == "approved" and not _permitted(o, l))
+
+
 def _shown(l, rev=0):
     """Which drawing of a product the viewer shows. -> dict(r, src, title, key, stamp, preview, failed, pdf, checks)."""
     r = next((x for x in l.revisions if x.id == rev), None)
@@ -712,7 +729,8 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     l = next((x for x in o.lines if x.no == no), None)
     if l is None or not (l.drawing or l.revisions):
         raise HTTPException(404)
-    sh = _shown(l, rev)
+    locked = _locked(o, l)
+    sh = _shown(l, rev or (l.last_rev.id if locked else 0))              # an approved drawing opens on the approved revision
     mode = "prod" if mode == "prod" and not sh["failed"] else "client"
     prod = _production_view(l, sh) if mode == "prod" else None
     if prod:
@@ -753,7 +771,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked or l.ai_waiting, mode,
                                                                                          approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,
                                                                                          ai=l.ai_waiting), review=review,
-                              marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None))
+                              marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None, locked=locked))
 
 
 # ---- the AI change panel ---------------------------------------------------------------------------------------------
@@ -952,7 +970,7 @@ def _combined(o):
 def issue_page(request: Request, ref: str, t: str = "", error: str = "", user=User):
     """Steps 5 to 7: issue the drawings, email them to the client, the portal access list, the client's answers."""
     o = load(ref)
-    locked = {l.no for l in o.lines if l.last_rev and (_approval_of(l.last_rev) or db.Approval(outcome="")).outcome == "approved" and not _permitted(o, l)}
+    locked = {l.no for l in o.lines if _locked(o, l)}
     to_issue = [l for l in o.lines if _ready(l) and not l.issued_current and l.no not in locked]
     not_ready = [(l, "approved by the client, locked" if l.no in locked else _why_not_ready(l)) for l in o.lines
                  if not l.issued_current and (l.no in locked or not _ready(l))]
@@ -969,7 +987,7 @@ def issue_page(request: Request, ref: str, t: str = "", error: str = "", user=Us
     approved = [l.no for l, r in cur if answers.get(r.id) and answers[r.id].outcome == "approved"]
     return T.TemplateResponse(request, "issue.html", ctx(user, o=o, tab="issue", to_issue=to_issue, not_ready=not_ready, cur=cur, answers=answers,
                               access=access, mails=mails, kind=kind, kinds=issuing.TEMPLATES, subject=subject, body=body, to=to, error=error,
-                              combined=issuing.combined_name(o.client.name), mail_on=issuing.configured(), approved=approved,
+                              combined=issuing.combined_name(o.client.name), mail_on=issuing.configured(), approved=approved, locked=locked,
                               today=datetime.date.today().isoformat(), sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"]))
 
 
