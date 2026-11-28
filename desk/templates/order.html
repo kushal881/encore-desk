@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block title %}{{ o.source_ref }} · Encore drawing desk{% endblock %}
 {% block crumb %}<span class="tag {{ 'ask' if o.stage in ('drawing','issued','sent') else 'ok' if o.stage in ('approved','production') else 'dim' }}">{{ o.stage_text }}</span>{% endblock %}
+{% macro bridge_form(l, again=False) %}{% if can_bridge %}
+<style>.bridgef > *,.bridgef > input[type=text],.bridgef > select{flex:0 0 auto}</style>
+<details id="bridge{{ l.no }}"{% if again %} class="small"{% endif %}><summary>{{ 'Upload a new version of the bridge drawing' if again else 'Use a bridge drawing (made outside the engine)' }}</summary>
+  <form method="post" action="/orders/{{ o.source_ref }}/bridge/{{ l.no }}" enctype="multipart/form-data" class="bridgef" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+    <label class="small" for="bp{{ l.no }}">Drawing PDF (needed)</label><input type="file" id="bp{{ l.no }}" name="pdf" accept=".pdf,application/pdf" required>
+    <label class="small" for="bd{{ l.no }}">DXF (optional)</label><input type="file" id="bd{{ l.no }}" name="dxf" accept=".dxf">
+    <label class="small" for="bb{{ l.no }}">BOM / cut list (optional)</label><input type="file" id="bb{{ l.no }}" name="bom">
+    {% if not again %}
+    <label class="small" for="br{{ l.no }}">Engine request it waits for</label>
+    <select class="sm" id="br{{ l.no }}" name="request_id" style="min-height:34px;font-size:13px"><option value="0">New engine request (describe below)</option>
+      {% for rq in bridge_requests %}<option value="{{ rq.id }}"{% if loop.first and rq.product and rq.product in l.name %} selected{% endif %}>#{{ rq.id }} {{ rq.product }}: {{ rq.text[:60] }}</option>{% endfor %}</select>
+    <label class="sr" for="bt{{ l.no }}">What the engine should learn</label>
+    <input class="sm" type="text" id="bt{{ l.no }}" name="request_text" placeholder="For a new request: what the engine should be able to draw" value="Add {{ l.name.split('(')[0].strip() }} to the engine">
+    {% else %}<input type="hidden" name="request_id" value="{{ l.drawing.spec.bridge.request }}">{% endif %}
+    <div><button class="sm primary">Upload bridge drawing</button></div>
+    <div class="sub small">It is checked by hand instead of by the engine: an administrator ticks "{{ bridge_check }}" before it can be issued. The client sees a normal Encore drawing.</div>
+  </form></details>
+{% endif %}{% endmacro %}
 {% block body %}
 {% include "_ordernav.html" %}
 {% include "_guide.html" %}
@@ -119,6 +137,7 @@
     {% for l in o.lines %}{% if l.drawing %}
     <div class="card">
       <div style="display:flex;gap:8px;align-items:baseline"><div style="font-weight:600;flex-grow:1">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
+        {% if l.bridge %}<div class="tag bad" title="Made outside the engine">BRIDGE</div>{% endif %}
         {% if l.drawing.status == 'failed' %}<div class="tag bad">Could not draw</div>
         {% elif l.issued_current %}<div class="tag ok">Issued Rev {{ l.last_rev.rev }}</div>
         {% else %}<div class="tag ask">Preview, not issued</div>{% endif %}</div>
@@ -129,11 +148,22 @@
         <input class="sm" type="text" id="er{{ l.no }}" name="text" required value="Add {{ l.name.split('(')[0].strip() }} ({{ l.size_text }}) to the engine">
         <button class="sm">Ask for an engine addition</button>
       </form>
+      {{ bridge_form(l) }}
       {% else %}
       <a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><img src="{% if l.issued_current %}/revisions/{{ l.last_rev.id }}/png{% else %}/drawings/{{ l.drawing.id }}/png?v={{ l.drawing.made_at.timestamp()|int }}{% endif %}" alt="Drawing for product {{ l.no }}. Opens full size." style="width:100%;display:block;border:1px solid #D6D3CA;border-radius:4px"></a>
       {% if not l.issued_current %}<div class="small">{% if l.review %}<span class="tag ok">Checked, ready to issue</span> <span class="sub">by {{ l.review.by }}</span>{% else %}<span class="tag ask">Not checked yet</span> <span class="sub">open it in the viewer and mark it ready</span>{% endif %}</div>{% endif %}
       <div class="sub small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}"><b>View full size</b></a> · <a href="/drawings/{{ l.drawing.id }}/pdf?download=1">Download PDF</a>{% if l.drawing.files.dxf %} · <a href="/drawings/{{ l.drawing.id }}/dxf">DXF</a>{% endif %} · {{ l.drawing.made_by }}</div>
-      {% if not l.remake %}
+      {% if l.bridge %}
+      <div class="small" style="background:#FDE8E8;padding:8px 10px;border-radius:8px">
+        <b>BRIDGE drawing v{{ l.drawing.spec.bridge.upload }}</b>: made outside the engine (engine request #{{ l.drawing.spec.bridge.request }}). Changes are made outside and uploaded as a new version.
+        {% if l.drawing.files.bom %}<br><a href="/bridge/drawings/{{ l.drawing.id }}/bom">BOM / cut list uploaded with it</a>{% else %}<br>No BOM uploaded with it.{% endif %}
+        {% if not l.issued_current %}<br>{% if l.bridge_checked %}<span class="tag ok">{{ bridge_check }}</span> <span class="sub">by {{ l.drawing.spec.bridge.checked_by }}</span>
+        {% elif is_admin or role == 'Secondary administrator' %}<form method="post" action="/orders/{{ o.source_ref }}/bridge/{{ l.no }}/check" style="margin-top:6px" data-confirm="Tick '{{ bridge_check }}' for Product {{ l.no }}?\nYou confirm you checked clashes, sizes and the true view by hand." data-yes="Yes, checked"><button class="sm primary">{{ bridge_check }}</button></form>
+        {% else %}<span class="tag ask">Waiting for an administrator's hand check</span>{% endif %}{% endif %}
+      </div>
+      {{ bridge_form(l, True) }}
+      <form method="post" action="/orders/{{ o.source_ref }}/bridge/{{ l.no }}/redraw" class="small" data-confirm="Try drawing Product {{ l.no }} on the engine?\nIf the engine can draw it now, its drawing replaces the bridge drawing (issued as the next revision). If not, the bridge drawing stays." data-yes="Yes, try"><button class="sm">Redraw on the engine</button></form>
+      {% elif not l.remake %}
       <details>
         <summary>Ask for a change to this drawing</summary>
         <form class="row" method="post" action="/orders/{{ o.source_ref }}/change" style="margin-top:8px">
@@ -155,6 +185,8 @@
       <div class="sub small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a> · issued by {{ r.issued_by }} · <a href="/revisions/{{ r.id }}/pdf?download=1">PDF</a> · <a href="/revisions/{{ r.id }}/dxf">DXF</a> · engines {{ r.engine_version }}<br>{{ r.reason }}</div>
       {% endfor %}
     </div>
+    {% elif can_bridge %}
+    <div class="card"><div style="font-weight:600">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div><div class="sub small">Not drawn yet.</div>{{ bridge_form(l) }}</div>
     {% endif %}{% endfor %}
     {% if drawn and can_issue and needs_issue %}
     <form method="post" action="/orders/{{ o.source_ref }}/issue" class="card" id="issue" style="border-color:#0E6B5C" data-confirm="Issue these drawings?\n{{ plan|join('\n') }}\n\nAn issued drawing is never changed. A later change makes a new revision." data-yes="Yes, issue">
