@@ -83,9 +83,12 @@
       {% endif %}
       <form class="row" method="post" action="/open">
         <label class="sr" for="ref">Quotation or order number</label>
-        <input type="text" id="ref" name="ref" required placeholder="{{ 'Or type any quotation number, for example Q-2026-11-504' if odoo_on else 'Order number' }}">
+        <input type="search" id="ref" name="ref" required placeholder="{{ 'Type a quotation number or client, for example sudeva' if odoo_on else 'Order number or client' }}" data-qsearch data-results="dqres">
         <button class="primary">Open</button>
       </form>
+      <style>.qres{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer}.qres.on,.qres:hover{background:#F3FAF8;outline:1px solid #BFE0D6}.qres mark{background:#FDF1E2;color:inherit;padding:0}#ref{font:inherit;min-height:44px;border-radius:10px;padding:0 12px;border:1px solid #D6D3CA;background:#fff;flex:1 1 180px;min-width:0;box-sizing:border-box}</style>
+      <div id="dqres" style="display:flex;flex-direction:column;gap:2px;max-height:320px;overflow-y:auto"></div>
+      <script src="/static/qsearch.js"></script>
       <div class="sub small">{% if not odoo_on %}Odoo is not connected yet, so only sample orders can be opened. {% endif %}{% if samples %}Sample orders for practice: {% for r in samples %}<a href="/orders/{{ r }}">{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}.{% endif %}</div>
       {% if odoo %}<div class="sub small"><b>Odoo:</b> {{ odoo }}</div>{% endif %}
     </div>

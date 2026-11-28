@@ -78,7 +78,7 @@ def test_search_clears_and_live():
     assert "SAMPLE-REPEAT-1" in h and "Q-2026-10-444" in h
     assert 'type="search" data-live id="q"' in h and "desk-live-search" in h
     n = c.get("/new").text
-    assert n.count("data-live id=") == 2
+    assert n.count("data-live id=") == 1 and "data-qsearch" in n                    # quotation box: live results (issue #86)
     portal_past = open(os.path.join(os.path.dirname(__file__), "..", "desk", "templates", "portal", "past.html")).read()
     assert "data-live" in portal_past
 

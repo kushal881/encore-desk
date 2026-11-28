@@ -117,6 +117,9 @@ class Order(Base):
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # taken off the active lists (issue #50)
     archived_by: Mapped[str] = mapped_column(String(120), default="")
     archived_reason: Mapped[str] = mapped_column(Text, default="")
+    brief: Mapped[str] = mapped_column(Text, default="")                      # issue #86: the brief for the designer, from New project
+    needed_by: Mapped[str] = mapped_column(String(40), default="")
+    designer: Mapped[str] = mapped_column(String(120), default="")
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
