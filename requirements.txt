@@ -13,3 +13,4 @@ shapely
 psycopg[binary]
 anthropic>=2.14,<3
 openpyxl
+boto3
