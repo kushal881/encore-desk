@@ -152,7 +152,7 @@ def load(ref):
                 if l.no_drawing:                                   # bought-out, service, installation, delivery: listed, never drawn
                     o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, reason=l.no_drawing))
                     continue
-                line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty)
+                line = db.OrderLine(no=l.no, name=l.name, description=l.description, qty=l.qty, source_line=getattr(l, "line_ref", "") or "")
                 for q in read_line(l.name, l.description)["questions"]:
                     line.questions.append(db.Question(key=q["key"], text=q["text"], options=q["options"])); total += 1
                 o.lines.append(line)
@@ -161,6 +161,8 @@ def load(ref):
                               " (%d more line%s need%s no drawing)" % (skipped, "" if skipped == 1 else "s", "s" if skipped == 1 else "") if skipped else "",
                               "%d thing%s need%s your answer before I draw." % (total, "" if total == 1 else "s", "s" if total == 1 else "") if total else "Nothing is missing; the drawings can be made.")))
             s.add(o); s.commit()
+            from .quotes import snapshot                                 # quotation version 1: what later changes are compared with
+            s.add(db.QuoteVersion(order_id=o.id, n=1, lines=snapshot(src), why="first read")); s.commit()
             _fetch_photos(s, src)
         s.refresh(o)
         _ = o.not_drawn, o.added
@@ -184,7 +186,8 @@ def load(ref):
                 if c.status == "confirmed" and "use_engine" in (c.values or {}) and (not l.last_rev or c.at.replace(tzinfo=None) > l.last_rev.issued_at.replace(tzinfo=None)):
                     l.engine_for = c.values["use_engine"]
             l.issued_current = bool(l.last_rev and l.drawing and l.drawing.status == "preview" and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
-                                    and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version)
+                                    and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version
+                                    and (l.last_rev.spec.get("item") or {}).get("qty") == (l.drawing.spec.get("item") or {}).get("qty"))   # decision 4: qty is in the title block
             if not l.issued_current and l.last_rev and l.drawing and l.drawing.status == "preview" and _stale_preview(l):
                 l.issued_current = True                              # a preview left from before the issue: the issued revision replaced it
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
@@ -208,6 +211,7 @@ def load(ref):
         _ = o.client, o.messages, o.steps
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
+        o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
         for r in past:
@@ -302,7 +306,7 @@ def open_order(ref: str = Form(...), user=User):
 
 
 def _ready(l):
-    return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
+    return bool(not l.cancelled_at and l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
                 and not getattr(l, "ai_waiting", False))
 
 
@@ -378,6 +382,8 @@ def _bom_files(o):
 def project(request: Request, ref: str, user=User):
     """The project page: where the order stands, what needs attention, and every product with its drawing."""
     load(ref)
+    from .quotes import maybe_check                                    # decision 2: re-check the quotation when the project opens
+    maybe_check(ref)
     _, issued_aside = apply_no_drawing(ref)                                  # orders read before the rule existed get it too
     o = load(ref)
     todo = []
@@ -561,6 +567,9 @@ def decide(ref: str, cid: int, decision: str, user=User):
 def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = Form(""), user=User):
     """Issues every previewed line whose specification differs from its last issued revision. An issued revision is never changed."""
     o = load(ref)
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
     ready = [l for l in o.lines if _ready(l)]
     if nos.strip():                                                    # the Issue screen: only the drawings picked
         pick = {int(x) for x in re.findall(r"\d+", nos)}
@@ -1090,7 +1099,7 @@ def _approval_of(r):
 
 def _current(o):
     """The issued drawings of an order as they stand: [(line, revision)], in drawing-serial order."""
-    out = [(l, l.last_rev) for l in o.lines if l.last_rev]
+    out = [(l, l.last_rev) for l in o.lines if l.last_rev and not l.cancelled_at]     # a cancelled drawing is left out of the set
     return sorted(out, key=lambda x: (x[1].number.rsplit("-", 1)[-1], x[1].number))
 
 
@@ -1527,6 +1536,9 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
     o = load(ref)
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
     details = dict(job_order=job_order.strip() or o.job_order or "TBC", job_order_date=job_order_date.strip() or "TBC", deadline=deadline.strip() or "TBC")
     made, failed = [], []
     ok = next((st for st in reversed(o.steps) if st.kind == "approved"), None)
@@ -1565,7 +1577,10 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
     o = load(ref)
     if o.stage not in ("production", "completed"):
         raise HTTPException(400, "Release the order to production first")
-    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev}
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
     if not revs:
         raise HTTPException(400, "Nothing has been issued yet")
     on = bool(panel_saw)
@@ -1783,3 +1798,7 @@ def remove_order(ref: str, user=User):
     with db.Session() as s:
         s.delete(s.get(db.Order, o.id)); s.commit()
     return RedirectResponse("/", status_code=303)
+
+
+from .quotes import router as _quotes                                # screen 8: Quotation changes + the Odoo webhook
+app.include_router(_quotes)

@@ -6,5 +6,9 @@
   <a class="tab {{ 'on' if tab == 'specify' }}" href="/orders/{{ o.source_ref }}/specify">Specify</a>
   <a class="tab {{ 'on' if tab == 'work' }}" href="/orders/{{ o.source_ref }}/work">Questions and changes</a>
   <a class="tab {{ 'on' if tab == 'issue' }}" href="/orders/{{ o.source_ref }}/issue">Issue and approval</a>
+  <a class="tab {{ 'on' if tab == 'changes' }}" href="/orders/{{ o.source_ref }}/changes">Quotation changes{% if o.quote_open %} <span class="count">{{ o.quote_open }}</span>{% endif %}</a>
   {% for x in o.lines %}{% if x.revisions or x.drawing %}<a class="tab {{ 'on' if tab == 'p' ~ x.no }}" href="/orders/{{ o.source_ref }}/view/{{ x.no }}" title="{{ x.name.split('(')[0] }}">Drawing {{ x.no }}</a>{% endif %}{% endfor %}
 </nav>
+{% if o.quote_open and tab != 'changes' %}<div role="alert" style="background:#FDE8E8;color:#B91C1C;padding:10px 24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;border-bottom:1px solid #F5C2C2">
+  <b>The quotation changed in Odoo: {{ o.quote_open }} change{{ '' if o.quote_open == 1 else 's' }} to handle.</b> <span>Issue and production are locked until drawings and quotation match.</span>
+  <a class="btn" style="padding:4px 12px;margin-left:auto;border-color:#B91C1C;color:#B91C1C" href="/orders/{{ o.source_ref }}/changes">Open quotation changes</a></div>{% endif %}
