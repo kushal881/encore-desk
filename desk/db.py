@@ -150,6 +150,7 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_sign_in: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     engines_dismissed: Mapped[str] = mapped_column(String(20), default="")   # the newer engine version whose notice they closed
+    guide_dismissed: Mapped[bool] = mapped_column(Boolean, default=False)   # closed the dashboard's "New here? Read the guide" card
 
 
 class Finish(Base):

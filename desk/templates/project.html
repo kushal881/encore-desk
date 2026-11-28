@@ -8,6 +8,7 @@
   {% if is_admin %}<form method="post" action="/orders/{{ o.source_ref }}/reopen" style="margin-left:auto"><button class="sm primary">Reopen project</button></form>{% endif %}
 </div>{% endif %}
 {% include "_guide.html" %}
+{% include "_checklist.html" %}
 <div class="cols">
   <div style="flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:16px">
     <div class="card" style="gap:10px">
