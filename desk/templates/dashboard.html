@@ -79,8 +79,12 @@
       <div style="font-weight:600">Engines</div>
       <div>In use: <b>{{ engine_version }}</b>, approved.</div>
       {% if is_admin %}
-      <div class="sub small">Engine changes that have been built wait for your approval on GitHub: <a href="https://github.com/kushal881/encore-approved/pulls" target="_blank" rel="noopener">open proposals</a>. After you merge one, press the button to bring the new version here.</div>
-      <form method="post" action="/engines/refresh"><button class="sm">Check for a new approved version</button></form>
+      {% if engines_newer %}
+      <div class="tag ask" style="font-size:14px;padding:10px 12px;align-self:stretch" role="status">Engines {{ engines_newer }} is approved and ready.
+        <form method="post" action="/engines/refresh" style="display:inline;margin-left:8px"><button class="primary sm">Update now</button></form></div>
+      <div class="sub small">Drawings already issued stay on the version they were issued on. Only new previews use {{ engines_newer }}.</div>
+      {% else %}<div class="sub small">The desk checks for a newer approved version every hour and tells you here when there is one.</div>{% endif %}
+      <div class="sub small">Engine changes that have been built wait for your approval on GitHub: <a href="https://github.com/kushal881/encore-approved/pulls" target="_blank" rel="noopener">open proposals</a>.</div>
       {% endif %}
     </div>
   </div>

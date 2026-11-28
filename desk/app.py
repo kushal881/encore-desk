@@ -57,6 +57,19 @@ def engines_refresh(user=User):
         raise HTTPException(502, "Could not fetch the approved engines: %s" % str(e)[:200])
 
 
+@app.post("/engines/dismiss")
+def engines_dismiss(request: Request, user=User):
+    """Closes the 'new engines version' popup for this administrator until the next version. The dashboard banner stays."""
+    if user.role == "admin" and engines.NEWER:
+        with db.Session() as s:
+            s.get(db.User, user.id).engines_dismissed = engines.NEWER
+            s.commit()
+    from urllib.parse import urlsplit
+    u = urlsplit(request.headers.get("referer") or "/")                  # back to the same page, on this desk only
+    back = (u.path or "/") + ("?" + u.query if u.query else "")
+    return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/", status_code=303)
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "engines": engines.version(), "bucket": storage.configured()}
@@ -303,6 +316,9 @@ def ctx(user, **kw):
         ch_waiting = len(s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")).all())
         tasks = len(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open")).all())
     lv = auth.level(user)
+    newer = engines.NEWER if user.role == "admin" else ""                # a newer approved engine version: administrators only
+    kw.setdefault("engines_newer", newer)
+    kw.setdefault("engines_popup", bool(newer) and (getattr(user, "engines_dismissed", "") or "") != newer)
     return dict(user=user.name, role=auth.ROLES.get(user.role, user.role) if lv != "admin2" else "Secondary administrator", is_admin=user.role == "admin",
                 is_approver=lv in ("admin", "admin2"), approvals_waiting=waiting + ch_waiting, my_tasks=tasks, engine_version=engines.version(), requests_waiting=waiting, **kw)
 

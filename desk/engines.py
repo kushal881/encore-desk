@@ -10,11 +10,13 @@ ENGINES_DIR = os.environ.get("ENGINES_DIR", "")                            # set
 VERSION = ""
 
 
-def fetch_latest():
-    """Downloads the newest approved version (the highest v-number) if it is not here yet, and switches to it.
-    -> the version label. Older versions stay on disk so a drawing can later be rebuilt with the version it was approved on."""
-    global ENGINES_DIR, VERSION
-    import httpx, tarfile, io
+NEWER = ""                                                                 # a newer approved version found by the hourly check
+CHECK_MINUTES = int(os.environ.get("ENGINES_CHECK_MINUTES", "60") or 60)
+
+
+def latest_tag():
+    """The newest approved version label in the approved repository (read-only). Raises when it cannot be read."""
+    import httpx
     if not KEY:
         raise RuntimeError("ENGINES_KEY is not set")
     h = {"Authorization": "Bearer " + KEY, "Accept": "application/vnd.github+json"}
@@ -23,10 +25,54 @@ def fetch_latest():
     nums = sorted(int(t["name"][1:]) for t in r.json() if t["name"][:1] == "v" and t["name"][1:].isdigit())
     if not nums:
         raise RuntimeError("The approved repository has no numbered version yet")
-    v = "v%d" % nums[-1]
+    return "v%d" % nums[-1]
+
+
+def fetch_latest():
+    """Downloads the newest approved version (the highest v-number) if it is not here yet, and switches to it.
+    -> the version label. Older versions stay on disk so a drawing can later be rebuilt with the version it was approved on."""
+    global ENGINES_DIR, VERSION, NEWER
+    v = latest_tag()
     dest = _download(v)
-    ENGINES_DIR, VERSION = dest, v
+    ENGINES_DIR, VERSION, NEWER = dest, v, ""
     return v
+
+
+def _num(v):
+    m = re.fullmatch(r"v(\d+)", v or "")
+    return int(m.group(1)) if m else None
+
+
+def check_newer():
+    """Looks (read-only) for an approved version newer than the one in use. Sets and returns NEWER ("" = none).
+    When the repository cannot be read, nothing is shown: NEWER is cleared and the reason only logged."""
+    global NEWER
+    try:
+        v = latest_tag()
+    except Exception as e:                                                 # noqa: BLE001
+        print("Engines: could not check for a newer approved version (%s)" % str(e)[:120], flush=True)
+        NEWER = ""
+        return NEWER
+    cur, new = _num(VERSION), _num(v)
+    NEWER = v if cur is not None and new is not None and new > cur else ""
+    return NEWER
+
+
+def _keep_checking():
+    import time
+    while True:
+        time.sleep(max(1, CHECK_MINUTES) * 60)
+        check_newer()
+
+
+def start_checking():
+    """Checks for a newer approved version every CHECK_MINUTES (default 60), in the background. Not with a developer copy."""
+    if ENGINES_DIR and VERSION == "developer copy":
+        return None
+    import threading
+    th = threading.Thread(target=_keep_checking, name="engines-check", daemon=True)
+    th.start()
+    return th
 
 
 def ensure_fonts():
@@ -97,6 +143,7 @@ def start():
         fetch_latest()
     except Exception as e:
         VERSION = "not available (%s)" % str(e)[:80]
+    start_checking()
 
 
 def version_label():
