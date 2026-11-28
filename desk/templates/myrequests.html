@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}My requests · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <div><div class="sub small">{{ user }} · {{ role|lower }}</div><h1 style="margin:0;font-size:22px">My requests &amp; tasks</h1></div>
+  <div class="tiles">
+    {% for k, hint, fg in (('Pending', 'With admin', '#9A4508'), ('Approved', 'Task to apply', '#0E6B5C'), ('Rejected', 'Task to close', '#B91C1C'), ('Done', 'Closed', '#3A3E45')) %}
+    <a class="tile {{ 'on' if show == k }}" href="/my-requests?show={{ k }}" aria-label="{{ counts[k] }} {{ k }} requests. {{ hint }}. Show them."
+       style="{% if show == k %}border-color:{{ fg }};box-shadow:0 0 0 1px {{ fg }}{% endif %}">
+      <div class="sub small" style="color:{{ fg }};font-weight:600">{{ k }}</div><div class="n">{{ counts[k] }}</div><div class="sub small">{{ hint }}</div></a>
+    {% endfor %}
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <div class="card" style="flex:3 1 520px">
+      <div style="display:flex;gap:12px;align-items:center"><div style="font-weight:600;flex-grow:1">{{ title }} ({{ rows|length }})</div>
+        {% if show != 'All' %}<a href="/my-requests">Show all</a>{% endif %}</div>
+      {% for r in rows %}
+      {% set col = {'Pending': ('ask', '#3A3E45'), 'Approved': ('ok', '#3A3E45'), 'Rejected': ('bad', '#8F1414'), 'Done': ('dim', '#3A3E45')}[r.status] %}
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px 0;{% if not loop.first %}border-top:1px solid #EEECE6{% endif %}">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span class="tag {{ col[0] }}">{{ r.status }}</span><b style="flex:1 1 240px">{{ r.title }}</b></div>
+        <div class="sub small">{% if r.ref %}<a href="/orders/{{ r.ref }}{% if r.no %}/view/{{ r.no }}{% endif %}">{{ r.ref }}{% if r.no %} · Product {{ r.no }}{% endif %}</a>{% else %}No project{% endif %}
+          · {{ r.kind_text }} · asked {{ r.asked|when }}</div>
+        <div class="small" style="color:{{ col[1] }}">
+          {% if r.status == 'Pending' %}Waiting for an admin decision.
+          {% elif r.kind == 'engine' and r.option == 'A' %}Approved as option A (this client only: the change goes in this product's file) by {{ r.decided_by }}.
+          {% elif r.kind == 'engine' and r.option == 'B' %}Sent to engine work (option B: a generic engine option, off by default){% if r.req == 'built' %}, now built and approved{% endif %}. Decided by {{ r.decided_by }}.
+          {% elif r.status == 'Rejected' %}Rejected by {{ r.decided_by }}.
+          {% else %}Approved by {{ r.decided_by }}.{% endif %}
+          {% if r.note %} Admin: "{{ r.note }}"{% endif %}</div>
+        {% if r.task and r.status != 'Pending' %}
+        <div class="small" style="background:#F4F3EF;border-radius:8px;padding:8px 10px"><b>Task:</b> {{ 'Completed.' if r.task.status == 'done' else r.task.text }}</div>
+        {% endif %}
+        {% if r.action %}
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          {% if r.action[1] == 'apply' %}
+          <form method="post" action="/my-requests/{{ r.kind }}/{{ r.id }}/apply" data-confirm="Redraw Product {{ r.no }} of {{ r.ref }} now? It goes back to Review; nothing is sent to the client."><button class="primary">{{ r.action[0] }}</button></form>
+          {% elif r.action[1] == 'panel' %}
+          <a class="btn primary" style="padding:0 16px;min-height:44px" href="/orders/{{ r.ref }}/view/{{ r.no }}#panel">{{ r.action[0] }}</a>
+          {% if r.task and r.task.status != 'done' %}<form method="post" action="/tasks/{{ r.task.id }}/done"><button>Mark task done</button></form>{% endif %}
+          {% else %}
+          <form method="post" action="/tasks/{{ r.task.id }}/done"><button>{{ r.action[0] }}</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}<div class="sub">{{ 'You have not asked for anything yet. Engine changes are asked from a product that cannot be drawn; changes after client approval from the locked change panel.' if show == 'All' else 'Nothing here.' }}</div>{% endfor %}
+    </div>
+    <div class="card" style="flex:1 1 260px">
+      <div style="font-weight:600">How it works</div>
+      <div class="small"><span class="tag ok">Approved</span> a task is made for you on that drawing. <b>Apply &amp; regenerate</b> redraws the product (on the new engine option when one was built) and opens it to check. A change for this client only is made in the product's change panel.</div>
+      <div class="small"><span class="tag bad">Rejected</span> the reason is shown. Keep the drawing as it is, or change it within the rules, and tell sales or the client.</div>
+      <div class="small">When the task is done, the drawing moves on to Review and the request closes.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
