@@ -27,6 +27,13 @@ def test_odoo_day():
     assert odoo._day("2026-12-10 05:30:00") == "10 DEC 2026" and odoo._day(False) == "" and odoo._day("") == "" and odoo._day("not a date") == ""
 
 
+def test_header_values():                                              # issue #33: no raw placeholders in the header
+    assert pr.header_value("", "Job no. not set") == "Job no. not set" and pr.header_value(None, "Deadline not set", "deadline ") == "Deadline not set"
+    assert pr.header_value("TBC", "Job no. not set") == "Job no. not set" and pr.header_value("JO-[NO.]", "Job no. not set") == "Job no. not set"
+    assert pr.header_value("[DATE]", "Deadline not set", "deadline ") == "Deadline not set"
+    assert pr.header_value(" JO 26-27-11-0119 ", "Job no. not set") == "JO 26-27-11-0119" and pr.header_value("10 DEC 2026", "x", "deadline ") == "deadline 10 DEC 2026"
+
+
 def set3():
     with db.Session() as s:
         l = s.query(db.OrderLine).filter_by(no=3).one()
@@ -44,7 +51,9 @@ def test_production(monkeypatch):
         c.post("%s/answer/%d" % (A, qs[key]), data={"value": val})
     c.post(A + "/draw")
     c.post(A + "/issue", data={"folder_no": "5", "back": "issue"})
-    assert c.get(P).status_code == 200 and "Make the production drawings first" in c.get(P).text        # not released yet
+    h = c.get(P).text
+    assert "Make the production drawings first" in h                                                 # not released yet
+    assert "JO-[NO.]" not in h and "[DATE]" not in h and "Deadline not set" in h                    # issue #33
     with db.Session() as s:
         o = s.query(db.Order).filter_by(source_ref="Q-2026-10-444").one()
         s.add(db.Step(order_id=o.id, kind="approved", note="Mr Singh, by email", by="Sushil Singhal")); s.commit()   # old data: approved as a step

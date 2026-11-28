@@ -120,10 +120,23 @@ def _page(request, user, o, l, tab, sheet, error=""):
     pages = f0["pages"] if f0 else 0
     sheet = min(max(sheet, 1), max(pages, 1))
     approved = _client_approved(o, l)
+    jo = (ps.details.get("job_order") if ps else o.job_order) or ""
+    dl = (ps.details.get("deadline") if ps else o.delivery_date) or ""
     return T.TemplateResponse(request, "production.html", ctx(
         user, o=o, l=l, r=r, ps=ps, vs=vs, tab=tab, sheet=sheet, pages=pages, turns=turns, trial=trial, asked=asked,
         bom=bom, rows=rows, depts=DEPTS, allowed=ALLOWED, locked_text=LOCKED, approved=approved, error=error, step=viewer.STEPS,
+        job_text=header_value(jo, "Job no. not set"), deadline_text=header_value(dl, "Deadline not set", "deadline "),
         ready=bool(ps), can_release=bool(ps and not ps.released_at and not trial and not asked), nav="projects"))
+
+
+PLACEHOLDERS = {"", "TBC", "JO-[NO.]", "[DATE]", "[NO.]"}
+
+
+def header_value(v, missing, prefix=""):
+    """The job order or deadline for the page header: the value, or plain words when it is not known yet (issue #33).
+    Placeholders the sheets use (JO-[NO.], [DATE], TBC) never show in the header."""
+    v = (v or "").strip()
+    return missing if v.upper() in PLACEHOLDERS else prefix + v
 
 
 def _client_approved(o, l):
