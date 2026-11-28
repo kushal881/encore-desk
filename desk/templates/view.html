@@ -127,6 +127,10 @@
     <div class="card" id="panel" style="border-color:#1D4ED8">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600">Change this drawing</div><span class="tag info">AI assistant</span></div>
       {% if panel %}<div class="small" style="background:#F1EFE9;padding:8px 10px;border-radius:8px">{{ panel }}</div>
+      {% if 'locked' in panel %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/permission" style="display:flex;flex-direction:column;gap:6px">
+        <label for="perm" class="small" style="font-weight:600">Ask Kushal for permission to change it</label>
+        <textarea id="perm" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px" placeholder="What has to change, and why"></textarea>
+        <button class="sm primary">Ask for permission</button></form>{% endif %}
       {% else %}
       <div class="sub small">{% if l.revisions %}Issued as Rev {{ l.last_rev.rev }} · an accepted change makes a new revision when issued{% else %}Not issued yet · changes keep Rev A{% endif %}</div>
       {% for tr in turns %}
@@ -149,7 +153,7 @@
             <a class="sm" style="align-self:center" href="{{ url(s=1) }}{{ '&' if '?' in url(s=1) else '?' }}compare={{ tr.id }}#compare">Compare</a>
           </div>
           {% elif tr.status == 'accepted' %}<div><span class="tag ok">Accepted</span> <form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form></div>
-          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% endif %}
+          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% elif tr.status == 'expired' %}<span class="tag dim">Dropped: {% if l.last_rev %}Rev {{ l.last_rev.rev }}{% else %}the drawing{% endif %} was issued after this proposal</span>{% endif %}
         </div>
         {% endif %}
       </div>

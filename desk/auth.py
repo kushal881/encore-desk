@@ -17,6 +17,25 @@ DEFAULT_USERS = "kushal@encoreprimefurniture.com|Kushal Singhal|admin;sushil@enc
 ROLES = {"admin": "Administrator", "drawing": "Drawing user", "coordinator": "Sales coordinator"}
 
 
+# secondary administrators (decision 8): approve requests and day-to-day changes, but no engine changes, no role changes and
+# no unlocking of client-approved drawings. Set in Railway as DESK_SECONDARY_ADMINS (emails, comma separated).
+SECONDARY = {e.strip().lower() for e in os.environ.get("DESK_SECONDARY_ADMINS", "sushil@encoreprimefurniture.com").split(",") if e.strip()}
+
+
+def level(user):
+    """admin | admin2 (secondary administrator) | staff"""
+    if user.role == "admin":
+        return "admin"
+    return "admin2" if (user.email or "").lower() in SECONDARY else "staff"
+
+
+def can_decide(user, kind):
+    """Who decides which request: engine changes and changes after client approval only the administrator;
+    revision raises also a secondary administrator."""
+    lv = level(user)
+    return lv == "admin" or (lv == "admin2" and kind == "revision")
+
+
 class NotSignedIn(Exception):
     pass
 

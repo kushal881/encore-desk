@@ -198,6 +198,39 @@ class EngineRequest(Base):
     decided_by: Mapped[str] = mapped_column(String(120), default="")
     decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")
+    option: Mapped[str] = mapped_column(String(4), default="")            # A: this client only (product file) | B: engine change
+
+
+class ChangeRequest(Base):
+    """A change that needs an administrator's permission: a change after client approval (unlocks that drawing for one
+    new revision), or a revision raise. The decision creates a task for the person who asked."""
+    __tablename__ = "change_request"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))                        # after_approval | revision
+    order_ref: Mapped[str] = mapped_column(String(80))
+    line_no: Mapped[int] = mapped_column(Integer, default=0)
+    product: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="asked")     # asked | approved | rejected
+    asked_by: Mapped[str] = mapped_column(String(120), default="")
+    asked_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    decided_by: Mapped[str] = mapped_column(String(120), default="")
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
+class Task(Base):
+    """Something a person has to do because of an administrator's decision (their request approved or rejected)."""
+    __tablename__ = "task"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assignee: Mapped[str] = mapped_column(String(120))
+    order_ref: Mapped[str] = mapped_column(String(80), default="")
+    line_no: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(40), default="")          # engine:<id> | change:<id>
+    status: Mapped[str] = mapped_column(String(10), default="open")      # open | done
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Photo(Base):
