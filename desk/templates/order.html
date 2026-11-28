@@ -2,17 +2,18 @@
 {% block title %}{{ o.source_ref }} · Encore drawing desk{% endblock %}
 {% block crumb %}<span class="tag {{ 'ask' if o.stage in ('drawing','issued','sent') else 'ok' if o.stage in ('approved','production') else 'dim' }}">{{ o.stage_text }}</span>{% endblock %}
 {% macro bridge_form(l, again=False) %}{% if can_bridge %}
+<style>.bridgef > *,.bridgef > input[type=text],.bridgef > select{flex:0 0 auto}</style>
 <details id="bridge{{ l.no }}"{% if again %} class="small"{% endif %}><summary>{{ 'Upload a new version of the bridge drawing' if again else 'Use a bridge drawing (made outside the engine)' }}</summary>
-  <form method="post" action="/orders/{{ o.source_ref }}/bridge/{{ l.no }}" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+  <form method="post" action="/orders/{{ o.source_ref }}/bridge/{{ l.no }}" enctype="multipart/form-data" class="bridgef" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
     <label class="small" for="bp{{ l.no }}">Drawing PDF (needed)</label><input type="file" id="bp{{ l.no }}" name="pdf" accept=".pdf,application/pdf" required>
     <label class="small" for="bd{{ l.no }}">DXF (optional)</label><input type="file" id="bd{{ l.no }}" name="dxf" accept=".dxf">
     <label class="small" for="bb{{ l.no }}">BOM / cut list (optional)</label><input type="file" id="bb{{ l.no }}" name="bom">
     {% if not again %}
     <label class="small" for="br{{ l.no }}">Engine request it waits for</label>
-    <select id="br{{ l.no }}" name="request_id"><option value="0">New engine request (describe below)</option>
+    <select class="sm" id="br{{ l.no }}" name="request_id" style="min-height:34px;font-size:13px"><option value="0">New engine request (describe below)</option>
       {% for rq in bridge_requests %}<option value="{{ rq.id }}"{% if loop.first and rq.product and rq.product in l.name %} selected{% endif %}>#{{ rq.id }} {{ rq.product }}: {{ rq.text[:60] }}</option>{% endfor %}</select>
     <label class="sr" for="bt{{ l.no }}">What the engine should learn</label>
-    <input type="text" id="bt{{ l.no }}" name="request_text" placeholder="For a new request: what the engine should be able to draw" value="Add {{ l.name.split('(')[0].strip() }} to the engine">
+    <input class="sm" type="text" id="bt{{ l.no }}" name="request_text" placeholder="For a new request: what the engine should be able to draw" value="Add {{ l.name.split('(')[0].strip() }} to the engine">
     {% else %}<input type="hidden" name="request_id" value="{{ l.drawing.spec.bridge.request }}">{% endif %}
     <div><button class="sm primary">Upload bridge drawing</button></div>
     <div class="sub small">It is checked by hand instead of by the engine: an administrator ticks "{{ bridge_check }}" before it can be issued. The client sees a normal Encore drawing.</div>

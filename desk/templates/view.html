@@ -93,10 +93,16 @@
   <div class="right">
     <div class="card" id="checks">
       <div style="font-weight:600">Automatic checks</div>
+      {% if sh.engine_version == 'BRIDGE' %}{% set b = (sh.r.spec if sh.r else l.drawing.spec).bridge or {} %}
+      <div class="chk"><div class="small"><b>BRIDGE</b>: made outside the engine, so the engine checks cannot run.</div><span class="tag bad">BRIDGE</span></div>
+      <div class="chk"><div class="small">Checked by hand (clash, sizes, true view)</div>
+        <span class="tag {{ 'ok' if b.checked_by else 'ask' }}">{{ 'By ' ~ b.checked_by if b.checked_by else 'Waiting' }}</span></div>
+      {% else %}
       {% for c in checks %}
       <div class="chk"><div><div class="small">{{ c.title }}</div>{% if c.note %}<div class="small" style="color:#B91C1C">{{ c.note }}</div>{% endif %}</div>
         <span class="tag {{ 'ok' if c.state == 'pass' else 'bad' if c.state == 'fail' else 'dim' }}">{{ c.text }}</span></div>
       {% endfor %}
+      {% endif %}
       <div class="sub small">Engines {{ sh.engine_version or engine_version }}. The engine refuses to finish a drawing that fails a check{% if mode == 'prod' %}; these are the checks of the client drawing{% endif %}.</div>
     </div>
     {% if mode == 'client' and not sh.failed %}
@@ -180,6 +186,7 @@
       {% elif nxt.kind == 'done' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#issue">Go to issue</a>
       {% elif nxt.kind == 'redraw' %}
       <form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="vbtn pri" style="width:100%">Draw again and check</button></form>
+      {% elif nxt.kind == 'bridge' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#bridge{{ l.no }}">Open the product card</a>
       {% elif nxt.kind in ('confirm', 'failed') %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#todo">Open questions and changes</a>
       {% endif %}
       <a class="small" href="/orders/{{ o.source_ref }}">Back to all drawings</a>

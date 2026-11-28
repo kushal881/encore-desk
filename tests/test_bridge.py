@@ -75,6 +75,8 @@ def test_bridge_flow():
     page = c.get(A + "/work").text
     assert "BRIDGE drawing v1" in page and "Waiting for an administrator" in page and "/bridge/drawings/%d/bom" % l.drawing.id in page
     assert c.get("/bridge/drawings/%d/bom" % l.drawing.id).content == b"PK fake workbook"
+    v = c.get(A + "/view/2").text
+    assert "Hand check needed" in v and "engine checks cannot run" in v and "Draw again and check" not in v
 
     # an AI change waiting on another product does not matter; the bridge needs the hand check before issue
     with db.Session() as s:
