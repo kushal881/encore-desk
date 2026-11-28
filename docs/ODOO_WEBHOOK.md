@@ -24,7 +24,7 @@ Do this once for **staging** and once for **live**, with each one's own address 
    - **Apply on:** leave empty (all sales orders). The desk ignores quotations that are not projects.
 4. Under **Actions To Do** → **Add an action** → type **Send Webhook Notification**:
    - **URL:**
-     - live: `https://design.encoreprimefurniture.com/webhooks/odoo?token=<the live ODOO_WEBHOOK_TOKEN>`
+     - live: `https://portal.encoreprimefurniture.com/webhooks/odoo?token=<the live ODOO_WEBHOOK_TOKEN>`
      - staging: `https://<staging address>/webhooks/odoo?token=<the staging ODOO_WEBHOOK_TOKEN>`
    - **Fields:** add `Order Reference` (`name`). That's all the desk needs.
 5. **Save.**
@@ -41,7 +41,7 @@ A safety net for changes the rule can miss (for example, lines changed by an imp
 1. Railway → project **worthy-creation** → **New** → **Empty service** → name it `nightly-odoo-check`.
 2. Settings → Source → **Docker image**: `curlimages/curl:8.11.1`.
 3. Settings → **Custom start command**:
-   `curl -fsS -X POST "https://design.encoreprimefurniture.com/webhooks/odoo/nightly?token=${ODOO_WEBHOOK_TOKEN}"`
+   `curl -fsS -X POST "https://portal.encoreprimefurniture.com/webhooks/odoo/nightly?token=${ODOO_WEBHOOK_TOKEN}"`
 4. Variables → `ODOO_WEBHOOK_TOKEN` = `${{web.ODOO_WEBHOOK_TOKEN}}`, a reference to the web service's own value.
 5. Settings → **Cron Schedule**: `30 20 * * *` (02:00 India time).
 6. Its log should show `{"ok":true,"checked":N,"failed":[]}` each night.
