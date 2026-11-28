@@ -51,6 +51,7 @@
       <div class="f"><label for="sub" class="small">Subject</label><input id="sub" name="subject" value="{{ subject }}" required></div>
       <div class="f"><label for="bd" class="small">Message</label><textarea id="bd" name="body" rows="9" required>{{ body }}</textarea></div>
       <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="attach" value="1" checked style="min-height:auto;width:20px;height:20px"> Attach the combined PDF ({{ combined }})</label>
+      <div class="sub small">Each To address on the portal access list gets the email on its own, with a personal link to the client portal. Other addresses and CC get a copy without it.</div>
       <div><button class="primary">Send email</button></div>
       <div class="sub small">Sent from {{ 'info@encoreprimefurniture.com' }} through Google Workspace. Until the client portal is ready, the client approves by replying.{% if not mail_on %} <b style="color:#9A4508">Email is not set up yet: add SMTP_PASSWORD in Railway.</b>{% endif %}</div>
     </form>

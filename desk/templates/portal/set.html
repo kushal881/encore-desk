@@ -1,0 +1,60 @@
+{% extends "portal/base.html" %}
+{% block title %}Drawings for approval{% endblock %}
+{% block body %}
+<a class="back" href="/portal/orders">← All orders</a>
+<div>
+  <div class="sub">Quotation {{ o.source_ref }}{% if ds %} · Rev {{ ds|map(attribute='r')|map(attribute='rev')|unique|join(', ') }} · sent {{ (ds|map(attribute='r')|map(attribute='issued_at')|max)|when }}{% endif %}</div>
+  <h1>Drawings for your approval</h1>
+  <div class="sub">Please check each drawing. Approve it, or mark what you want changed. Our team will be notified straight away.</div>
+</div>
+{% if done.startswith('approved') %}<div class="okmsg">Thank you. Your approval is recorded and a confirmation with the approved drawings is on its way to {{ email }}.</div>{% endif %}
+{% if error %}<div class="err" id="msg">{{ error }}</div>{% endif %}
+<div class="tiles">
+  <div class="tile"><span class="sub">Approved</span><b>{{ sum.approved }}</b></div>
+  <div class="tile"><span class="sub">Changes asked</span><b>{{ sum.changes }}</b></div>
+  <div class="tile"><span class="sub">Waiting</span><b>{{ sum.waiting }}</b></div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">
+{% for d in ds %}
+  <div class="card" style="padding:12px">
+    <a href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}"><img src="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}/sheet/1" alt="Drawing preview: {{ d.name }}" loading="lazy" style="width:100%;aspect-ratio:1.414;object-fit:contain;background:#FAFAF7;border:1px solid #EEECE6;border-radius:8px"></a>
+    <div class="row" style="justify-content:space-between;gap:6px"><b>{{ d.name }}</b>
+      {% if d.status == 'approved' %}<span class="tag ok">Approved</span>{% elif d.status == 'changes' %}<span class="tag ask">Changes asked</span>{% else %}<span class="tag dim">Waiting</span>{% endif %}</div>
+    <div class="small sub">{{ d.code }}{% if d.finishes %} · {{ d.finishes[0][1] }}{% endif %} · Qty {{ d.qty }} · Sheet {{ d.sheet }}/{{ d.total }} · Rev {{ d.r.rev }}</div>
+    {% if d.status == 'changes' and d.ap.note %}<div class="small" style="color:#9A4508">"{{ d.ap.note[:80] }}{{ '…' if d.ap.note|length > 80 }}"</div>{% endif %}
+    <a class="btn{{ ' sec' if d.status != 'waiting' }}" href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}">{{ 'Review' if d.status == 'waiting' else 'View changes' if d.status == 'changes' else 'View' }}</a>
+  </div>
+{% endfor %}
+</div>
+
+<div class="row">
+  {% if ds %}<a class="btn sec" href="/portal/orders/{{ o.source_ref }}/set.pdf">Download full set PDF</a>{% endif %}
+  <div class="small sub">Only the emails these drawings were sent to can open them. Need a colleague to review? Ask your Encore sales person to add their email.</div>
+</div>
+
+{% if sum.waiting %}
+<div class="card" id="approve">
+  <h2>Approve remaining drawings</h2>
+  {% if not a.can_approve %}
+  <div class="sub">Your email can view and comment on these drawings. Approval is given by the person your company named to us. Ask your Encore sales person if you should approve.</div>
+  {% else %}
+  <form method="post" action="/portal/orders/{{ o.source_ref }}/approve#approve" class="f" style="gap:10px">
+    <div class="row" style="align-items:flex-start">
+      <div class="f" style="flex:1 1 200px"><label for="nm">Your name</label><input id="nm" name="name" value="{{ form.name or a.name }}" autocomplete="name"></div>
+      <div class="f" style="flex:1 1 200px"><label for="dg">Designation</label><input id="dg" name="designation" value="{{ form.designation }}"></div>
+    </div>
+    <div class="row" style="align-items:flex-end">
+      <div class="f" style="flex:1 1 200px"><label for="cd">One-time code sent to your email</label><input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></div>
+      <button class="btn sec" name="do" value="code">{{ 'Send a new code' if code_sent else 'Email me a code' }}</button>
+    </div>
+    {% if code_sent %}<div class="okmsg">We emailed a 6-digit code to {{ email }}. It is valid for 10 minutes.</div>{% endif %}
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" value="1" style="width:20px;min-height:20px;margin-top:2px" {{ 'checked' if form.agree }}>
+      <span>I approve the drawings marked "Waiting" ({% for d in ds if d.status == 'waiting' %}{{ d.r.number }} Rev {{ d.r.rev }}{{ ', ' if not loop.last }}{% endfor %}) for manufacturing as shown, including sizes, finishes and quantities. After approval the drawings go to production. Changes after that may affect cost and delivery date.</span></label>
+    <button class="btn" name="do" value="approve">Approve {{ sum.waiting }} drawing{{ '' if sum.waiting == 1 else 's' }}</button>
+    {% if sum.changes %}<div class="small sub">{{ sum.changes }} drawing{{ ' has' if sum.changes == 1 else 's have' }} changes asked; it will come back as a new revision for approval.</div>{% endif %}
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

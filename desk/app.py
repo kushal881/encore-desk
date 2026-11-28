@@ -1,5 +1,5 @@
 """Encore drawing desk: dashboard, orders, questions, previews, changes, issue with numbers and revisions, the steps after
-issue, engine requests, product photographs and remakes. Not built yet: Odoo source, client portal, cloud archive."""
+issue, engine requests, product photographs and remakes. Client portal: portal.py. Kept files: storage.py."""
 import os
 from fastapi import FastAPI, Form, HTTPException, Request, Depends, UploadFile, File
 from starlette.middleware.sessions import SessionMiddleware
@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
-from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, changes as chg
+from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, portal, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
 from .nodrawing import classify
@@ -25,6 +25,7 @@ if auth.ON_SERVER and not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set on the server")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32), https_only=auth.ON_SERVER, same_site="lax", max_age=12 * 3600)
 app.include_router(auth.router)
+app.include_router(portal.router)                                        # the client portal, /portal (its own sign-in)
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")), name="static")   # logo; no client files here
 db.init()
 engines.start()
@@ -37,6 +38,11 @@ User = Depends(auth.current_user)
 @app.exception_handler(auth.NotSignedIn)
 def _to_login(request: Request, exc):
     return RedirectResponse("/login", status_code=303)
+
+
+@app.exception_handler(portal.PortalSignIn)
+def _to_portal_login(request: Request, exc):
+    return RedirectResponse("/portal/login", status_code=303)
 
 
 @app.post("/engines/refresh")
@@ -1271,7 +1277,7 @@ def access_remove(ref: str, aid: int, user=User):
 
 
 @app.post("/orders/{ref}/email")
-def email_send(ref: str, kind: str = Form("first"), to: str = Form(""), cc: str = Form(""), subject: str = Form(""), body: str = Form(""),
+def email_send(request: Request, ref: str, kind: str = Form("first"), to: str = Form(""), cc: str = Form(""), subject: str = Form(""), body: str = Form(""),
                attach: str = Form(""), user=User):
     """Emails the issued drawings to the client from the company address. When it goes, the order is marked as sent."""
     o = load(ref)
@@ -1286,8 +1292,18 @@ def email_send(ref: str, kind: str = Form("first"), to: str = Form(""), cc: str 
     got = _combined(o) if attach else None
     log = db.EmailLog(order_id=o.id, kind=kind if kind in issuing.TEMPLATES else "first", to=", ".join(to_), cc=", ".join(cc_), subject=subject.strip(),
                       body=body.strip(), attachment=got[1] if got else "", by=user.name)
+    # each recipient on the portal access list gets the email alone, with their own sign-in link; everyone else (other
+    # To addresses and CC) gets one copy with the plain portal address, so a copy never signs anyone in
+    with db.Session() as s:
+        listed = {a.email for a in s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id))}
+    base = portal.base_url(request)
+    mails = [([e], [], portal.personal_body(log.body, portal.link_for(e, o.id, base))) for e in to_ if e in listed]
+    rest = [e for e in to_ if e not in listed]
+    if rest or cc_:
+        mails.append((rest or cc_, cc_ if rest else [], portal.general_body(log.body, base)))
     try:
-        issuing.send(to_, cc_, log.subject, log.body, got[0] if got else None, got[1] if got else None)
+        for to1, cc1, body1 in mails:
+            issuing.send(to1, cc1, log.subject, body1, got[0] if got else None, got[1] if got else None)
     except RuntimeError as x:
         log.error = str(x)
     with db.Session() as s:
@@ -1344,14 +1360,21 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
         s.add(db.Message(order_id=o.id, who="desk", text="%s Rev %s: %s by %s (%s, %s), recorded by %s." % (
             r.number, r.rev, "approved" if outcome == "approved" else "changes asked", ap.name, ap.how, ap.on, user.name) + (" " + ap.note if ap.note else "")))
         s.commit()
+    all_approved_step(ref, user.name, "recorded on the Issue screen")
+    return _back(ref)
+
+
+def all_approved_step(ref, by, where):
+    """When every issued drawing of the order is approved, the order moves to Approved by client. -> True when it moved."""
     o = load(ref)
     cur = _current(o)
-    if all((_approval_of(r_) or db.Approval(outcome="")).outcome == "approved" for _, r_ in cur) and \
+    if cur and all((_approval_of(r_) or db.Approval(outcome="")).outcome == "approved" for _, r_ in cur) and \
             (o.stage in ("issued", "sent") or (o.stage == "production" and o.approval_pending)):
         with db.Session() as s:
-            s.add(db.Step(order_id=o.id, kind="approved", note="All %d drawings approved (recorded on the Issue screen)" % len(cur), by=user.name))
+            s.add(db.Step(order_id=o.id, kind="approved", note="All %d drawings approved (%s)" % (len(cur), where), by=by))
             s.commit()
-    return _back(ref)
+        return True
+    return False
 
 
 @app.get("/approvals/{aid}/proof")
