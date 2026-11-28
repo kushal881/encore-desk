@@ -96,13 +96,17 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
 <div class="shell">
 <nav class="sidenav" aria-label="Main">
   <a class="brand" href="/"><img src="/static/encore-logo.png" alt="Encore Prime logo"><span><b style="display:block;font-size:15px">Encore Prime</b><span class="sub small">Drawing desk</span></span></a>
+  {% if is_production %}<a href="/production" class="item {{ 'on' if nav == 'production' }}">Production{% if my_tasks %}<span class="count" style="margin-left:auto">{{ my_tasks }}</span>{% endif %}</a>
+  {% else %}
   <a href="/" class="item {{ 'on' if nav == 'dash' }}">Dashboard</a>
   <a href="/new" class="item {{ 'on' if nav == 'new' }}">New project</a>
   <a href="/new#remake" class="item">Past orders / Remake</a>
   <a href="/projects" class="item {{ 'on' if nav == 'projects' }}">Projects</a>
+  {% if sees_production %}<a href="/production" class="item {{ 'on' if nav == 'production' }}">Production</a>{% endif %}
   {% if not is_admin %}<a href="/my-requests" class="item {{ 'on' if nav == 'mine' }}">My requests{% if my_tasks %}<span class="count" style="margin-left:auto">{{ my_tasks }}</span>{% endif %}</a>{% endif %}
   {% if is_approver %}<a href="/approvals" class="item {{ 'on' if nav == 'appr' }}">Approvals{% if approvals_waiting %}<span class="count" style="margin-left:auto">{{ approvals_waiting }}</span>{% endif %}</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
+  {% endif %}
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>
     <form method="post" action="/logout"><button class="sm">Sign out</button></form></div>
 </nav>

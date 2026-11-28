@@ -40,6 +40,19 @@ def _to_login(request: Request, exc):
     return RedirectResponse("/login", status_code=303)
 
 
+@app.exception_handler(auth.NotAllowed)
+def _not_for_role(request: Request, exc):
+    """A page this role does not see (Kushal 28-Nov-2026): production sees production only; sales does not see production."""
+    prod = str(exc) == "production"
+    text = ("Production users see the production drawings, bills of material and cut lists only." if prod
+            else "Production drawings, bills of material and cut lists are not shown to sales. Ask the sales coordinator if you need them.")
+    link = '<a href="/production">Open Production</a>' if prod else '<a href="/">Back to the dashboard</a>'
+    return HTMLResponse('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+                        '<title>Not shown for your role · Encore drawing desk</title></head><body style="font-family:Inter,system-ui,sans-serif;background:#F4F3EF;'
+                        'color:#17191C;padding:40px"><div style="max-width:560px;background:#fff;border:1px solid #E3E1DA;border-radius:12px;padding:20px">'
+                        '<h1 style="font-size:20px;margin:0 0 8px">Not shown for your role</h1><p>%s</p><p>%s</p></div></body></html>' % (text, link), status_code=403)
+
+
 @app.exception_handler(portal.PortalSignIn)
 def _to_portal_login(request: Request, exc):
     return RedirectResponse("/portal/login", status_code=303)
@@ -320,12 +333,15 @@ def ctx(user, **kw):
     kw.setdefault("engines_newer", newer)
     kw.setdefault("engines_popup", bool(newer) and (getattr(user, "engines_dismissed", "") or "") != newer)
     return dict(user=user.name, role=auth.ROLES.get(user.role, user.role) if lv != "admin2" else "Secondary administrator", is_admin=user.role == "admin",
+                sees_production=auth.sees_production(user), sees_client=auth.sees_client(user), is_production=user.role == "production",
                 is_approver=lv in ("admin", "admin2"), approvals_waiting=waiting + ch_waiting, my_tasks=tasks, engine_version=engines.version(), requests_waiting=waiting, **kw)
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, show: str = "active", focus: str = "", user=User):
     """The dashboard: every project the desk holds, where each stands, and what is waiting."""
+    if user.role == "production":                                       # production's own home page
+        return RedirectResponse("/production", status_code=303)
     rows, items, count = [], [], dict(active=0, pending=0, with_client=0, approved=0, production=0, completed=0)
     titles = dict(active="All drawings of active projects", pending="Drawings pending", with_client="Drawings waiting for client approval", approved="Drawings approved, not yet released", production="Drawings in production")
     focus = focus if focus in titles else ""

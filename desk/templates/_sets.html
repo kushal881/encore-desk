@@ -1,3 +1,4 @@
+{% if sees_production %}
     {% if o.stage in ('production', 'completed') or prod_sets or vendor_sets %}
     <span id="sets"></span>
     {% for kind, title, sets in (('production', 'Production drawings', prod_sets), ('vendor', 'Subcontractor drawings', vendor_sets)) %}
@@ -46,3 +47,4 @@
       {% endif %}
     </div>
     {% endif %}
+{% endif %}
