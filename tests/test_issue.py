@@ -124,7 +124,8 @@ def test_issue_screen(monkeypatch):
     v = c.get(A + "/issue").text
     assert "Approved by Mr Singh · 2026-11-27" in v and "Changes asked" in v
     assert "The client approved Rev A on 2026-11-27 (Mr Singh), so it is locked." in c.get(A + "/view/1").text   # the change panel is off
-    c.post("%s/answer-from-client/%d" % (A, r2.id), data={"outcome": "approved", "name": "Mr Singh", "how": "email"})
+    c.post("%s/answer-from-client/%d" % (A, r2.id), data={"outcome": "approved", "name": "Mr Singh", "how": "email"},
+           files={"proof": ("ok.eml", b"Approved", "message/rfc822")})
     with db.Session() as s:
         assert s.query(db.Step).filter_by(kind="approved").one().note == "All 2 drawings approved (recorded on the Issue screen)"
     c.post("/logout")

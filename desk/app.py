@@ -193,6 +193,7 @@ def load(ref):
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
             l.photo = ph.id if ph else None
             l.photo_v = int(ph.at.timestamp()) if ph else 0
+            l.ai_waiting = s.scalar(select(db.AiTurn.id).where(db.AiTurn.line_id == l.id, db.AiTurn.status == "trial").limit(1)) is not None
             d_ = l.drawing                                           # marked ready to issue in the viewer (that exact preview)
             l.review = s.scalars(select(db.Review).where(db.Review.line_id == l.id, db.Review.shown == "d%d" % int(d_.made_at.timestamp())).order_by(db.Review.id.desc())).first() \
                 if d_ and d_.status == "preview" else None
@@ -293,7 +294,21 @@ def open_order(ref: str = Form(...), user=User):
 
 
 def _ready(l):
-    return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes))
+    return bool(l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
+                and not getattr(l, "ai_waiting", False))
+
+
+def _why_not_ready(l):
+    """Why a product cannot be issued yet, in plain words."""
+    if getattr(l, "ai_waiting", False):
+        return "Accept or Undo the change first"
+    if l.open_count:
+        return "questions to answer"
+    if any(c.status == "asked" for c in l.changes):
+        return "a change request is waiting for yes or no"
+    if not l.drawing or l.drawing.status != "preview":
+        return "no preview" if not l.drawing else "it could not be drawn"
+    return ""
 
 
 GUIDE_STEPS = ["Questions", "Previews", "Issue", "Client approval", "Production", "Completed"]
@@ -533,7 +548,9 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         pick = {int(x) for x in re.findall(r"\d+", nos)}
         ready = [l for l in ready if l.no in pick]
     if not ready:
-        raise HTTPException(400, "No product is ready to issue: a product needs a preview and no unanswered question or unconfirmed change")
+        waiting = [l.no for l in o.lines if getattr(l, "ai_waiting", False)]
+        raise HTTPException(400, ("Product %s: Accept or Undo the change first." % ", ".join(map(str, waiting))) if waiting else
+                            "No product is ready to issue: a product needs a preview and no unanswered question or unconfirmed change")
     with db.Session() as s:
         client = s.get(db.Client, o.client.id)
         folder_no = folder_no.strip() or client.folder_no
@@ -567,6 +584,8 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
             files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev), edir)
             number = "Encore-%s-%s-%s-%s" % (datetime.datetime.strptime(revs[0]["date"], "%d %b %Y").strftime("%b"), revs[0]["date"][-4:], client.folder_no, serial)
             s.add(db.Revision(line_id=l.id, number=number, rev=rev, reason=reason, engine_version=ver, spec=sp, files=files, issued_by=user.name))
+            d_ = s.get(db.OrderLine, l.id).drawing                   # the drawing shown from now on is the one issued
+            d_.spec, d_.files, d_.engine_version, d_.status, d_.error = sp, dict(files), ver, "preview", ""
             done.append("%s Rev %s" % (number, rev))
         s.add(db.Message(order_id=o.id, who="desk", text=("Issued: " + ", ".join(done) + ". Next step: send them to the client for approval (see Next step on the right).") if done
                          else "Nothing to issue: no product has changed since its last issued revision."))
@@ -731,7 +750,9 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
                               panel=_panel_state(o, l, sh, mode), turns=turns, cmp=cmp_, box=box, ai_on=assistant.configured(),
                               rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
                               prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
-                              checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked, mode), review=review,
+                              checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked or l.ai_waiting, mode,
+                                                                                         approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,
+                                                                                         ai=l.ai_waiting), review=review,
                               marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None))
 
 
@@ -899,6 +920,11 @@ def ai_file(tid: int, kind: str, page: int = 0, user=User):
 
 
 # ---- Issue (screen 6) ---------------------------------------------------------------------------------------------------
+def _permitted(o, l):
+    """Kushal allowed a change after client approval on this product (the Approvals screen brings this rule)."""
+    return False
+
+
 def _approval_of(r):
     """The latest client answer on one issued revision, or None."""
     if r is None:
@@ -926,8 +952,10 @@ def _combined(o):
 def issue_page(request: Request, ref: str, t: str = "", error: str = "", user=User):
     """Steps 5 to 7: issue the drawings, email them to the client, the portal access list, the client's answers."""
     o = load(ref)
-    to_issue = [l for l in o.lines if _ready(l) and not l.issued_current]
-    not_ready = [l for l in o.lines if not _ready(l) and not l.issued_current]
+    locked = {l.no for l in o.lines if l.last_rev and (_approval_of(l.last_rev) or db.Approval(outcome="")).outcome == "approved" and not _permitted(o, l)}
+    to_issue = [l for l in o.lines if _ready(l) and not l.issued_current and l.no not in locked]
+    not_ready = [(l, "approved by the client, locked" if l.no in locked else _why_not_ready(l)) for l in o.lines
+                 if not l.issued_current and (l.no in locked or not _ready(l))]
     cur = _current(o)
     with db.Session() as s:
         access = s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id).order_by(db.PortalAccess.id)).all()
@@ -1037,6 +1065,13 @@ async def client_answer(request: Request, ref: str, rid: int, user=User):
         return _back(ref, "Choose approved or changes asked.")
     if not name:
         return _back(ref, "Enter who answered at the client.")
+    how = form.get("how") or "email"
+    proof_in = form.get("proof")
+    has_proof = proof_in is not None and getattr(proof_in, "filename", "")
+    if outcome == "approved" and how in ("email", "signed PDF") and not has_proof:
+        return _back(ref, "Attach the client's %s before recording the approval." % ("email" if how == "email" else "signed PDF"))
+    if outcome == "approved" and how == "phone" and not (form.get("note") or "").strip():
+        return _back(ref, "For an approval by phone, write a note: who called, when, and what was said.")
     ap = db.Approval(order_id=o.id, revision_id=r.id, outcome=outcome, name=name[:200], designation=(form.get("designation") or "").strip()[:200],
                      email=(form.get("email") or "").strip()[:200], how=(form.get("how") or "email")[:40], on=(form.get("on") or datetime.date.today().isoformat())[:20],
                      note=(form.get("note") or "").strip()[:2000], pdf_sha256=issuing.fingerprint(r.files["pdf"]) if os.path.exists(r.files.get("pdf", "")) else "",
@@ -1151,6 +1186,8 @@ def mark_ready(ref: str, no: int, shown: str = Form(...), user=User):
         raise HTTPException(400, "This drawing has not passed every automatic check, so it cannot be marked ready")
     if any(c.status == "asked" for c in l.changes):
         raise HTTPException(400, "Confirm or drop the change request for this product first")
+    if l.ai_waiting:
+        raise HTTPException(400, "Accept or Undo the change first")
     with db.Session() as s:
         s.add(db.Review(line_id=l.id, shown=sh["key"], by=user.name))
         s.add(db.Message(order_id=o.id, who="desk", text="Product %d checked in the viewer and marked ready to issue by %s." % (l.no, user.name)))

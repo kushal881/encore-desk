@@ -180,6 +180,9 @@ def test_issued_then_approved(monkeypatch):
     if not engines.ENGINES_DIR:
         import pytest; pytest.skip("ENGINES_DIR not set")
     _setup(monkeypatch)
+    assert "Accept or Undo the change first" in c.get(A + "/issue").text        # a proposal left waiting blocks issue
+    for tr in [x for x in _turns() if x.status == "trial"]:
+        c.post(A + "/view/2/ai/%d/undo" % tr.id)
     c.post(A + "/issue", data={"folder_no": "6"})
     v = c.get(A + "/view/2").text
     assert "Issued as Rev A · an accepted change makes a new revision when issued" in v

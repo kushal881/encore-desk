@@ -32,9 +32,10 @@
       {% if not o.client.folder_no %}<label for="fno" class="small" style="font-weight:600">Folder number for {{ o.client.name }}</label>
       <input id="fno" name="folder_no" required inputmode="numeric" pattern="[0-9]+" placeholder="for example 06">{% endif %}
       <div><button class="primary">Issue the drawings picked</button></div>
-      {% if not_ready %}<div class="sub small">Not ready yet: product {{ not_ready|map(attribute='no')|join(', ') }} (questions, a change request waiting, or no preview).</div>{% endif %}
+      {% if not_ready %}<div class="small">Not ready yet:{% for l, why in not_ready %} <span class="tag ask">Product {{ l.no }}: {{ why }}</span>{% endfor %}</div>{% endif %}
     </form>
     {% elif not cur %}<div class="sub">Nothing is ready to issue yet. Specify the products and draw the previews first.</div>{% endif %}
+    {% if not to_issue and not_ready %}<div class="small">Not ready yet:{% for l, why in not_ready %} <span class="tag ask">Product {{ l.no }}: {{ why }}</span>{% endfor %}</div>{% endif %}
 
     {% if cur %}
     <div class="label">Issued drawings ({{ cur|length }})</div>
