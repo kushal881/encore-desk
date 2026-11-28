@@ -34,16 +34,21 @@ def all_pass(checks):
     return bool(checks) and all(c["ok"] for c in checks)
 
 
-def next_step(l, shown_is_preview, checks, review, asked, mode):
+def next_step(l, shown_is_preview, checks, review, asked, mode, approved=None, ai=False):
     """The one next step at the foot of the viewer. -> dict(kind, title, text). kind:
     ready (button: mark ready to issue) | done (marked; go to issue) | redraw (button: draw again to run the checks) |
     blocked (a check failed) | confirm (a change request waits) | failed (no drawing could be made) | info."""
+    if approved is not None and approved.outcome == "approved":
+        return dict(kind="info", title="Approved by the client", text="Rev %s was approved by %s on %s. The client drawing is locked; a change needs Kushal's permission."
+                    % (l.last_rev.rev, approved.name, approved.on))
     if mode == "prod":
         return dict(kind="info", title="Production drawing", text="Changes to construction are made on the production screen. Switch back to the client drawing to review it.")
     if l.drawing is not None and l.drawing.status == "failed" and not shown_is_preview:
         return dict(kind="failed", title="This drawing could not be made", text="The engine stopped. See the checks. If it needs something new, ask for an engine addition in Questions and changes.")
     if not shown_is_preview:
         return dict(kind="info", title="This drawing is issued", text="An issued drawing is never changed. A change makes a new revision.")
+    if ai:
+        return dict(kind="confirm", title="Accept or Undo the change first", text="A change from the change panel is waiting. Accept it or Undo it before this drawing is checked or issued.")
     if asked:
         return dict(kind="confirm", title="Confirm the change request first", text="A change to this product is waiting for your yes or no in Questions and changes.")
     if not checks:
