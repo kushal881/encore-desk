@@ -1783,3 +1783,7 @@ def remove_order(ref: str, user=User):
     with db.Session() as s:
         s.delete(s.get(db.Order, o.id)); s.commit()
     return RedirectResponse("/", status_code=303)
+
+
+from .projects import router as _projects                            # screen 3a: Projects
+app.include_router(_projects)
