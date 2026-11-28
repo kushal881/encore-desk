@@ -303,6 +303,12 @@ def load(ref):
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
         o.client_open = sum(1 for l in o.lines if l.last_rev and not l.cancelled_at and _client_changes(s, l.last_rev.id))
+        for l in o.lines:                                            # issue #69: the status in the order's Drawings menu
+            ap = s.scalars(select(db.Approval).where(db.Approval.revision_id == l.last_rev.id).order_by(db.Approval.id.desc())).first() if l.last_rev else None
+            l.nav_status = ("Cancelled" if l.cancelled_at else "Changes asked" if l.last_rev and _client_changes(s, l.last_rev.id)
+                            else "Approved" if ap is not None and ap.outcome == "approved" and l.issued_current
+                            else "Issued" if l.issued_current else "Could not draw" if l.drawing and l.drawing.status == "failed" and not l.revisions
+                            else "Draft" if l.drawing or l.revisions else "Not drawn")
         o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
@@ -405,7 +411,7 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
                         if _inv(lo, user):
                             cur, no, total = _cs(_cl(lo, auth.sees_production(user)))
                             if cur:
-                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["title"], state=cur["state"],
+                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["action"], state=cur["state"],
                                                     block=cur["block"], url=cur["url"] or "/orders/%s" % o.source_ref, label=cur["label"] or "Open"))
                 except Exception:
                     gd = dict(title="", step=0)
@@ -787,6 +793,7 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         s.commit()
     if done:
         keep_issued(o.id)
+        references.keep_all(o.id)                                      # issue #72: the client's folder exists now
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
 
 
@@ -1103,7 +1110,7 @@ def _changed_box(sh, tr):
 
 
 @app.post("/orders/{ref}/view/{no}/ai")
-def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user=User):
+def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), use_refs: str = Form(""), user=User):
     """The user asks the assistant about this product. A change is drawn as a trial; the drawing stays as it is until
     someone presses Accept."""
     text = text.strip()
@@ -1130,7 +1137,8 @@ def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user
         history = [(t.typed, t.said or t.answer) for t in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
     product = dict(product="Product %d" % l.no, name=l.name.split("(")[0].strip(), family=l.read["family"], qty=l.qty,
                    issued=("Rev %s" % l.last_rev.rev) if l.last_rev else "not issued")
-    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history)
+    pictures = references.images_for_ai(o.id, l.no) if use_refs else []   # issue #72: the client's sketches and photos, when ticked
+    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history, images=pictures)
     tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=text, kind=reply["kind"], said=reply["said"], values=reply["values"], by=user.name,
                    answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""))
     tr.status = reply["kind"] if reply["kind"] != "change" else "trial"
@@ -1861,10 +1869,9 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
             keep = dict(prod_no=prev.prod_no, released_by=prev.released_by, released_at=prev.released_at) if prev is not None else {}
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name)
-            s.add(ps_)
+            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep)
+            s.add(ps_)                                                 # one set per product: the same record goes to the bucket
             made_sets.append(ps_)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep))
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
@@ -2352,6 +2359,10 @@ app.include_router(_guide)
 
 from .tour import router as _tour                                    # issue #43: first-time tour
 app.include_router(_tour)
+
+
+from . import references                                              # issue #72: client references
+app.include_router(references.router)
 
 
 from . import bridge                                                  # issue #73: bridge products (drawings made outside the engine)

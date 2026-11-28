@@ -52,7 +52,7 @@
       <div class="sub small">Customer wants the same product again? Pick the old drawing. Its approved specification is copied into a new project. Only client-approved drawings are listed.</div>
       <form class="row" method="get" action="/new#remake">
         <label class="sr" for="p">Search past drawings</label>
-        <input type="text" id="p" name="p" value="{{ p }}" placeholder="Search past drawings">
+        <input type="search" data-live id="p" name="p" value="{{ p }}" placeholder="Search past drawings">
         <input type="hidden" name="q" value="{{ q }}"><button class="sm">Search</button>
       </form>
       <form method="post" action="/new/remake" style="display:flex;flex-direction:column;gap:10px">
