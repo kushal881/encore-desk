@@ -559,9 +559,10 @@ def project(request: Request, ref: str, user=User):
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     from .checklist import steps as _checklist_steps                    # issue #44
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    from .portal import losing_access
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, archive_losing=losing_access(o.id) if user.role == "admin" and not o.archived_at else [], todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), has_board_labels=engines.has_board_labels(), board_sets=board_label_sets(o.id),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -588,7 +589,7 @@ def order(request: Request, ref: str, user=User):
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), has_board_labels=engines.has_board_labels(), board_sets=board_label_sets(o.id), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
                               reqs=__import__("desk.portalreq", fromlist=["of_order"]).of_order(o.id), linked=__import__("desk.portalreq", fromlist=["linked_change"]).linked_change,
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
@@ -1948,6 +1949,79 @@ def make_cutting(ref: str, user=User):
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
+def board_label_sets(order_id):
+    """The order's board label sets, newest first: [dict(f, p, withdrawn)] (issue #61). A set made from other issued
+    revisions than the one before it is the next P; every earlier P is withdrawn."""
+    with db.Session() as s:
+        files = list(s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == order_id, db.ProductionFile.kind == "boardlabels",
+                                                              db.ProductionFile.error == "").order_by(db.ProductionFile.id)))
+    out, p, last = [], 0, None
+    for f in files:
+        if f.revisions != last:
+            p, last = p + 1, f.revisions
+        out.append(dict(f=f, p=p))
+    for x in out:
+        x["withdrawn"] = x["p"] < p
+    latest = {}
+    for x in out:                                                       # one line per P: its latest print
+        latest[x["p"]] = x
+    return sorted(latest.values(), key=lambda x: -x["p"])
+
+
+@app.post("/orders/{ref}/board-labels")
+def make_board_labels(ref: str, user=User):
+    """One label per full board, in cutting sequence, for the store team to reserve the boards (issue #61), made by the approved
+    engines from the same panel-saw board plan as the BOM and cutting diagrams. Not for salespeople."""
+    if user.role == "sales":
+        raise HTTPException(403, "Board labels are for production, designers, coordinators and the administrator")
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    if not engines.has_board_labels():
+        raise HTTPException(400, "The approved engines (%s) have no board labels yet. Approve the board labels proposal in encore-approved, "
+                            "then update the engines here." % engines.version_label())
+    with db.Session() as s:
+        has_bom = s.scalar(select(db.ProductionFile.id).where(db.ProductionFile.order_id == o.id, db.ProductionFile.kind == "bom",
+                                                              db.ProductionFile.error == "").limit(1)) is not None
+    if not has_bom:
+        raise HTTPException(400, "Make the bill of material first: the board labels follow its board plan (panel-saw cutting)")
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != "BRIDGE"}
+    if not revs:
+        raise HTTPException(400, "Nothing has been issued yet")
+    sets = board_label_sets(o.id)
+    rev_text = ", ".join(sorted("%s Rev %s" % (l.last_rev.number, l.last_rev.rev) for l in o.lines
+                                if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != "BRIDGE"))   # a new revision: a new set
+    p = (sets[0]["p"] if sets and sets[0]["f"].revisions == rev_text else (sets[0]["p"] + 1 if sets else 1))
+    ps_ = next((x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"), None)
+    job = (ps_.details.get("job_order") if ps_ else "") or o.job_order or ""
+    deadline = (ps_.details.get("deadline") if ps_ else "") or o.delivery_date or ""
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    f = db.ProductionFile(order_id=o.id, kind="boardlabels", panel_saw=True, made_by=user.name, engine_version=engines.version_label(), revisions=rev_text,
+                          name="%s-Board labels P%d.pdf" % (o.source_ref, p))
+    try:
+        got = engines.board_labels(revs, "%d/boardlabels/%s" % (o.id, stamp), client=o.client.name, job=job, deadline=deadline,
+                                   replaces="P%d" % (p - 1) if p > 1 else "")
+        f.path = got["pdf"]
+        f.summary = " · ".join(["%d board%s" % (got["boards"], "" if got["boards"] == 1 else "s")] + ["%s: %d" % m for m in got["by_material"]])
+        f.name = "%s-Board labels P%d (%d boards).pdf" % (o.source_ref, p, got["boards"])
+    except RuntimeError as e:
+        f.error = str(e)
+    with db.Session() as s:
+        s.add(f)
+        s.add(db.Message(order_id=o.id, who="desk", text=("Board labels P%d made by %s: %s.%s" % (p, user.name, f.summary, " The labels of P%d are withdrawn." % (p - 1) if p > 1 and not (sets and sets[0]["p"] == p) else ""))
+                         if not f.error else "The board labels could not be made: %s" % f.error))
+        s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not f.error:
+        storage.keep(f.path, "%s/Bill of Material/%s" % (folder, storage.safe(f.name)))
+    if f.error:
+        raise HTTPException(400, f.error)
+    return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
+
+
 @app.get("/production-files/{fid}")
 def production_file(request: Request, fid: int, user=User):
     with db.Session() as s:
@@ -2152,8 +2226,11 @@ def archive_order(ref: str, reason: str = Form(""), user=User):
         order = s.get(db.Order, o.id)
         if order.archived_at:
             raise HTTPException(400, "%s is already archived" % ref)
+        from .portal import losing_access                                 # the client emails whose only active order this was
+        gone = losing_access(o.id)
         order.archived_at, order.archived_by, order.archived_reason = db.now(), user.name, reason
-        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened." % (user.name, reason)))
+        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened. "
+                         "It is hidden from the client portal%s." % (user.name, reason, "; portal access ended for " + ", ".join(gone) if gone else "")))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 

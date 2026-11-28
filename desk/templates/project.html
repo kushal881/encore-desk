@@ -28,11 +28,12 @@
       {% if is_admin and not o.archived_at %}
       <details><summary class="small">Archive this project</summary>
         <form method="post" action="/orders/{{ o.source_ref }}/archive" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"
-              data-confirm="Archive {{ o.source_ref }}?\nIt leaves the active lists and counts. Drawings, revisions, approvals and history are kept, and it can be reopened." data-yes="Yes, archive">
+              data-confirm="Archive {{ o.source_ref }}?\nIt leaves the active lists and counts. Drawings, revisions, approvals and history are kept, and it can be reopened. The client no longer sees it in the portal.{% if archive_losing %}\nPortal access ends for: {{ archive_losing|join(', ') }}{% endif %}" data-yes="Yes, archive">
           <label class="small" for="arr">Reason</label>
           <input type="text" id="arr" name="reason" required placeholder="for example: test project, client dropped the order">
           <div><button class="sm danger">Archive project</button></div>
-          <div class="sub small">For a test or abandoned project at any stage. Nothing is deleted; Odoo is not touched.</div>
+          <div class="sub small">For a test or abandoned project at any stage. Nothing is deleted; Odoo is not touched. The client no longer sees it in the portal; no email is sent.</div>
+          {% if archive_losing %}<div class="small" style="color:#9A4508">These client emails will lose portal access (no other active order): {{ archive_losing|join(', ') }}</div>{% endif %}
         </form></details>
       {% endif %}
     </div>

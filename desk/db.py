@@ -499,6 +499,7 @@ class ProductionFile(Base):
     path: Mapped[str] = mapped_column(Text, default="")
     name: Mapped[str] = mapped_column(Text, default="")
     revisions: Mapped[str] = mapped_column(Text, default="")             # the issued drawings it was made from
+    summary: Mapped[str] = mapped_column(Text, default="")               # board labels (issue #61): "12 boards · 18 mm MDF: 8 · ..."
     engine_version: Mapped[str] = mapped_column(String(80), default="")
     error: Mapped[str] = mapped_column(Text, default="")
     made_by: Mapped[str] = mapped_column(String(120), default="")
