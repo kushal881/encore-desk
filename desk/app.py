@@ -2179,6 +2179,7 @@ def delete_permanently(ref: str, confirm: str = Form(""), user=User):
                     removed_keys.append(sf.key)
                     s.delete(sf)
             db.delete_order(s, o.id)
+            db.delete_order_refs(s, o.source_ref)
             s.commit()
     except SQLAlchemyError as e:
         print("Delete order %s failed: %s" % (ref, str(e)[:300]), flush=True)
@@ -2193,6 +2194,23 @@ def delete_permanently(ref: str, confirm: str = Form(""), user=User):
     shutil.rmtree(os.path.join(engines.FILES, str(o.id)), ignore_errors=True)
     print("Deleted permanently by %s: %s (%d stored files)" % (user.email, ref, len(removed_keys)), flush=True)
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/orders/{ref}/delete-leftovers")
+def delete_leftovers(ref: str, confirm: str = Form(""), user=User):
+    """For a project that is already deleted: clears what still names it by number (engine requests, change requests,
+    tasks, notifications). Administrator only, quotation number typed to confirm, refused while the project exists."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator can do this")
+    if confirm.strip() != ref:
+        raise HTTPException(400, "Type the quotation number exactly (%s). Nothing was changed." % ref)
+    with db.Session() as s:
+        if s.scalar(select(db.Order.id).where(db.Order.source_ref == ref)) is not None:
+            raise HTTPException(400, "%s is still on the desk. Use 'Delete this test project permanently' on its page." % ref)
+        n = db.delete_order_refs(s, ref)
+        s.commit()
+    print("Leftovers of %s deleted by %s: %d rows" % (ref, user.email, n), flush=True)
+    return RedirectResponse("/engine-requests", status_code=303)
 
 
 from .newproject import router as _newproject                        # screen 2: New project and Remake
