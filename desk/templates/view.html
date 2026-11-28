@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_references.html" import refs_box %}
 {% set help_page = 'viewer' %}
 {% block title %}Product {{ l.no }} · {{ o.source_ref }}{% endblock %}
 {% block crumb %}{% endblock %}
@@ -91,6 +92,7 @@
     </div>
   </div>
   <div class="right">
+    {% if references_for(o.id, l.no, role) %}{{ refs_box(o, l.no, "/orders/%s/view/%d"|format(o.source_ref, l.no), True) }}{% endif %}
     <div class="card" id="checks">
       <div style="font-weight:600">Automatic checks</div>
       {% for c in checks %}
@@ -165,6 +167,7 @@
           <select id="aimk" name="marker" class="sm"><option value="0">None</option>{% for m in marks %}<option value="{{ m.no }}">{{ m.no }}</option>{% endfor %}</select></div>
         <label class="sr" for="aitext">Ask or change</label>
         <textarea id="aitext" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px" placeholder="Ask or change, for example: make the screen 800 wide"></textarea>
+        {% if references_for(o.id, l.no, role)|selectattr('kind', 'equalto', 'image')|list %}<label class="small"><input type="checkbox" name="use_refs" value="1"> Let the AI read the client's sketches and photos for this product</label>{% endif %}
         <button class="primary">Send</button>
       </form>
       <div class="sub small">The AI only changes values in the product file. The locked engine does all drawing. After client approval this panel is off on client drawings.{% if not ai_on %} The AI is not switched on yet: size, shelf, hinge, screen and raceway changes work; questions need the API key.{% endif %}</div>

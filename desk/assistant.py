@@ -148,7 +148,7 @@ def apply(spec, values):
     return spec
 
 
-def ask(text, product, model, markers, engines_dir, history=()):
+def ask(text, product, model, markers, engines_dir, history=(), images=()):
     """-> dict(kind change | answer | cannot, said, values, answer, problems).
     product = plain description (Product N, name, size, issued state); markers = ["1 = note, on Part (view)"];
     history = earlier turns on this product, [(typed, reply)]."""
@@ -166,7 +166,10 @@ def ask(text, product, model, markers, engines_dir, history=()):
         "MARKERS ON THE DRAWING: %s" % ("; ".join(markers) or "none"),
         "EARLIER ON THIS PRODUCT: %s" % ("; ".join("asked %r -> %s" % (t, r) for t, r in history[-6:]) or "nothing"),
         "THE USER TYPED: %s" % text,
-    ])
+    ] + (["THE CLIENT'S REFERENCE PICTURES (sketches / photos) ARE ATTACHED ABOVE: read sizes or details from them only when "
+          "they are clearly written; say what you read in 'said'."] if images else []))
+    if images:                                                          # issue #72: the client's sketches, read when staff ticked it
+        user = [{"type": "image", "source": {"type": "base64", "media_type": mt, "data": data}} for mt, data in images] + [{"type": "text", "text": user}]
     return _finish(_call(INSTRUCTIONS + _rules(engines_dir), user), model)
 
 

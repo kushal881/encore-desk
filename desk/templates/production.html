@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_references.html" import refs_box %}
 {% set help_page = 'production' %}
 {% block title %}Production · Product {{ l.no }} · {{ o.source_ref }}{% endblock %}
 {% block crumb %}<span class="sub small">{{ o.client.name }} · Step 7 of 8 · Production · {{ job_text }} · {{ deadline_text }}</span>{% endblock %}
@@ -9,6 +10,7 @@
     {% if approved %}<span class="tag bad">Client design locked · {{ approved }}</span>{% endif %}
     {% if ps and ps.released_at %}<span class="tag ok">P{{ ps.prod_no }} released by {{ ps.released_by }}, {{ ps.released_at|when }}</span>{% elif ps %}<span class="tag ask">P{{ ps.prod_no }} not released yet</span>{% endif %}
   </div>
+  {% if references_for(o.id, l.no, role) %}{{ refs_box(o, l.no, "/orders/%s/production/%d"|format(o.source_ref, l.no), True) }}{% endif %}
   {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
   {% if not ready %}
   <div class="card" style="border-color:#9A4508">
