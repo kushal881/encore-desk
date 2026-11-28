@@ -1801,5 +1801,7 @@ def remove_order(ref: str, user=User):
     return RedirectResponse("/", status_code=303)
 
 
+from .newproject import router as _newproject                        # screen 2: New project and Remake
+app.include_router(_newproject)
 from .production import router as _production                        # screen 11: Production
 app.include_router(_production)

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}New project · Encore drawing desk{% endblock %}
+{% block crumb %}<span class="sub small">Step 1 of 8 · Order</span>{% endblock %}
+{% block body %}
+<div class="page">
+  <h1 style="margin:0;font-size:22px">Start a new drawing project</h1>
+  {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
+  <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <div class="card" style="flex:1 1 420px">
+      <div style="font-weight:600;font-size:16px">From an Odoo quotation</div>
+      <div class="sub small">{% if odoo_on %}Only quotations whose opportunity is still open are listed. Won or lost ones are hidden, and so are quotations that are already projects.{% else %}Odoo is not connected here, so the sample orders are listed.{% endif %}</div>
+      <form class="row" method="get" action="/new">
+        <label class="sr" for="q">Search quotation or client</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="Search quotation or client">
+        <input type="hidden" name="p" value="{{ p }}"><button class="sm">Search</button>
+      </form>
+      <form method="post" action="/new" id="startform" style="display:flex;flex-direction:column;gap:10px">
+        {% if quotes %}
+        <div role="radiogroup" aria-label="Quotation" style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto">
+          {% for x in quotes %}
+          <label class="card" style="flex-direction:row;align-items:center;gap:10px;padding:10px;cursor:pointer">
+            <input type="radio" name="ref" value="{{ x.ref }}" data-client="{{ x.client }}" required {{ 'checked' if loop.first and quotes|length == 1 }}>
+            <span><b>{{ x.ref }}</b>{% if x.client %} · {{ x.client }}{% endif %}<span class="sub small" style="display:block">Opportunity: {{ x.stage }}</span></span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}<div class="sub">{{ 'No open quotation matches.' if q else 'No open quotations are waiting.' }}</div>{% endif %}
+        <label for="folder_no" class="label">Server folder no.</label>
+        <input type="text" id="folder_no" name="folder_no" inputmode="numeric" pattern="[0-9]{1,2}" placeholder="For example 05" style="flex:0 0 auto;max-width:200px">
+        <div class="sub small">Folder will be created: <b id="fname">Encore-{{ today.strftime('%b') }}-{{ today.year }}-[no.]-[client]</b> with PDF · DXF · Other.
+          A client who already has a folder number keeps it.</div>
+        <button class="primary big" {{ 'disabled' if not quotes }}>Create project &amp; read products</button>
+      </form>
+    </div>
+
+    <div class="card" style="flex:1 1 420px" id="remake">
+      <div style="font-weight:600;font-size:16px">Remake from a past order</div>
+      <div class="sub small">Customer wants the same product again? Pick the old drawing. Its approved specification is copied into a new project. Only client-approved drawings are listed.</div>
+      <form class="row" method="get" action="/new#remake">
+        <label class="sr" for="p">Search past drawings</label>
+        <input type="text" id="p" name="p" value="{{ p }}" placeholder="Search past drawings">
+        <input type="hidden" name="q" value="{{ q }}"><button class="sm">Search</button>
+      </form>
+      <form method="post" action="/new/remake" style="display:flex;flex-direction:column;gap:10px">
+        {% if past %}
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto">
+          {% for d in past %}
+          <label class="card" style="flex-direction:row;align-items:center;gap:10px;padding:10px;cursor:pointer">
+            <input type="checkbox" name="rid" value="{{ d.id }}" class="pick">
+            {% if d.photo %}<img class="thumb" src="/photos/{{ d.photo }}" alt="">{% else %}<div class="nophoto">No photo</div>{% endif %}
+            <span><b>{{ d.name }}{% if d.size %} {{ d.size }}{% endif %}</b>
+              <span class="sub small" style="display:block">{{ d.number }} · Rev{{ d.rev }} · {{ d.client }}</span>
+              <span class="tag ok">Client approved</span></span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}<div class="sub">{{ 'No approved drawing matches.' if p else 'No client-approved drawings yet.' }}</div>{% endif %}
+        <label for="rref" class="label">Link to new quotation</label>
+        <select id="rref" name="ref" required style="flex:0 0 auto">
+          <option value="">Select open quotation…</option>
+          {% for x in quotes %}<option value="{{ x.ref }}">{{ x.ref }}{% if x.client %} · {{ x.client }}{% endif %}</option>{% endfor %}
+          {% if on_desk %}<optgroup label="Projects not issued yet">{% for r in on_desk %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</optgroup>{% endif %}
+        </select>
+        <label for="rfolder" class="label">Server folder no. <span class="sub">(for a quotation that is not a project yet)</span></label>
+        <input type="text" id="rfolder" name="folder_no" inputmode="numeric" pattern="[0-9]{1,2}" placeholder="For example 05" style="flex:0 0 auto;max-width:200px">
+        <button class="primary big" id="copybtn" {{ 'disabled' if not past }}>Copy products into new project</button>
+        <div class="sub small">A product of that quotation with the same name takes the copy. Any other is added, and the salesperson is told to add it to the quotation. The copies are drawn at once and wait for review.</div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+(function(){var f=document.getElementById('folder_no'),out=document.getElementById('fname'),base='Encore-{{ today.strftime("%b") }}-{{ today.year }}-';
+function upd(){var r=document.querySelector('input[name=ref]:checked'),n=(f.value||'').trim();if(/^\d{1,2}$/.test(n)){n=('0'+n).slice(-2)}else{n='[no.]'}
+out.textContent=base+n+'-'+((r&&r.getAttribute('data-client'))||'[client]');}
+f&&f.addEventListener('input',upd);document.querySelectorAll('input[name=ref]').forEach(function(x){x.addEventListener('change',upd)});upd();
+var b=document.getElementById('copybtn');function cnt(){var n=document.querySelectorAll('.pick:checked').length;if(b)b.textContent=n?('Copy '+n+' product'+(n==1?'':'s')+' into new project'):'Copy products into new project';}
+document.querySelectorAll('.pick').forEach(function(x){x.addEventListener('change',cnt)});})();
+</script>
+{% endblock %}
