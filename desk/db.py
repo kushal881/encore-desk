@@ -38,6 +38,7 @@ class Order(Base):
     delivery: Mapped[list] = mapped_column(JSON, default=list)
     delivery_date: Mapped[str] = mapped_column(String(40), default="")     # Odoo's Delivery Date (production deadline); "" = not entered
     read_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)   # quotation last compared with Odoo
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")
@@ -62,6 +63,9 @@ class OrderLine(Base):
     marks: Mapped[list["Mark"]] = relationship(order_by="Mark.no", cascade="all, delete-orphan")
     areas: Mapped[list["LineArea"]] = relationship(order_by="LineArea.id", cascade="all, delete-orphan")
     keep: Mapped[bool] = mapped_column(Boolean, default=False)          # added back to the drawings on purpose: the no-drawing rule leaves it
+    source_line: Mapped[str] = mapped_column(String(40), default="")    # the quotation line it is tied to (Odoo sale.order.line id); "" = not tied
+    cancelled_by: Mapped[str] = mapped_column(String(120), default="")  # dropped from the quotation after issue: Cancelled stamp, left out of the set
+    cancelled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NoDrawingLine(Base):
@@ -241,6 +245,38 @@ class Photo(Base):
     product: Mapped[str] = mapped_column(String(200), unique=True)     # product name, lower case
     path: Mapped[str] = mapped_column(Text)
     by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class QuoteVersion(Base):
+    """A saved copy of the quotation's lines each time Odoo shows a difference (version 1 = as first read)."""
+    __tablename__ = "quote_version"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    n: Mapped[int] = mapped_column(Integer, default=1)
+    lines: Mapped[list] = mapped_column(JSON, default=list)             # [dict(ref, name, description, qty, price, no_drawing)]
+    why: Mapped[str] = mapped_column(String(40), default="")            # first read | webhook | project opened | check now | nightly
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class QuoteChange(Base):
+    """One difference between two quotation versions, with what it means for the product's drawing at its stage
+    (UI_BRIEF, quotation change rules) and how it was handled."""
+    __tablename__ = "quote_change"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(20))                       # added | dropped | qty | spec | price
+    line_ref: Mapped[str] = mapped_column(String(40), default="")
+    line_no: Mapped[int] = mapped_column(Integer, default=0)            # the desk product, 0 = none yet
+    name: Mapped[str] = mapped_column(Text, default="")
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    stage: Mapped[str] = mapped_column(String(20), default="")          # not drawn | drawn | issued | approved | production
+    status: Mapped[str] = mapped_column(String(20), default="open")     # open | handled | ignored
+    handled_by: Mapped[str] = mapped_column(String(120), default="")
+    handled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

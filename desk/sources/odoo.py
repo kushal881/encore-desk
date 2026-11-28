@@ -106,7 +106,7 @@ class OdooSource:
             second = " ".join(x for x in (a.get("city"), a.get("zip")) if x) + (", " + a["state_id"][1].split(" (")[0] if a.get("state_id") else "")
             delivery = [x for x in (first, second.strip(", ")) if x]
         lines, no = [], 0
-        raw = self.call("sale.order.line", "read", ids=o["order_line"], fields=["sequence", "name", "product_id", "product_uom_qty", "display_type"]) if o["order_line"] else []
+        raw = self.call("sale.order.line", "read", ids=o["order_line"], fields=["sequence", "name", "product_id", "product_uom_qty", "display_type", "price_unit"]) if o["order_line"] else []
         kinds = self._product_kinds(sorted({l["product_id"][0] for l in raw if l.get("product_id") and not l.get("display_type")}))
         for l in sorted(raw, key=lambda x: (x.get("sequence") or 0, x["id"])):
             if l.get("display_type") or not l.get("product_id"):
@@ -119,7 +119,8 @@ class OdooSource:
             why = classify(name, ptype, routes)
             if not why:
                 no += 1                                            # only products that get a drawing are numbered Product 1, 2, ...
-            lines.append(SourceLine(no=0 if why else no, name=name, description=rest.strip(), qty=l.get("product_uom_qty") or 1, product_ref=str(l["product_id"][0]), no_drawing=why))
+            lines.append(SourceLine(no=0 if why else no, name=name, description=rest.strip(), qty=l.get("product_uom_qty") or 1, product_ref=str(l["product_id"][0]), no_drawing=why,
+                                    line_ref=str(l["id"]), price=float(l.get("price_unit") or 0)))
         return SourceOrder(source="odoo", ref=o["name"], client_name=company, client_contact=contact, delivery=delivery,
                            salesperson=o["user_id"][1] if o.get("user_id") else "", job_order=str(o.get(self.job_order_field) or "") if self.job_order_field else "",
                            date=str(o.get("date_order") or "")[:10], delivery_date=_day(o.get("commitment_date")), lines=lines)

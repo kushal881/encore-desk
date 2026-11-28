@@ -20,8 +20,9 @@ class SampleSource:
     def _lines(rows):
         """Same rule as Odoo: lines that get no drawing are kept apart and not numbered. A sample line may give "type" and "routes"."""
         out, no = [], 0
-        for r in rows:
+        for i, r in enumerate(rows, 1):
             r = dict(r)
+            r.setdefault("line_ref", "sample-%d" % i)                    # sample lines have no ids: their position stands in
             why = classify(r.get("name", ""), r.pop("type", ""), r.pop("routes", ()))
             r.pop("no", None)
             if not why:
