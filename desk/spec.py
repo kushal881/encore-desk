@@ -110,8 +110,8 @@ def build(engines_dir, order, line, read, answers, serial, changes=None, finish=
     edge = (fields.get("edge band") or fields.get("edgeband") or "").upper()
     if edge and "edgeband" in m:
         m["edgeband"] = edge
-    lam = (fields.get("laminate") or "").upper()
-    fab = (fields.get("fabric") or "").upper()
+    lam = (fields.get("laminate") or answers.get("laminate") or "").upper()     # not on the line: the Specify answer (issue #45)
+    fab = (fields.get("fabric") or answers.get("fabric") or "").upper()
     for sw in spec.get("swatches", []):
         use = sw.get("use", "").lower()
         text, kind = (lam, "laminate") if lam and ("laminate" in use or "plpb" in use or "carcass" in use) and "white" not in sw.get("code", "").lower() \
