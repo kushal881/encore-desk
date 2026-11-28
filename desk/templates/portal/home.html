@@ -1,0 +1,49 @@
+{% extends "portal/base.html" %}
+{% block title %}Your orders{% endblock %}
+{% macro sumbar(s) %}{% if s.total %}<div class="bar" aria-hidden="true"><i class="a" style="width:{{ 100 * s.approved / s.total }}%"></i><i class="c" style="width:{{ 100 * s.changes / s.total }}%"></i><i class="w" style="width:{{ 100 * s.waiting / s.total }}%"></i></div>{% endif %}{% endmacro %}
+{% block body %}
+<div><div class="sub">{{ client }}</div><h1>Your orders</h1></div>
+<div class="tiles">
+  <div class="tile"><span class="sub">Active orders</span><b>{{ tiles.active }}</b></div>
+  <div class="tile"><span class="sub">Waiting for your approval</span><b>{{ tiles.waiting }}</b><span class="small sub">drawing{{ '' if tiles.waiting == 1 else 's' }}</span></div>
+  <div class="tile"><span class="sub">Changes in progress</span><b>{{ tiles.changes }}</b></div>
+  <a class="tile" href="/portal/past" style="text-decoration:none;color:inherit"><span class="sub">Past orders</span><b>{{ tiles.past }}</b><span class="small">See all →</span></a>
+</div>
+
+<div class="card">
+  <h2>Active quotations &amp; orders</h2>
+  {% for x in active %}
+  <div class="card" style="gap:6px">
+    <div class="row" style="justify-content:space-between">
+      <div><b>{{ x.o.source_ref }}</b>
+        {% if not x.ds %}<span class="tag dim">Drawings being prepared</span>
+        {% elif x.o.stage == 'production' %}<span class="tag info">In production</span>
+        {% elif x.sum.waiting %}<span class="tag ask">Drawings for approval</span>
+        {% elif x.sum.changes %}<span class="tag ask">Changes in progress</span>
+        {% else %}<span class="tag ok">All drawings approved</span>{% endif %}
+      </div>
+      {% if x.ds %}<a class="btn{{ ' sec' if not x.sum.waiting }}" href="/portal/orders/{{ x.o.source_ref }}">{{ 'Review drawings' if x.sum.waiting else 'View drawings' }}</a>{% endif %}
+    </div>
+    <div class="sub">{{ x.ds|length }} drawing{{ '' if x.ds|length == 1 else 's' }}{% if x.last %} · sent {{ x.last|when }}{% endif %}</div>
+    {{ sumbar(x.sum) }}
+    {% if x.ds %}<div class="small sub">{{ x.sum.approved }} approved · {{ x.sum.changes }} changes asked · {{ x.sum.waiting }} waiting for you</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="sub">No active orders at the moment.</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between"><h2>Past orders</h2><a href="/portal/past">See all past orders</a></div>
+  {% if past %}
+  <div class="tw"><table>
+    <tr><th>Order</th><th>Products</th><th>Drawings</th><th></th></tr>
+    {% for x in past[:5] %}
+    <tr><td><b>{{ x.o.source_ref }}</b></td><td>{{ x.ds|length }}</td><td>{{ x.sum.approved }} approved · final</td>
+      <td><a href="/portal/past?o={{ x.o.source_ref }}">View</a> · <a href="/portal/past?o={{ x.o.source_ref }}#reorder">Ask to reorder</a></td></tr>
+    {% endfor %}
+  </table></div>
+  <div class="small sub">"Ask to reorder" sends the approved drawings to your Encore sales person, who prepares a new quotation.</div>
+  {% else %}<div class="sub">No past orders yet.</div>{% endif %}
+</div>
+{% endblock %}

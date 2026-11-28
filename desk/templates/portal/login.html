@@ -1,0 +1,44 @@
+{% extends "portal/base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="row" style="align-items:stretch;gap:16px">
+  <div class="card" style="flex:1 1 320px;background:#0E6B5C;color:#fff;border:none">
+    <h1 style="color:#fff">Review and approve your furniture drawings online</h1>
+    <div>See every drawing for your order, mark the changes you need, and approve for manufacturing — all in one place.</div>
+    <ul style="margin:8px 0 0;padding-left:18px;line-height:1.9">
+      <li>All drawings and revisions for your quotation</li>
+      <li>Mark changes directly on the drawing</li>
+      <li>Approve securely with a one-time code</li>
+    </ul>
+    <div class="small" style="margin-top:auto;opacity:.85">Encore Modular Furniture Pvt. Ltd. · IMT Manesar, Gurugram · ISO 9001 · 14001 · 45001</div>
+  </div>
+  <div class="card" style="flex:1 1 320px">
+    <div class="sub">Client portal</div>
+    <h1>Sign in</h1>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    {% if step == 'email' %}
+    <form method="post" action="/portal/code" class="f" style="gap:10px">
+      <label for="em">Work email</label>
+      <input id="em" name="email" type="email" autocomplete="email" required value="{{ to }}">
+      <div class="sub">Use the email address our drawings email was sent to — only that address has access. We'll email you a 6-digit code, no password needed.</div>
+      <button class="btn">Send code</button>
+    </form>
+    {% else %}
+    <div>We sent a 6-digit code to <b>{{ to }}</b>, if this email has access to an order. It is valid for 10 minutes.</div>
+    <form method="post" action="/portal/signin" class="f" style="gap:10px">
+      <input type="hidden" name="email" value="{{ to }}">
+      <label for="cd">Code</label>
+      <input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required autofocus>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="keep" value="1" style="width:20px;min-height:20px"> Keep me signed in on this device for 30 days</label>
+      <button class="btn">Sign in</button>
+    </form>
+    <div class="row">
+      <a href="/portal/login">Change email</a>
+      <form method="post" action="/portal/code" style="margin:0"><input type="hidden" name="email" value="{{ to }}"><button class="btn link">Resend code</button></form>
+    </div>
+    {% endif %}
+    <div class="sub">Opened the link from our email? You're signed in automatically.</div>
+    <div class="sub">Trouble signing in? Contact your Encore sales person or <a href="mailto:kushal@encoreprimefurniture.com">kushal@encoreprimefurniture.com</a>.</div>
+  </div>
+</div>
+{% endblock %}

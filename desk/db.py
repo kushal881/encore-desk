@@ -426,6 +426,22 @@ class FileLog(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class PortalCode(Base):
+    """A one-time 6-digit code emailed to a client on the portal: to sign in, or to approve drawings (decision 11).
+    Only its fingerprint is kept. Valid 10 minutes, 5 tries, used once."""
+    __tablename__ = "portal_code"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(200))
+    purpose: Mapped[str] = mapped_column(String(20), default="signin")   # signin | approve
+    order_id: Mapped[int] = mapped_column(Integer, default=0)             # approve: the order it is for
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    tries: Mapped[int] = mapped_column(Integer, default=0)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    ip: Mapped[str] = mapped_column(String(60), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def _default_sql(col, dialect):
     """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
     d = col.default
