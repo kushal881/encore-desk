@@ -12,7 +12,7 @@
       <div class="sub small">{% if odoo_on %}Only quotations whose opportunity is still open are listed. Won or lost ones are hidden, and so are quotations that are already projects.{% else %}Odoo is not connected here, so the sample orders are listed.{% endif %}</div>
       <form class="row" method="get" action="/new">
         <label class="sr" for="q">Search quotation or client</label>
-        <input type="text" id="q" name="q" value="{{ q }}" placeholder="Search quotation or client">
+        <input type="search" data-live id="q" name="q" value="{{ q }}" placeholder="Search quotation or client">
         <input type="hidden" name="p" value="{{ p }}"><button class="sm">Search</button>
       </form>
       <form method="post" action="/new" id="startform" style="display:flex;flex-direction:column;gap:10px">
@@ -39,7 +39,7 @@
       <div class="sub small">Customer wants the same product again? Pick the old drawing. Its approved specification is copied into a new project. Only client-approved drawings are listed.</div>
       <form class="row" method="get" action="/new#remake">
         <label class="sr" for="p">Search past drawings</label>
-        <input type="text" id="p" name="p" value="{{ p }}" placeholder="Search past drawings">
+        <input type="search" data-live id="p" name="p" value="{{ p }}" placeholder="Search past drawings">
         <input type="hidden" name="q" value="{{ q }}"><button class="sm">Search</button>
       </form>
       <form method="post" action="/new/remake" style="display:flex;flex-direction:column;gap:10px">

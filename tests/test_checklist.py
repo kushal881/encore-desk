@@ -30,7 +30,7 @@ def test_checklist():
     assert "4 left" in s["All questions answered"]["note"] and s["Areas set"]["state"] == "optional"
     assert "Quotation changes all handled" not in s                     # only shown when there are some
     h = c.get(A).text
-    assert "Order checklist" in h and "Step 3 of %d · All questions answered" % len(items) in h
+    assert "Order checklist" in h and "Step 3 of %d · Answer 4 questions" % len(items) in h   # issue #69: the action, not the done wording
     with db.Session() as d:
         qs = {q.key: q.id for q in d.query(db.Question)}
     for key, val in (("note", "Black bracket"), ("size", "L1200 D450 H750"), ("shelves", "1"), ("hinge", "Right")):

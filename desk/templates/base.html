@@ -45,11 +45,11 @@ a{color:#0E6B5C}
 .b.step{align-self:center;background:#fff;border:1px dashed #D6D3CA;font-size:13px;color:#5B5F66;text-align:center}
 form.q{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 form.row{display:flex;gap:8px;flex-wrap:wrap}
-button,input[type=text],select{font:inherit;min-height:44px;border-radius:10px}
+button,input[type=text],input[type=search],select{font:inherit;min-height:44px;border-radius:10px}
 button{padding:0 16px;border:1px solid #0E6B5C;background:#fff;color:#0E6B5C;cursor:pointer;font-weight:600}
 button.primary{background:#0E6B5C;color:#fff}
 button.sm{min-height:34px;padding:0 10px;font-size:13px}
-input[type=text],select{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #D6D3CA;background:#fff}
+input[type=text],input[type=search],select{flex:1 1 180px;min-width:0;padding:0 12px;border:1px solid #D6D3CA;background:#fff}
 input.sm{min-height:34px;font-size:13px}
 .card>input[type=text],.card>select,.col>input[type=text]{flex:0 0 auto}
 details>summary{cursor:pointer;color:#0E6B5C;font-size:13px}
@@ -154,5 +154,12 @@ document.getElementById('askyes').addEventListener('click',function(){d.close();
 document.addEventListener('submit',function(e){var b=e.submitter;if(b&&!e.defaultPrevented){setTimeout(function(){b.disabled=true;b.textContent='Working...';},0);}});})();
 </script>
 {% if tour_tags %}{{ tour_tags }}{% endif %}
+<script>/* issue #69: search boxes filter as you type and show everything again when cleared (the Search button stays for keyboard users) */
+(function(){var K='desk-live-search';document.querySelectorAll('input[data-live]').forEach(function(i){var t,last=i.value;
+function go(){if(i.value===last)return;last=i.value;try{sessionStorage.setItem(K,i.id+'|'+(i.selectionStart||i.value.length))}catch(e){}
+if(i.form.requestSubmit)i.form.requestSubmit();else i.form.submit();}
+i.addEventListener('input',function(){clearTimeout(t);t=setTimeout(go,i.value?450:0)});i.addEventListener('search',function(){clearTimeout(t);go()});});
+try{var s=sessionStorage.getItem(K);if(s){sessionStorage.removeItem(K);var p=s.split('|'),el=document.getElementById(p[0]);if(el){el.focus();var n=Math.min(+p[1]||0,el.value.length);try{el.setSelectionRange(n,n)}catch(e){}}}}catch(e){}})();
+</script>
 </body>
 </html>

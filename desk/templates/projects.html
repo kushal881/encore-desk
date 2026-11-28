@@ -32,7 +32,7 @@
         {% for p in people %}<option value="{{ p }}" {{ 'selected' if sp == p }}>{{ p }}</option>{% endfor %}
       </select>
       <label class="sr" for="q">Search</label>
-      <input type="text" id="q" name="q" value="{{ q }}" placeholder="Search client, quotation or folder">
+      <input type="search" data-live id="q" name="q" value="{{ q }}" placeholder="Search client, quotation or folder">
       <button class="sm">Search</button>
     </form>
     {% if rows %}
