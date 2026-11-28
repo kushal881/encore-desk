@@ -105,6 +105,7 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
   {% if sees_production %}<a href="/production" class="item {{ 'on' if nav == 'production' }}">Production</a>{% endif %}
   {% if not is_admin %}<a href="/my-requests" class="item {{ 'on' if nav == 'mine' }}">My requests{% if my_tasks %}<span class="count" style="margin-left:auto">{{ my_tasks }}</span>{% endif %}</a>{% endif %}
   {% if is_approver %}<a href="/approvals" class="item {{ 'on' if nav == 'appr' }}">Approvals{% if approvals_waiting %}<span class="count" style="margin-left:auto">{{ approvals_waiting }}</span>{% endif %}</a>{% endif %}
+  {% if is_admin %}<a href="/users" class="item {{ 'on' if nav == 'users' }}">Users</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
   {% endif %}
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>
