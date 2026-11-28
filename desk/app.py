@@ -1789,3 +1789,5 @@ from .newproject import router as _newproject                        # screen 2:
 app.include_router(_newproject)
 from .projects import router as _projects                            # screen 3a: Projects
 app.include_router(_projects)
+from .myrequests import router as _myrequests                        # screen 7a: My requests
+app.include_router(_myrequests)
