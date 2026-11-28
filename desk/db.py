@@ -634,6 +634,22 @@ def delete_order(s, order_id):
     return purge(s, Order.__table__, [order_id])
 
 
+# Tables that name an order by its number (order_ref) instead of a database link. They are not reached by purge(), so a
+# permanent delete clears them by number (Kushal, 28-Nov-2026: an engine request still showed a deleted test project).
+BY_ORDER_REF = ("EngineRequest", "ChangeRequest", "Task", "Notification")
+
+
+def delete_order_refs(s, order_ref):
+    """Deletes the rows that name an order only by its number. -> rows deleted. The caller commits."""
+    n = 0
+    if not order_ref:
+        return 0
+    for name in BY_ORDER_REF:
+        model = globals()[name]
+        n += s.execute(model.__table__.delete().where(model.__table__.c.order_ref == order_ref)).rowcount
+    return n
+
+
 def delete_line(s, line_id):
     """Removes one product (order line) and everything that belongs to it (the caller commits)."""
     return purge(s, OrderLine.__table__, [line_id])

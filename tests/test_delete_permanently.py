@@ -54,3 +54,31 @@ def test_delete_permanently():
         assert s.scalar(select(func.count()).select_from(db.PortalAccess)) == 1
         assert s.get(db.Order, keep) is not None
     assert not os.path.exists(os.path.join(os.environ["FILES_DIR"], str(oid)))
+
+
+def test_leftovers_by_order_number():
+    with db.Session() as s:
+        cl = db.Client(name="Other Client"); s.add(cl); s.flush()
+        oid = _order(s, "Q-TEST-3", cl)
+        s.add(db.EngineRequest(order_ref="Q-TEST-3", text="Add X", asked_by="Kushal"))
+        s.add(db.Task(assignee="Kushal", order_ref="Q-TEST-3", text="Do X"))
+        s.add(db.EngineRequest(order_ref="Q-OTHER", text="keep me", asked_by="Kushal"))
+        s.commit()
+    as_("kushal@encoreprimefurniture.com")
+    # deleting the project also clears what names it by number; other orders' rows stay
+    assert c.post("/orders/Q-TEST-3/delete-permanently", data={"confirm": "Q-TEST-3"}, follow_redirects=False).status_code == 303
+    with db.Session() as s:
+        assert s.query(db.EngineRequest).filter_by(order_ref="Q-TEST-3").count() == 0
+        assert s.query(db.Task).filter_by(order_ref="Q-TEST-3").count() == 0
+        assert s.query(db.EngineRequest).filter_by(order_ref="Q-OTHER").count() == 1
+    # leftovers of a project deleted before this fix: admin only, typed number, refused while the project exists
+    with db.Session() as s:
+        s.add(db.EngineRequest(order_ref="Q-GONE", text="old", asked_by="Kushal")); s.commit()
+    as_("sushil@encoreprimefurniture.com")
+    assert c.post("/orders/Q-GONE/delete-leftovers", data={"confirm": "Q-GONE"}, follow_redirects=False).status_code == 403
+    as_("kushal@encoreprimefurniture.com")
+    assert c.post("/orders/Q-GONE/delete-leftovers", data={"confirm": "wrong"}, follow_redirects=False).status_code == 400
+    assert c.post("/orders/Q-TEST-2/delete-leftovers", data={"confirm": "Q-TEST-2"}, follow_redirects=False).status_code == 400
+    assert c.post("/orders/Q-GONE/delete-leftovers", data={"confirm": "Q-GONE"}, follow_redirects=False).status_code == 303
+    with db.Session() as s:
+        assert s.query(db.EngineRequest).filter_by(order_ref="Q-GONE").count() == 0
