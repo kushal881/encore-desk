@@ -19,12 +19,16 @@
       var r = t ? t.getBoundingClientRect() : null;
       if (r && r.width) { spot.style.cssText += ';display:block;left:' + (r.left - 6) + 'px;top:' + (r.top - 6) + 'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px'; }
       else { spot.style.cssText += ';display:block;left:50%;top:50%;width:0;height:0'; }
-      var dots = steps.map(function (_, k) { return '<span style="display:inline-block;width:8px;height:8px;border-radius:4px;margin-right:4px;background:' + (k === i ? '#0E6B5C' : '#D6D3CA') + '"></span>'; }).join('');
+      var dw = steps.length > 8 ? 6 : 7;                                  /* many steps: smaller dots, so the footer stays on one line */
+      var dots = steps.map(function (_, k) { return '<span style="display:inline-block;width:' + dw + 'px;height:' + dw + 'px;border-radius:4px;margin-right:' + (dw / 2) + 'px;background:' + (k === i ? '#0E6B5C' : '#D6D3CA') + '"></span>'; }).join('');
       card.innerHTML = '<div class="small" style="color:#5B5F66;font-size:12px">' + (i + 1) + ' / ' + steps.length + '</div><div id="tourt" style="font-weight:600;font-size:16px;margin:2px 0 6px"></div><div id="tourx"></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap"><span aria-hidden="true">' + dots + '</span><span style="flex:1"></span>' +
-        '<button type="button" id="tskip" style="min-height:40px;border:0;background:none;color:#5B5F66;cursor:pointer;font:inherit">Skip tour</button>' +
-        (i ? '<button type="button" id="tback" style="min-height:40px;padding:0 14px;border:1px solid #0E6B5C;background:#fff;color:#0E6B5C;border-radius:10px;font:600 14px Inter,sans-serif;cursor:pointer">Back</button>' : '') +
-        '<button type="button" id="tnext" style="min-height:40px;padding:0 16px;border:1px solid #0E6B5C;background:#0E6B5C;color:#fff;border-radius:10px;font:600 14px Inter,sans-serif;cursor:pointer">' + (i === steps.length - 1 ? 'Finish' : 'Next') + '</button></div>';
+        /* issue #70: one footer row: dots on the left; Skip tour, Back, Next on the right, kept together (on very narrow phones
+           only the dots go above). No Back on the first step (no gap); Finish on the last. */
+        '<div id="tfoot" style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap"><span aria-hidden="true" style="flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden">' + dots + '</span>' +
+        '<div id="tbtns" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;flex-wrap:nowrap;margin-left:auto">' +
+        '<button type="button" id="tskip" style="min-height:40px;padding:0 4px;border:0;background:none;color:#5B5F66;cursor:pointer;font:13px Inter,system-ui,sans-serif;white-space:nowrap">Skip tour</button>' +
+        (i ? '<button type="button" id="tback" style="min-height:40px;padding:0 12px;border:1px solid #0E6B5C;background:#fff;color:#0E6B5C;border-radius:10px;font:600 14px Inter,sans-serif;cursor:pointer;white-space:nowrap">Back</button>' : '') +
+        '<button type="button" id="tnext" style="min-height:40px;padding:0 14px;border:1px solid #0E6B5C;background:#0E6B5C;color:#fff;border-radius:10px;font:600 14px Inter,sans-serif;cursor:pointer;white-space:nowrap">' + (i === steps.length - 1 ? 'Finish' : 'Next') + '</button></div></div>';
       card.querySelector('#tourt').textContent = s.title; card.querySelector('#tourx').textContent = s.text;
       card.querySelector('#tskip').onclick = finish; card.querySelector('#tnext').onclick = function () { go(1); };
       var b = card.querySelector('#tback'); if (b) b.onclick = function () { go(-1); };
