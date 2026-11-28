@@ -2,6 +2,10 @@
 {% block title %}Dashboard · Encore drawing desk{% endblock %}
 {% block body %}
 <div class="page">
+  {% if guide_card %}<div class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;border-color:#0E6B5C;background:#F4FAF8">
+    <span style="flex:1 1 260px">{% if is_approver %}<b>Directors guide</b> · who can do what, approvals, engines and where everything lives.{% else %}<b>New here?</b> The Staff Guide walks through a project from quotation to production.{% endif %}</span>
+    <a class="btn primary" style="padding:6px 14px" href="{{ '/guide/directors' if is_approver else '/guide' }}">{{ 'Directors guide' if is_approver else 'Read the guide' }} &rsaquo;</a>
+    <form method="post" action="/guide/dismiss"><button class="sm" aria-label="Hide this card">Hide</button></form></div>{% endif %}
   <div class="tiles">
     {% for k, n, t in (('active', count.active, 'Active projects'), ('pending', count.pending, 'Drawings pending'), ('with_client', count.with_client, 'Waiting for client approval'), ('approved', count.approved, 'Approved, not yet released'), ('production', count.production, 'In production')) %}
     <a class="tile {{ 'on' if focus == k }}" href="/?focus={{ k }}#drawings" aria-label="{{ n }} {{ t }}. Show the drawings."><div class="n">{{ n }}</div><div class="sub">{{ t }}</div></a>

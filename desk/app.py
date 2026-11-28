@@ -338,6 +338,9 @@ def ctx(user, **kw):
         ch_waiting = len(s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")).all())
         tasks = len(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open")).all())
     lv = auth.level(user)
+    from .guide import HELP as _help                                   # issue #42: the "?" next to page titles
+    kw.setdefault("guide_help", {k: v for k, v in _help.items() if v[0] == "staff" or lv in ("admin", "admin2")})
+    kw.setdefault("guide_card", not getattr(user, "guide_dismissed", False))
     newer = engines.NEWER if user.role == "admin" else ""                # a newer approved engine version: administrators only
     kw.setdefault("engines_newer", newer)
     kw.setdefault("engines_popup", bool(newer) and (getattr(user, "engines_dismissed", "") or "") != newer)
@@ -2116,3 +2119,7 @@ app.include_router(_clients)
 
 from .users import router as _users                                  # issue #40: Users & roles
 app.include_router(_users)
+
+
+from .guide import router as _guide                                  # issue #42: the Guide
+app.include_router(_guide)
