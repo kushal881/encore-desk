@@ -330,6 +330,23 @@ class LineArea(Base):
     by: Mapped[str] = mapped_column(String(120), default="")
 
 
+class ProductionFile(Base):
+    """A file the approved engines made for production of the whole order: the bill of material (Excel) with its cut list.
+    panel_saw: made with the panel-saw cutting rules (4 mm saw cut, cut sizes, grain, optimised boards)."""
+    __tablename__ = "production_file"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="bom")
+    panel_saw: Mapped[bool] = mapped_column(Boolean, default=False)
+    path: Mapped[str] = mapped_column(Text, default="")
+    name: Mapped[str] = mapped_column(Text, default="")
+    revisions: Mapped[str] = mapped_column(Text, default="")             # the issued drawings it was made from
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class PortalAccess(Base):
     """Who may sign in to the client portal for one order. Only these emails can; CC addresses and forwarded mails cannot.
     can_approve: approve drawings; otherwise view and comment. Every addition and removal is logged in the conversation."""

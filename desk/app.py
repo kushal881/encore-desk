@@ -369,6 +369,11 @@ def _after(request, ref):
 FLOW = [("drawing", "Drawings"), ("issued", "Issued"), ("sent", "With client"), ("approved", "Approved"), ("production", "In production"), ("completed", "Completed")]
 
 
+def _bom_files(o):
+    with db.Session() as s:
+        return s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id).order_by(db.ProductionFile.id.desc()).limit(6)).all()
+
+
 @app.get("/orders/{ref}", response_class=HTMLResponse)
 def project(request: Request, ref: str, user=User):
     """The project page: where the order stands, what needs attention, and every product with its drawing."""
@@ -407,6 +412,7 @@ def project(request: Request, ref: str, user=User):
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
+                              bom_files=_bom_files(o),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -431,6 +437,7 @@ def order(request: Request, ref: str, user=User):
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
+                              bom_files=_bom_files(o),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -1548,6 +1555,42 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
         s.commit()
     return _after(request, ref)
+
+
+@app.post("/orders/{ref}/bom")
+def make_bom(ref: str, panel_saw: str = Form(""), user=User):
+    """The bill of material (Excel, with the cut list) of the whole order, from each product's latest issued revision,
+    made by the approved BOM engine. Panel-saw cutting ticked: 4 mm saw cut, cut sizes, grain kept along the board,
+    boards optimised (the engine's optional panel_saw rules)."""
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev}
+    if not revs:
+        raise HTTPException(400, "Nothing has been issued yet")
+    on = bool(panel_saw)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    pf = db.ProductionFile(order_id=o.id, kind="bom", panel_saw=on, made_by=user.name, engine_version=engines.version_label(),
+                           revisions=", ".join(sorted(revs)), name="%s-Bill of Material%s.xlsx" % (o.source_ref, " (panel saw)" if on else ""))
+    try:
+        pf.path = engines.bom(revs, "%d/bom/%s-%s.xlsx" % (o.id, stamp, "panelsaw" if on else "standard"), panel_saw=on, client=o.client.name)
+    except RuntimeError as e:
+        pf.error = str(e)
+    with db.Session() as s:
+        s.add(pf)
+        s.add(db.Message(order_id=o.id, who="desk", text=("Bill of material made%s by %s." % (" with panel-saw cutting" if on else "", user.name)) if not pf.error
+                         else "The bill of material could not be made: %s" % pf.error))
+        s.commit()
+    return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
+
+
+@app.get("/production-files/{fid}")
+def production_file(fid: int, user=User):
+    with db.Session() as s:
+        pf = s.get(db.ProductionFile, fid)
+    if pf is None or pf.error or not os.path.exists(pf.path):
+        raise HTTPException(404)
+    return FileResponse(pf.path, filename=pf.name)
 
 
 def _set_file(sid, i):
