@@ -550,7 +550,8 @@ def project(request: Request, ref: str, user=User):
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     from .checklist import steps as _checklist_steps                    # issue #44
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    from .portal import losing_access
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, archive_losing=losing_access(o.id) if user.role == "admin" and not o.archived_at else [], todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
                               bom_files=_bom_files(o), has_cutting=engines.has_cutting(),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
@@ -2114,8 +2115,11 @@ def archive_order(ref: str, reason: str = Form(""), user=User):
         order = s.get(db.Order, o.id)
         if order.archived_at:
             raise HTTPException(400, "%s is already archived" % ref)
+        from .portal import losing_access                                 # the client emails whose only active order this was
+        gone = losing_access(o.id)
         order.archived_at, order.archived_by, order.archived_reason = db.now(), user.name, reason
-        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened." % (user.name, reason)))
+        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened. "
+                         "It is hidden from the client portal%s." % (user.name, reason, "; portal access ended for " + ", ".join(gone) if gone else "")))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
