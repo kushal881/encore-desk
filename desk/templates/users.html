@@ -4,6 +4,7 @@
 <div class="page">
   <div><div class="sub small">Administrator</div><h1 style="margin:0;font-size:22px">Users &amp; roles</h1></div>
   {% if error %}<div class="card" role="alert" style="border-color:#B91C1C;background:#FDE8E8;color:#B91C1C"><b>{{ error }}</b></div>{% endif %}
+  {% if notice %}<div class="card" role="status" style="border-color:#0E6B5C;background:#E3F1EE;color:#0E6B5C"><b>{{ notice }}</b></div>{% endif %}
   <div class="card">
     <div style="font-weight:600">Add a person</div>
     <form method="post" action="/users/add" class="row" style="align-items:flex-end">
@@ -11,6 +12,7 @@
       <span style="display:flex;flex-direction:column;flex:1 1 260px"><label class="small" for="em">Email (@{{ domain }})</label><input type="text" id="em" name="email" required placeholder="name@{{ domain }}" style="flex:0 0 auto"></span>
       <span style="display:flex;flex-direction:column;flex:0 1 220px"><label class="small" for="rl">Role</label>
         <select id="rl" name="role" style="flex:0 0 auto">{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'drawing' }}>{{ t }}</option>{% endfor %}</select></span>
+      <label class="small" style="display:flex;gap:6px;align-items:center;flex:0 0 auto"><input type="checkbox" name="invite" value="1" checked style="width:20px;min-height:20px"> Send an invitation email</label>
       <button class="primary">Add</button>
     </form>
     <div class="sub small">They sign in with Google using that address. Addresses starting with design@, production@ or sales@ get that role automatically on first sign-in.</div>
@@ -28,9 +30,11 @@
           <select id="r{{ u.id }}" name="role" style="flex:1 1 180px;min-height:36px" {{ 'disabled' if u.id == me }}>{% for k, t in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == u.role }}>{{ t }}</option>{% endfor %}{% if u.role not in roles %}<option selected>{{ u.role }}</option>{% endif %}</select>
           {% if u.id != me %}<button class="sm">Save</button>{% endif %}</form>
           <div class="sub small">{{ what.get(u.role, '') }}</div></td>
-        <td><span class="tag {{ 'ok' if u.active else 'dim' }}">{{ 'Active' if u.active else 'Switched off' }}</span></td>
+        <td><span class="tag {{ 'ok' if u.active else 'dim' }}">{{ 'Active' if u.active else 'Switched off' }}</span>
+          {% if u.invited_at %}<div class="sub small" style="white-space:nowrap">Invited {{ u.invited_at|when }}</div>{% endif %}</td>
         <td class="sub small" style="white-space:nowrap">{{ u.last_sign_in|when or 'never' }}</td>
-        <td>{% if u.id != me %}<form method="post" action="/users/{{ u.id }}/{{ 'off' if u.active else 'on' }}" {% if u.active %}data-confirm="Switch {{ u.name }} off? They cannot sign in until switched on again. Nothing they did is deleted."{% endif %}><button class="sm {{ 'danger' if u.active }}">{{ 'Switch off' if u.active else 'Switch on' }}</button></form>{% endif %}</td>
+        <td style="white-space:nowrap">{% if u.active and not u.last_sign_in %}<form method="post" action="/users/{{ u.id }}/invite" style="display:inline"><button class="sm">{{ 'Send again' if u.invited_at else 'Send invite' }}</button></form>{% endif %}
+          {% if u.id != me %}<form method="post" action="/users/{{ u.id }}/{{ 'off' if u.active else 'on' }}" style="display:inline" {% if u.active %}data-confirm="Switch {{ u.name }} off? They cannot sign in until switched on again. Nothing they did is deleted."{% endif %}><button class="sm {{ 'danger' if u.active }}">{{ 'Switch off' if u.active else 'Switch on' }}</button></form>{% endif %}</td>
       </tr>
       {% endfor %}
     </table></div>
