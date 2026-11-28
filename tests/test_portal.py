@@ -219,7 +219,8 @@ def test_old_data_and_past_orders(monkeypatch):
     MAIL.clear()
     r = c.post(P + "/reorder", data={"no": str(l1), "qty_%d" % l1: "5", "site": "Noida office", "note": "Same finish"}, follow_redirects=False)
     assert r.headers["location"] == "/portal/past?o=Q-2026-10-444&sent=1"
-    m = MAIL[-1]
+    m = next(x for x in MAIL if x["subject"].startswith("Reorder asked"))                    # to the sales person
+    assert any(x["subject"].startswith("We received your reorder request") for x in MAIL)   # and the client's acknowledgement (#51)
     assert m["subject"].startswith("Reorder asked") and "Product 1:" in m["body"] and "wants: 5" in m["body"] and "Noida office" in m["body"]
     assert "Reorder asked on the portal by %s" % SINGH in staff.get(A + "/work").text
     assert "No past orders found" in c.get("/portal/past?year=1999").text
