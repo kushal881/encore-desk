@@ -79,7 +79,7 @@ class Reference(Base):
     order (line_no 0) or one product. Never on the portal unless show_client; production sees it only if for_production."""
     __tablename__ = "reference"
     id: Mapped[int] = mapped_column(primary_key=True)
-    order_id: Mapped[int] = mapped_column(Integer, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"), index=True)     # removed with the order (Remove from the desk)
     line_no: Mapped[int] = mapped_column(Integer, default=0)
     name: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(10), default="")            # image | photo (heic) | pdf | cad
