@@ -28,7 +28,7 @@
     <div class="vbar">
       <div style="flex-grow:1;min-width:220px">
         <div style="font-weight:600">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
-        <div class="sub small">Step {{ step[0] }} of 8 · {{ step[1] }} · Drawing {{ pos }} of {{ count }} · {{ title }}</div>
+        <div class="sub small">Step {{ step[0] }} of 8 · {{ step[1] }} · {{ pos }} of {{ count }} drawn products · {{ title }}</div>
       </div>
       <nav class="seg" aria-label="Which drawing">
         <a class="{{ 'on' if mode == 'client' }}" href="{{ url(mode='client', s=1) }}" {% if mode == 'client' %}aria-current="page"{% endif %}>Client drawing</a>

@@ -303,6 +303,12 @@ def load(ref):
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
         o.client_open = sum(1 for l in o.lines if l.last_rev and not l.cancelled_at and _client_changes(s, l.last_rev.id))
+        for l in o.lines:                                            # issue #69: the status in the order's Drawings menu
+            ap = s.scalars(select(db.Approval).where(db.Approval.revision_id == l.last_rev.id).order_by(db.Approval.id.desc())).first() if l.last_rev else None
+            l.nav_status = ("Cancelled" if l.cancelled_at else "Changes asked" if l.last_rev and _client_changes(s, l.last_rev.id)
+                            else "Approved" if ap is not None and ap.outcome == "approved" and l.issued_current
+                            else "Issued" if l.issued_current else "Could not draw" if l.drawing and l.drawing.status == "failed" and not l.revisions
+                            else "Draft" if l.drawing or l.revisions else "Not drawn")
         o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
@@ -405,7 +411,7 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
                         if _inv(lo, user):
                             cur, no, total = _cs(_cl(lo, auth.sees_production(user)))
                             if cur:
-                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["title"], state=cur["state"],
+                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["action"], state=cur["state"],
                                                     block=cur["block"], url=cur["url"] or "/orders/%s" % o.source_ref, label=cur["label"] or "Open"))
                 except Exception:
                     gd = dict(title="", step=0)

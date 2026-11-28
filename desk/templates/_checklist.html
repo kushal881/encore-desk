@@ -2,7 +2,7 @@
 <details class="card" id="checklist" style="margin:12px 24px 0;gap:6px" {{ 'open' if open_checklist }}>
   <summary style="list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
     <b>Order checklist</b>
-    {% if cur %}<span class="tag {{ 'bad' if cur.state == 'blocked' else 'ask' }}">Step {{ cur.no }} of {{ checklist|length }} · {{ cur.title }}</span>
+    {% if cur %}<span class="tag {{ 'bad' if cur.state == 'blocked' else 'ask' }}">Step {{ cur.no }} of {{ checklist|length }} · {{ cur.action }}</span>
     {% else %}<span class="tag ok">All {{ checklist|length }} steps done</span>{% endif %}
     <span class="sub small" style="margin-left:auto">Show all steps</span>
   </summary>
@@ -11,7 +11,7 @@
     <li style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;{% if x.state in ('now', 'blocked') %}background:{{ '#FDE8E8' if x.state == 'blocked' else '#FDF1E2' }}{% endif %}">
       <span aria-hidden="true" style="width:24px;height:24px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
         background:{{ {'done': '#E3F1EE', 'now': '#9A4508', 'blocked': '#B91C1C'}.get(x.state, '#F1EFE9') }};color:{{ {'done': '#0E6B5C', 'now': '#fff', 'blocked': '#fff'}.get(x.state, '#5B5F66') }}">{{ '✓' if x.state == 'done' else x.no }}</span>
-      <span style="flex:1 1 260px"><span class="sr">{{ {'done': 'Done', 'now': 'Now', 'blocked': 'Blocked', 'later': 'Later', 'optional': 'Optional'}[x.state] }}: </span>{{ x.title }}
+      <span style="flex:1 1 260px"><span class="sr">{{ {'done': 'Done', 'now': 'Now', 'blocked': 'Blocked', 'later': 'Later', 'optional': 'Optional'}[x.state] }}: </span>{{ x.title if x.state == 'done' else x.action }}
         {% if x.note %}<span class="sub small"> · {{ x.note }}</span>{% endif %}
         {% if x.state == 'blocked' %}<span class="small" style="display:block;color:#B91C1C;font-weight:600">{{ x.block }}</span>{% endif %}
         {% if x.state == 'done' and (x.who or x.when) %}<span class="sub small" style="display:block">{{ x.who }}{% if x.who and x.when %}, {% endif %}{{ x.when|when if x.when else '' }}</span>{% endif %}</span>

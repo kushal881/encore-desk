@@ -41,7 +41,7 @@ def test_bill_of_material(monkeypatch):
         s.add(db.Order(client_id=s.query(db.Order).first().client_id, source="sample", source_ref="EMPTY-1")); s.commit()
         s.add(db.Step(order_id=s.query(db.Order).filter_by(source_ref="EMPTY-1").one().id, kind="released")); s.commit()
     assert "Nothing has been issued yet" in c.post("/orders/EMPTY-1/bom").text
-    assert "Make the bill of material" not in c.get(A).text
+    assert "Make the bill of material</button>" not in c.get(A).text          # the button (the checklist names the step in words)
     c.post(A + "/step/sent"); c.post(A + "/step/approved", data={"note": "Mr Singh, by email"}); c.post(A + "/step/released")
     h = c.get(A).text
     assert "Bill of material and cut list" in h and "Panel-saw cutting" in h and "Make the bill of material" in h

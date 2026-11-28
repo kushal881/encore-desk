@@ -94,7 +94,7 @@ def test_viewer_page():
         import pytest; pytest.skip("ENGINES_DIR not set")
     _draw()
     v = c.get(A + "/view/2").text
-    assert "Step 4 of 8 · Review · Drawing 2 of 3" in v and "Preview, not issued" in v
+    assert "Step 4 of 8 · Review · 2 of 3 drawn products" in v and "Preview, not issued" in v
     assert v.count('class="tag ok">Pass</span>') == 3 and "Automatic checks" in v
     assert "Looks right — mark ready to issue" in v and 'id="zfit"' in v and "Sheet 1 / 1" in v
     assert 'href="/orders/Q-2026-10-444/view/1">&larr; Previous drawing' in v and 'href="/orders/Q-2026-10-444/view/3">Next drawing &rarr;' in v
