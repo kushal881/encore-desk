@@ -3,7 +3,7 @@ issue, engine requests, product photographs and remakes. Client portal: portal.p
 import os
 from fastapi import FastAPI, Form, HTTPException, Request, Depends, UploadFile, File
 from starlette.middleware.sessions import SessionMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -1032,10 +1032,16 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     for m in marks:
         m.part = _mark_part(l, m, cache)
     with db.Session() as ss:
-        turns = ss.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id.desc()).limit(12)).all()[::-1]
+        turns = ss.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id.desc()).limit(40)).all()[::-1]
     for tr in turns:
         tr.rows = viewer.check_rows(tr.files.get("checks")) if tr.status in ("trial", "failed") else []
         tr.can_accept = tr.status == "trial" and viewer.all_pass(tr.files.get("checks")) and tr.shown == sh["key"]
+        tr.lines = chat_lines(tr)                                        # issue #82: one line per marker / typed text (old data: one line)
+    # issue #82: markers placed on this drawing and not sent yet are chips in the message box (old markers never sent too)
+    chips = sorted([m for m in l.marks if m.shown.split("s")[0] == sh["key"] and not m.turn_id], key=lambda m: m.no) if mode == "client" else []
+    for m in chips:
+        m.part = _mark_part(l, m, cache)
+    waiting = next((tr for tr in reversed(turns) if tr.status == "trial" and tr.shown == sh["key"]), None)
     cmp_ = next((tr for tr in turns if tr.id == compare and tr.files.get("pdf")), None)
     box = _changed_box(sh, cmp_) if cmp_ else None
     return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
@@ -1045,7 +1051,25 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked or l.ai_waiting, mode,
                                                                                          approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,
                                                                                          ai=l.ai_waiting), review=review,
-                              marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None, locked=locked))
+                              marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None, locked=locked,
+                              chips=chips, waiting=waiting, waiting_n=sum(1 for x in waiting.lines if x["state"] == "waiting") if waiting else 0))
+
+
+def chat_lines(tr):
+    """The lines of one AI reply in the chat (issue #82): dict(k, marker, text, state) with state waiting (Undo) | accepted |
+    dropped | bridge (the engine cannot draw it) | answer | failed | carried. Turns from before the chat have no parts: one line."""
+    ps = tr.parts or [dict(marker=0, typed=tr.typed, kind=tr.kind, said=tr.said, values=tr.values, answer=tr.answer, dropped=False)]
+    out = []
+    for k, p_ in enumerate(ps):
+        if p_.get("kind") == "change":
+            st = ("dropped" if p_.get("dropped") else {"trial": "waiting", "accepted": "accepted", "failed": "failed", "merged": "carried"}.get(tr.status, "dropped"))
+            txt = p_.get("said") or chg.compact(p_.get("values") or {})
+        elif p_.get("kind") == "cannot":
+            st, txt = "bridge", p_.get("answer") or "The engine cannot draw this yet"
+        else:
+            st, txt = "answer", p_.get("answer") or ""
+        out.append(dict(k=k, marker=p_.get("marker") or 0, text=txt, state=st, carried=bool(p_.get("carried"))))
+    return out
 
 
 # ---- the AI change panel ---------------------------------------------------------------------------------------------
@@ -1102,12 +1126,12 @@ def _changed_box(sh, tr):
 
 
 @app.post("/orders/{ref}/view/{no}/ai")
-def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), use_refs: str = Form(""), user=User):
-    """The user asks the assistant about this product. A change is drawn as a trial; the drawing stays as it is until
-    someone presses Accept."""
-    text = text.strip()
-    if not text:
-        raise HTTPException(400, "Type the change or the question first")
+def ai_ask(ref: str, no: int, text: str = Form(""), marker: int = Form(0), use_refs: str = Form(""), user=User):
+    """Send (issue #82, chat style): every marker chip not sent yet plus the typed text go out as ONE message. The assistant
+    reads each on its own (one line each in the reply); every change it understood goes into ONE trial drawing, which the
+    engine draws once. The drawing stays as it is until someone presses Accept all. A trial still waiting is carried into
+    the new one, so only one is ever waiting. Lines the engine cannot draw go to the bridge (issue #73)."""
+    text = " ".join((text or "").split())
     o = load(ref)
     l = next((x for x in o.lines if x.no == no), None)
     if l is None or not (l.drawing or l.revisions):
@@ -1116,39 +1140,101 @@ def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), use_
     why = _panel_state(o, l, sh, "client")
     if why or sh["failed"]:
         raise HTTPException(400, why or "This drawing could not be made. Ask for an engine addition in Questions and changes.")
-    cache, marks = {}, []
+    cache, marks, chips = {}, [], []
     for m in l.marks:
         if m.shown.split("s")[0] == sh["key"]:
             where = _mark_part(l, m, cache)
             marks.append("%d = %s%s" % (m.no, m.label or "marked on the drawing", ", on " + where if where and where.split(" (")[0].lower() not in (m.label or "").lower() else ""))
-    if marker:
-        text = "At marker %d: %s" % (marker, text)
+            if not m.turn_id:
+                chips.append(m)
+    items = [(m.no, "At marker %d (%s): %s" % (m.no, _mark_part(l, m, cache) or "on the drawing", m.label or "change here")) for m in sorted(chips, key=lambda m: m.no)]
+    if text and marker and any(mk == marker for mk, _ in items):      # typed for one of the chips (the older form): one line for both
+        items = [(mk, ("At marker %d: %s" % (marker, text)) if mk == marker else it) for mk, it in items]
+    elif text:
+        items.append((marker, ("At marker %d: %s" % (marker, text)) if marker else text))
+    if not items:
+        raise HTTPException(400, "Add a marker on the drawing or type a change first")
     current = (sh["r"].spec if sh["r"] else l.drawing.spec) or {}
     edir, ver = engines.dir_for(l.engine_for)
     with db.Session() as s:
-        history = [(t.typed, t.said or t.answer) for t in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
+        history = [(t_.typed, t_.said or t_.answer) for t_ in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
+        waiting = s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id, db.AiTurn.status == "trial", db.AiTurn.shown == sh["key"])
+                            .order_by(db.AiTurn.id)).all()
     product = dict(product="Product %d" % l.no, name=l.name.split("(")[0].strip(), family=l.read["family"], qty=l.qty,
                    issued=("Rev %s" % l.last_rev.rev) if l.last_rev else "not issued")
+    parts_ = []
+    for w in waiting:                                                   # a change still waiting rides along (old data: one line)
+        for p_ in (w.parts or [dict(marker=0, typed=w.typed, kind="change", said=w.said, values=w.values, answer="", dropped=False)]):
+            if p_.get("kind") == "change" and not p_.get("dropped"):
+                parts_.append(dict(p_, carried=True))
     pictures = references.images_for_ai(o.id, l.no) if use_refs else []   # issue #72: the client's sketches and photos, when ticked
-    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history, images=pictures)
-    tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=text, kind=reply["kind"], said=reply["said"], values=reply["values"], by=user.name,
-                   answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""))
-    tr.status = reply["kind"] if reply["kind"] != "change" else "trial"
-    if reply["kind"] == "change":
-        with db.Session() as s:
-            try:
-                tr.spec = make_spec(s, o, l, edir=edir, extra=reply["values"])
-                s.add(tr); s.commit()                                         # an id for the trial's folder
-                tr.files = engines.draw(tr.spec, "%d/line%d/trial/%d" % (o.id, l.no, tr.id), edir)
-                tr.engine_version = ver
-            except (spec.CannotDraw, RuntimeError) as e:
-                tr.status, tr.error = "failed", str(e)
-                tr.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
-            s.merge(tr); s.commit()
-    else:
-        with db.Session() as s:
-            s.add(tr); s.commit()
-    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+    for mk, it in items:
+        reply = assistant.ask(it, product, current.get("model", {}), marks, edir, history, images=pictures)
+        parts_.append(dict(marker=mk, typed=it, kind=reply["kind"], said=reply["said"], values=reply["values"],
+                           answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""),
+                           dropped=False))
+        history.append((it, reply["said"] or reply["answer"]))
+    new_parts = [p_ for p_ in parts_ if not p_.get("carried")]
+    kinds = {p_["kind"] for p_ in parts_}
+    typed = "; ".join(p_["typed"] for p_ in new_parts)
+    tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=typed[:4000], kind="change" if "change" in kinds else ("answer" if "answer" in kinds else "cannot"),
+                   by=user.name, parts=parts_, answer=" ".join(p_["answer"] for p_ in new_parts if p_["kind"] != "change" and p_["answer"])[:4000])
+    with db.Session() as s:
+        s.add(tr); s.flush()
+        for w in waiting:
+            s.get(db.AiTurn, w.id).status = "merged"                    # folded into this one
+        for m in chips:
+            s.get(db.Mark, m.id).turn_id = tr.id
+        _trial(s, o, l, tr, edir, ver)
+        s.commit()
+    return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
+
+
+def _trial(s, o, l, tr, edir=None, ver=None):
+    """(Re)draws one message's trial from the changes still in it: values merged in order, one engine run."""
+    if edir is None:
+        edir, ver = engines.dir_for(l.engine_for)
+    merged = {}
+    for p_ in tr.parts or []:
+        if p_.get("kind") == "change" and not p_.get("dropped"):
+            merged.update(p_.get("values") or {})
+    t_ = s.get(db.AiTurn, tr.id) or tr
+    said_ = [p_["said"] for p_ in (tr.parts or []) if p_.get("kind") == "change" and not p_.get("dropped") and p_.get("said")]
+    t_.values, t_.said = merged, "; ".join(dict.fromkeys(said_))[:2000]          # the same change asked twice: said once
+    if t_.kind != "change":
+        t_.status = t_.kind
+        return
+    if not merged:
+        t_.status = "undone"
+        return
+    t_.status, t_.error = "trial", ""
+    try:
+        t_.spec = make_spec(s, o, l, edir=edir, extra=merged)
+        t_.files = engines.draw(t_.spec, "%d/line%d/trial/%d" % (o.id, l.no, t_.id), edir)
+        t_.engine_version = ver
+    except (spec.CannotDraw, RuntimeError) as e:
+        t_.status, t_.error = "failed", str(e)
+        t_.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
+
+
+@app.post("/orders/{ref}/view/{no}/ai/{tid}/drop/{k}")
+def ai_drop(ref: str, no: int, tid: int, k: int, user=User):
+    """Undo one line of a waiting message: the trial is drawn again without it (issue #82)."""
+    o = load(ref)
+    l, tr = _turn(o, no, tid)
+    if tr.status not in ("trial", "failed") or not (0 <= k < len(tr.parts or [])):
+        raise HTTPException(400, "This change is not waiting for a decision")
+    why = _panel_state(o, l, _shown(l), "client")
+    if why:
+        raise HTTPException(400, why)
+    with db.Session() as s:
+        t_ = s.get(db.AiTurn, tr.id)
+        ps = [dict(p_) for p_ in t_.parts]
+        ps[k]["dropped"] = True
+        t_.parts = ps
+        _trial(s, o, l, t_)
+        s.commit()
+    return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
 
 
 def _turn(o, no, tid):
@@ -1187,7 +1273,7 @@ def ai_accept(ref: str, no: int, tid: int, user=User):
         s.add(db.Message(order_id=o.id, who="desk", text="Product %d: %s. Accepted by %s from the change panel%s." % (
             l.no, tr.said or chg.compact(tr.values), user.name, "; issuing it will make a new revision" if l.revisions else "")))
         s.commit()
-    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+    return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
 
 
 @app.post("/orders/{ref}/view/{no}/ai/{tid}/undo")
@@ -1198,7 +1284,7 @@ def ai_undo(ref: str, no: int, tid: int, user=User):
     if tr.status == "trial":
         with db.Session() as s:
             s.get(db.AiTurn, tr.id).status = "undone"; s.commit()
-        return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+        return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
     if tr.status != "accepted":
         raise HTTPException(400, "There is nothing to undo here")
     c = next((x for x in l.changes if x.id == tr.change_id), None)
@@ -1214,7 +1300,7 @@ def ai_undo(ref: str, no: int, tid: int, user=User):
     o = load(ref)
     with db.Session() as s:
         _draw_lines(o, s, user.name, only={no})
-    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+    return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
 
 
 @app.get("/ai/{tid}/{kind}")
@@ -1333,7 +1419,7 @@ def ask_permission(ref: str, no: int, text: str = Form(...), user=User):
                                text=text.strip()[:2000], asked_by=user.name))
         s.add(db.Message(order_id=o.id, who="desk", text="Permission asked by %s to change Product %d after client approval: %s" % (user.name, no, text.strip())))
         s.commit()
-    return RedirectResponse(_view_url(ref, no) + "#panel", status_code=303)
+    return RedirectResponse(_view_url(ref, no) + "#chat", status_code=303)
 
 
 @app.post("/tasks/{tid}/done")
@@ -2074,7 +2160,7 @@ def set_page(sid: int, i: int, n: int, user=User):
 
 
 @app.post("/orders/{ref}/marks/{no}")
-def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y: float = Form(...), label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
+def mark_add(request: Request, ref: str, no: int, shown: str = Form(...), x: float = Form(...), y: float = Form(...), label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
     """A numbered marker on a drawing. The number is then used when describing a change."""
     o = load(ref)
     l = next((z for z in o.lines if z.no == no), None)
@@ -2082,14 +2168,28 @@ def mark_add(ref: str, no: int, shown: str = Form(...), x: float = Form(...), y:
         raise HTTPException(400, "The marker could not be placed")
     with db.Session() as s:
         m = db.Mark(line_id=l.id, shown=shown, no=max([m.no for m in l.marks], default=0) + 1, x=round(x, 2), y=round(y, 2), label=label.strip()[:200], by=user.name)
-        m.label = m.label or _mark_part(l, m)                         # no note typed: the part it sits on
+        m.label = m.label or _mark_part(l, m) or "marked here"        # no note typed: the part it sits on (issue #82: never empty)
         s.add(m)
         s.commit()
-    return RedirectResponse(_view_url(ref, no, rev, sheet), status_code=303)
+        got = dict(id=m.id, no=m.no, label=m.label, part=_mark_part(l, m), x=m.x, y=m.y)
+    if request.headers.get("x-requested-with") == "fetch":            # issue #82: the chat page adds the chip without reloading
+        return JSONResponse(got)
+    return RedirectResponse(_view_url(ref, no, rev, sheet) + "#chat", status_code=303)
+
+
+@app.get("/orders/{ref}/view/{no}/part")
+def mark_part_at(ref: str, no: int, shown: str, x: float, y: float, user=User):
+    """The part under a point of the drawing, for the marker box (issue #82): {"part": "Screen (front view)"} or ""."""
+    o = load(ref)
+    l = next((z for z in o.lines if z.no == no), None)
+    if l is None or not re.fullmatch(r"[rd]\d+(s\d+)?", shown):
+        raise HTTPException(404)
+    hit = parts.part_at(_part_map(l, shown), x / 100, y / 100)
+    return JSONResponse({"part": hit["where"] if hit else ""})
 
 
 @app.post("/orders/{ref}/marks/{no}/{mid}/{what}")
-def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
+def mark_edit(request: Request, ref: str, no: int, mid: int, what: str, label: str = Form(""), rev: int = Form(0), sheet: int = Form(1), user=User):
     o = load(ref)
     l = next((z for z in o.lines if z.no == no), None)
     if l is None or what not in ("label", "remove") or mid not in [m.id for m in l.marks]:
@@ -2101,7 +2201,9 @@ def mark_edit(ref: str, no: int, mid: int, what: str, label: str = Form(""), rev
         else:
             m.label = label.strip()[:200]
         s.commit()
-    return RedirectResponse(_view_url(ref, no, rev, sheet), status_code=303)
+    if request.headers.get("x-requested-with") == "fetch":
+        return JSONResponse({"ok": True})
+    return RedirectResponse(_view_url(ref, no, rev, sheet) + "#chat", status_code=303)
 
 
 # ---- choosing which quotation lines are drawn ------------------------------------------------------------------------

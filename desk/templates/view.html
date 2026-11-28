@@ -5,31 +5,57 @@
 {% block crumb %}{% endblock %}
 {% block body %}
 {% include "_ordernav.html" %}
+{# Drawing page, chat style (issue #82): the drawing stays on the left; the chat fills the right; the message box is pinned
+   at the bottom with the marker chips not sent yet; one Send per message; the AI answers with one line per marker; one
+   pinned "N changes waiting · Accept all" bar. The AI only changes values in the product file; the engine draws. #}
 <style>
-.vbar{padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.vw{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);gap:14px;padding:12px 24px;height:calc(100vh - 150px);min-height:540px;box-sizing:border-box}
+@media (max-width:900px){.vw{grid-template-columns:1fr;height:auto}.vw .dcard{height:70vh}.vw .ccard{height:85vh}}
+.dcard,.ccard{background:#fff;border:1px solid #E3E1DA;border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ccard{border-color:#1D4ED8}
+.vbar{padding:8px 12px;border-bottom:1px solid #EEECE6;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .seg{display:inline-flex;border:1px solid #D6D3CA;border-radius:10px;overflow:hidden}
-.seg a,.seg span{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;font-weight:600;font-size:14px;text-decoration:none;color:#17191C;background:#fff}
-.seg .on{background:#17191C;color:#fff}
-.seg .off{color:#9A9DA3;cursor:not-allowed}
-.vbtn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 14px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font:600 14px Inter,sans-serif;text-decoration:none;cursor:pointer;box-sizing:border-box}
-.vbtn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}
+.seg a,.seg span{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;font-weight:600;font-size:13px;text-decoration:none;color:#17191C;background:#fff}
+.seg .on{background:#17191C;color:#fff}.seg .off{color:#9A9DA3;cursor:not-allowed}
+.vbtn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;min-width:36px;padding:0 10px;border-radius:10px;border:1px solid #D6D3CA;background:#fff;color:#17191C;font:600 13px Inter,sans-serif;text-decoration:none;cursor:pointer;box-sizing:border-box}
+.vbtn.pri{background:#0E6B5C;border-color:#0E6B5C;color:#fff}.vbtn.blue{background:#1D4ED8;border-color:#1D4ED8;color:#fff}
 .vbtn[aria-disabled=true]{color:#9A9DA3;cursor:not-allowed;pointer-events:none}
-.chk{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border-top:1px solid #EEECE6;padding-top:8px}
-.chk:first-of-type{border-top:0;padding-top:0}
-.stepbar{display:flex;flex-wrap:wrap;gap:4px;padding:10px 18px;border-bottom:1px solid #EEECE6}
-.stepbar span{font-size:12px;padding:3px 8px;border-radius:999px;color:#5B5F66;background:#F1EFE9}
-.stepbar span.done{color:#0E6B5C;background:#E3F1EE}
-.stepbar span.now{color:#fff;background:#0E6B5C;font-weight:600}
-#sheet{overflow:auto;max-height:calc(100vh - 230px);background:#F1EFE9;cursor:grab}
+.drop{position:relative}.drop>summary{list-style:none;cursor:pointer}
+.drop>div{position:absolute;z-index:20;top:42px;left:0;width:min(360px,80vw);background:#fff;border:1px solid #E3E1DA;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.15);padding:10px;display:flex;flex-direction:column;gap:6px}
+.chk{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border-top:1px solid #EEECE6;padding-top:6px}
+#sheet{flex:1 1 auto;min-height:0;overflow:auto;background:#F1EFE9;cursor:grab;position:relative}
 #sheet.drag{cursor:grabbing}
+button.pin{min-height:0;padding:0;font:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.pin.hl{background:#1D4ED8;transform:translate(-50%,-50%) scale(1.25);z-index:5}
+#pop{position:absolute;z-index:30;display:none;background:#fff;border:1px solid #1D4ED8;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px;width:250px;flex-direction:column;gap:7px}
+#msgs{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:10px 12px}
+.bub{align-self:flex-end;background:#F1EFE9;border-radius:14px 14px 4px 14px;padding:8px 11px;font-size:13px;max-width:90%;display:flex;flex-direction:column;gap:5px}
+.ai{align-self:flex-start;display:flex;gap:8px;width:100%}
+.av{width:24px;height:24px;border-radius:12px;background:#1D4ED8;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.res{border:1px solid #E3E1DA;border-radius:10px;overflow:hidden;font-size:12.5px;flex-grow:1}
+.res .r{display:flex;align-items:center;gap:6px;padding:6px 8px;border-top:1px solid #F0EEE8;cursor:default}
+.res .r:first-child{border-top:0}.res .r.hl{background:#EEF3FE}
+.res .r.dropped span.t{text-decoration:line-through;color:#9A9DA3}
+.chip{display:inline-flex;align-items:center;gap:5px;background:#FFF4E8;border:1px solid #F0C9A0;border-radius:14px;padding:3px 8px 3px 3px;font-size:12px;color:#17191C;max-width:100%}
+.chip .n,.res .n{width:18px;height:18px;border-radius:9px;background:#D9720F;color:#fff;font-weight:700;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.chip button{border:0;background:none;cursor:pointer;color:#5B5F66;font-size:14px;line-height:1;padding:0 2px;min-height:0}
+.waitbar{margin:0 12px;border:1px solid #BFD0F7;background:#F3F6FE;border-radius:10px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap}
+.cmp{border:1.5px solid #1D4ED8;border-radius:16px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;margin:10px 12px 12px}
+.cmp textarea{border:0;outline:0;resize:none;font:13px Inter,sans-serif;min-height:38px;max-height:120px;padding:2px}
+.send{width:36px;height:36px;border-radius:18px;background:#1D4ED8;color:#fff;border:0;font-weight:700;font-size:16px;cursor:pointer}
+.stepchip{font-size:12px;padding:3px 8px;border-radius:999px;color:#fff;background:#0E6B5C;font-weight:600;white-space:nowrap}
 </style>
-<div class="cols" style="flex-wrap:wrap">
-  <div class="main" style="flex:999 1 600px">
+<div class="vw">
+  {# ---------------- left: the drawing ---------------- #}
+  <section class="dcard" aria-label="Drawing">
     <div class="vbar">
-      <div style="flex-grow:1;min-width:220px">
-        <div style="font-weight:600">Product {{ l.no }} · {{ l.name.split('(')[0] }}</div>
-        <div class="sub small">Step {{ step[0] }} of 8 · {{ step[1] }} · {{ pos }} of {{ count }} drawn products · {{ title }}</div>
+      {% if prev_no %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ prev_no }}" aria-label="Previous product">&lsaquo;</a>{% endif %}
+      <div style="flex:1 1 200px;min-width:0">
+        <div class="sub small">Product {{ l.no }} · {{ pos }} of {{ count }} drawn · {{ title }}</div>
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.name.split('(')[0] }}</div>
       </div>
+      {% if next_no_ %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ next_no_ }}" aria-label="Next product">&rsaquo;</a>{% endif %}
+      <span class="stepchip" title="{{ steps|join(' · ') }}">Step {{ step[0] }} of 8 · {{ step[1] }}</span>
       <nav class="seg" aria-label="Which drawing">
         <a class="{{ 'on' if mode == 'client' }}" href="{{ url(mode='client', s=1) }}" {% if mode == 'client' %}aria-current="page"{% endif %}>Client drawing</a>
         {% if not sees_production %}
@@ -37,42 +63,65 @@
         {% else %}<a class="{{ 'on' if mode == 'prod' }}" href="{{ url(mode='prod', s=1) }}" {% if mode == 'prod' %}aria-current="page"{% endif %}>Production drawing</a>{% endif %}
       </nav>
     </div>
-    <div class="stepbar" aria-label="Stages">{% for n in steps %}<span class="{{ 'now' if loop.index == step[0] else 'done' if loop.index < step[0] }}">{{ loop.index }} {{ n }}</span>{% endfor %}</div>
-    {% if img %}
     <div class="vbar">
-      <span class="zoomer" role="group" aria-label="Zoom"><button class="vbtn" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:48px;text-align:center" aria-live="polite">100%</span><button class="vbtn" id="zin" type="button" aria-label="Zoom in">+</button><button class="vbtn" id="zfit" type="button">Fit</button></span>
-      {% if mode == 'client' and not sh.failed %}<button class="vbtn" id="markbtn" type="button" aria-pressed="false">+ Add numbered marker</button>{% endif %}
+      <details class="drop" id="checks"><summary class="vbtn">{% if sh.engine_version == 'BRIDGE' %}<span class="tag bad">BRIDGE</span>{% elif checks and not (checks|rejectattr('state', 'equalto', 'pass')|list) %}<span class="tag ok">&#10003; Checks</span>{% else %}<span class="tag {{ 'bad' if checks|selectattr('state', 'equalto', 'fail')|list else 'dim' }}">Checks</span>{% endif %}</summary>
+        <div>
+          <b>Automatic checks</b>
+          {% if sh.engine_version == 'BRIDGE' %}{% set b = (sh.r.spec if sh.r else l.drawing.spec).bridge or {} %}
+          <div class="chk"><div class="small"><b>BRIDGE</b>: made outside the engine, so the engine checks cannot run.</div><span class="tag bad">BRIDGE</span></div>
+          <div class="chk"><div class="small">Checked by hand (clash, sizes, true view)</div><span class="tag {{ 'ok' if b.checked_by else 'ask' }}">{{ 'By ' ~ b.checked_by if b.checked_by else 'Waiting' }}</span></div>
+          {% else %}{% for c in checks %}
+          <div class="chk"><div><div class="small">{{ c.title }}</div>{% if c.note %}<div class="small" style="color:#B91C1C">{{ c.note }}</div>{% endif %}</div>
+            <span class="tag {{ 'ok' if c.state == 'pass' else 'bad' if c.state == 'fail' else 'dim' }}">{{ c.text }}</span></div>
+          {% endfor %}{% endif %}
+          <div class="sub small">Engines {{ sh.engine_version or engine_version }}. The engine refuses to finish a drawing that fails a check.</div>
+        </div></details>
+      <details class="drop"><summary class="vbtn">Versions</summary>
+        <div>
+          {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current and not locked %}
+          <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span>{% if not shown %} <span class="tag info">shown</span>{% endif %}</div>{% endif %}
+          {% for r in l.revisions|reverse %}
+          <div class="small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
+            <div class="sub">{{ r.reason }}<br>Issued by {{ r.issued_by }}, {{ r.issued_at|when }} · engines {{ r.engine_version }}</div></div>
+          {% else %}<div class="sub small">Not issued yet.</div>{% endfor %}
+        </div></details>
+      {% if img %}<span role="group" aria-label="Zoom" style="display:inline-flex;gap:4px;align-items:center"><button class="vbtn" id="zout" type="button" aria-label="Zoom out">&minus;</button><span id="zval" class="small" style="min-width:42px;text-align:center" aria-live="polite">100%</span><button class="vbtn" id="zin" type="button" aria-label="Zoom in">+</button><button class="vbtn" id="zfit" type="button">Fit</button></span>{% endif %}
       <span style="flex-grow:1"></span>
-      {% if pages > 1 %}<span role="group" aria-label="Sheets" style="display:inline-flex;gap:6px;align-items:center">
-        <a class="vbtn" href="{{ url(s=sheet - 1) }}" aria-label="Previous sheet" {% if sheet == 1 %}aria-disabled="true"{% endif %}>&lsaquo;</a>
-        <span class="small">Sheet {{ sheet }} / {{ pages }}</span>
-        <a class="vbtn" href="{{ url(s=sheet + 1) }}" aria-label="Next sheet" {% if sheet == pages %}aria-disabled="true"{% endif %}>&rsaquo;</a></span>
-      {% else %}<span class="small">Sheet 1 / 1</span>{% endif %}
-      {% if mode == 'client' %}<a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a> <a href="{{ src }}/pdf?download=1">PDF</a>{% if sh.r and sh.r.files.dxf or (not sh.r and l.drawing.files.dxf) %} <a href="{{ src }}/dxf">DXF</a>{% endif %}
-      {% else %}<a href="{{ prod.pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}
+      {% if pages > 1 %}<a class="vbtn" href="{{ url(s=sheet - 1) }}" aria-label="Previous sheet" {% if sheet == 1 %}aria-disabled="true"{% endif %}>&lsaquo;</a><span class="small">Sheet {{ sheet }} / {{ pages }}</span><a class="vbtn" href="{{ url(s=sheet + 1) }}" aria-label="Next sheet" {% if sheet == pages %}aria-disabled="true"{% endif %}>&rsaquo;</a>{% else %}<span class="small">Sheet 1 / 1</span>{% endif %}
     </div>
-    {% endif %}
-    {% if mode == 'prod' and prod.kind == 'preview' %}<div class="small" role="note" style="padding:8px 18px;background:#FDF1E2;color:#9A4508;font-weight:600">Production preview — not for issue. {{ prod.text }}</div>
-    {% elif mode == 'prod' and prod.kind == 'real' %}<div class="small" style="padding:8px 18px;background:#E3F1EE;color:#0E6B5C">Production drawing made from {{ title }} · {{ prod.text }}. No client details.</div>{% endif %}
-    <div id="hint" class="small" style="display:none;padding:8px 18px;background:#E6EDFB;color:#1D4ED8">Click on the drawing where marker {{ next_no }} should go. Then write what it is about on the right and save.</div>
-    {% if img %}
-    {% if cmp %}
-    <div id="compare" style="padding:12px 18px;border-bottom:1px solid #EEECE6;display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600">Compare: {{ cmp.said }}</div><a href="{{ url(s=1) }}#panel">Close compare</a></div>
+    <div class="vbar" id="next" style="background:{{ '#FDE8E8' if nxt.kind in ('blocked', 'failed') else '#FDF1E2' if nxt.kind in ('confirm', 'redraw', 'bridge') else '#F4FAF8' }}">
+      <div style="flex:1 1 220px;min-width:0"><span class="small" style="font-weight:700">Next step: {{ nxt.title }}</span> <span class="sub small">{{ nxt.text }}</span></div>
+      {% if nxt.kind == 'ready' %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ready"><input type="hidden" name="shown" value="{{ base_key }}"><button class="vbtn pri">Looks right — mark ready to issue</button></form>
+      {% elif nxt.kind == 'done' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#issue">Go to issue</a>
+      {% elif nxt.kind == 'redraw' %}<form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="vbtn pri">Draw again and check</button></form>
+      {% elif nxt.kind == 'bridge' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#bridge{{ l.no }}">Open the product card</a>
+      {% elif nxt.kind == 'confirm' and l.ai_waiting and waiting %}<a class="vbtn pri" href="#waitbar">Accept all or Undo in the chat</a>
+      {% elif nxt.kind in ('confirm', 'failed') %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#todo">Open questions and changes</a>{% endif %}
+    </div>
+    {% if mode == 'prod' and prod.kind == 'preview' %}<div class="small" role="note" style="padding:6px 12px;background:#FDF1E2;color:#9A4508;font-weight:600">Production preview — not for issue. {{ prod.text }}</div>
+    {% elif mode == 'prod' and prod.kind == 'real' %}<div class="small" style="padding:6px 12px;background:#E3F1EE;color:#0E6B5C">Production drawing made from {{ title }} · {{ prod.text }}. No client details.</div>{% endif %}
+    {% if img and cmp %}
+    <div id="compare" style="flex:1 1 auto;min-height:0;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600">Compare: {{ cmp.said }}</div><a href="{{ url(s=1) }}#chat">Close compare</a></div>
       <div style="display:flex;flex-wrap:wrap;gap:12px">
         <figure style="flex:1 1 300px;margin:0"><figcaption class="small sub">Before · current</figcaption><img src="{{ src }}/big?page=0&v={{ sh.stamp }}" alt="Before: current drawing" style="width:100%;background:#fff;border:1px solid #D6D3CA"></figure>
-        <figure style="flex:1 1 300px;margin:0;position:relative"><figcaption class="small sub">After · proposed{% if box %}, changed area outlined{% endif %}</figcaption>
+        <figure style="flex:1 1 300px;margin:0"><figcaption class="small sub">After · proposed{% if box %}, changed area outlined{% endif %}</figcaption>
           <div style="position:relative"><img src="/ai/{{ cmp.id }}/big?page=0" alt="After: proposed drawing" style="width:100%;display:block;background:#fff;border:1px solid #D6D3CA">
           {% if box %}<span aria-hidden="true" style="position:absolute;left:{{ box.x }}%;top:{{ box.y }}%;width:{{ box.w }}%;height:{{ box.h }}%;border:3px solid #1D4ED8;border-radius:6px;background:rgba(29,78,216,.08)"></span>{% endif %}</div></figure>
       </div>
       {% if not box %}<div class="small sub">No visible difference on sheet 1.</div>{% endif %}
     </div>
-    {% endif %}
-    <div id="sheet">
+    {% elif img %}
+    <div id="sheet" data-key="{{ key }}">
       <div id="wrap" style="position:relative;width:100%">
         <img id="img" src="{{ img }}" {% if big %}data-big="{{ big }}"{% endif %} alt="{{ 'Production' if mode == 'prod' else 'Client' }} drawing for product {{ l.no }}, {{ title }}, sheet {{ sheet }} of {{ pages }}" style="display:block;width:100%;background:#fff" draggable="false">
-        {% for m in marks %}<span class="pin" style="left:{{ m.x }}%;top:{{ m.y }}%" title="{{ m.label }}">{{ m.no }}</span>{% endfor %}
-        <span class="pin new" id="newpin" style="display:none">{{ next_no }}</span>
+        {% for m in marks %}<button type="button" class="pin" data-mark="{{ m.no }}" style="left:{{ m.x }}%;top:{{ m.y }}%" title="{{ m.label }}" aria-label="Marker {{ m.no }}: {{ m.label }}">{{ m.no }}</button>{% endfor %}
+        {% if mode == 'client' and not panel %}<div id="pop" role="dialog" aria-label="New marker">
+          <div style="display:flex;align-items:center;gap:6px"><span class="pin" style="position:static;transform:none;background:#1D4ED8">{{ next_no }}</span><b class="small" id="poppart" style="flex-grow:1">On the drawing</b><button type="button" id="popx" class="vbtn" style="min-height:28px;min-width:28px" aria-label="Close">&times;</button></div>
+          <label class="sr" for="poptext">What should change here</label>
+          <input type="text" id="poptext" style="flex:0 0 auto;min-height:36px" placeholder="{{ 'Leave empty to use the part it sits on' if part_map else 'For example: screen should be L800' }}">
+          <div style="display:flex;align-items:center;gap:6px"><span class="sub small" style="flex-grow:1">Enter = add to the message</span><button type="button" id="popadd" class="vbtn blue" style="min-height:30px">Add &#8629;</button></div>
+        </div>{% endif %}
       </div>
     </div>
     {% elif mode == 'prod' %}
@@ -85,150 +134,113 @@
     {% else %}
     <div style="padding:40px 18px;text-align:center"><div style="font-weight:600;color:#B91C1C">This drawing could not be made</div><div class="sub">{{ l.drawing.error }}</div></div>
     {% endif %}
-    <div class="vbar" style="border-top:1px solid #EEECE6;border-bottom:0">
-      {% if prev_no %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ prev_no }}">&larr; Previous drawing</a>{% endif %}
+    <div class="vbar" style="border-top:1px solid #EEECE6;border-bottom:0;font-size:12px">
+      <span class="sub small">{% if mode == 'client' and not panel %}Click the drawing to add a marker.{% else %}The drawing stays on screen; only the chat scrolls.{% endif %}</span>
       <span style="flex-grow:1"></span>
-      {% if next_no_ %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ next_no_ }}">Next drawing &rarr;</a>{% endif %}
+      {% if mode == 'client' %}<a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a> <a href="{{ src }}/pdf?download=1">PDF</a>{% if sh.r and sh.r.files.dxf or (not sh.r and l.drawing.files.dxf) %} <a href="{{ src }}/dxf">DXF</a>{% endif %}
+      {% elif prod and prod.pdf %}<a href="{{ prod.pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}
     </div>
-  </div>
-  <div class="right">
-    {% if references_for(o.id, l.no, role) %}{{ refs_box(o, l.no, "/orders/%s/view/%d"|format(o.source_ref, l.no), True) }}{% endif %}
-    <div class="card" id="checks">
-      <div style="font-weight:600">Automatic checks</div>
-      {% if sh.engine_version == 'BRIDGE' %}{% set b = (sh.r.spec if sh.r else l.drawing.spec).bridge or {} %}
-      <div class="chk"><div class="small"><b>BRIDGE</b>: made outside the engine, so the engine checks cannot run.</div><span class="tag bad">BRIDGE</span></div>
-      <div class="chk"><div class="small">Checked by hand (clash, sizes, true view)</div>
-        <span class="tag {{ 'ok' if b.checked_by else 'ask' }}">{{ 'By ' ~ b.checked_by if b.checked_by else 'Waiting' }}</span></div>
-      {% else %}
-      {% for c in checks %}
-      <div class="chk"><div><div class="small">{{ c.title }}</div>{% if c.note %}<div class="small" style="color:#B91C1C">{{ c.note }}</div>{% endif %}</div>
-        <span class="tag {{ 'ok' if c.state == 'pass' else 'bad' if c.state == 'fail' else 'dim' }}">{{ c.text }}</span></div>
-      {% endfor %}
-      {% endif %}
-      <div class="sub small">Engines {{ sh.engine_version or engine_version }}. The engine refuses to finish a drawing that fails a check{% if mode == 'prod' %}; these are the checks of the client drawing{% endif %}.</div>
-    </div>
-    {% if mode == 'client' and not sh.failed %}
-    <div class="card">
-      <div style="font-weight:600">Markers on this sheet</div>
-      {% for m in marks %}
-      <div style="display:flex;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #EEECE6;padding-top:6px{% endif %}">
-        <span class="pin" style="position:static;transform:none;flex:none">{{ m.no }}</span>
-        <div style="flex:1 1 auto;min-width:0">
-        {% if m.part %}<div class="small" style="color:#1D4ED8">On: {{ m.part }}</div>{% endif %}
-        <form class="row" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/label" style="flex-wrap:nowrap">
-          <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
-          <label class="sr" for="ml{{ m.id }}">Note for marker {{ m.no }}</label>
-          <input class="sm" type="text" id="ml{{ m.id }}" name="label" value="{{ m.label }}" placeholder="What is this about?">
-          <button class="sm">Save</button>
-          <button class="sm" formaction="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/remove" aria-label="Remove marker {{ m.no }}">&times;</button>
-        </form>
-        </div>
-      </div>
-      {% else %}<div class="sub small" id="nomarks">None on this sheet. Press <b>+ Add numbered marker</b>, then click on the part you mean. Each marker gets a number.</div>{% endfor %}
-      <form class="row" id="newmark" method="post" action="/orders/{{ o.source_ref }}/marks/{{ l.no }}" style="display:none;border-top:1px solid #EEECE6;padding-top:8px;flex-wrap:nowrap;align-items:center">
-        <input type="hidden" name="shown" value="{{ key }}"><input type="hidden" name="x" id="mx"><input type="hidden" name="y" id="my">
-        <input type="hidden" name="rev" value="{{ rev_q }}"><input type="hidden" name="sheet" value="{{ sheet }}">
-        <span class="pin new" style="position:static;transform:none;flex:none">{{ next_no }}</span>
-        <label class="sr" for="mlabel">Note for marker {{ next_no }}</label>
-        <input class="sm" type="text" id="mlabel" name="label" placeholder="{{ 'Leave empty to use the part it sits on' if part_map else 'For example: screen should be L800' }}">
-        <button class="sm primary">Save marker</button>
-      </form>
-    </div>
-    <div class="card" id="panel" style="border-color:#1D4ED8">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600">Change this drawing</div><span class="tag info">AI assistant</span></div>
-      {% if panel %}<div class="small" style="background:#F1EFE9;padding:8px 10px;border-radius:8px">{{ panel }}</div>
+    {% if references_for(o.id, l.no, role) %}<div style="padding:0 12px 12px">{{ refs_box(o, l.no, "/orders/%s/view/%d"|format(o.source_ref, l.no), True) }}</div>{% endif %}   {# issue #72 #}
+  </section>
+
+  {# ---------------- right: the chat ---------------- #}
+  <section class="ccard" id="chat" aria-label="{{ 'Production drawing' if mode == 'prod' else 'Change this drawing' }}">
+    <div class="vbar">{% if mode == 'prod' %}<b style="flex-grow:1;font-size:15px">Production drawing</b>{% else %}<b style="flex-grow:1;font-size:15px">Change this drawing</b><span class="tag info">AI assistant</span>{% endif %}</div>
+    {% if panel %}
+    <div style="padding:12px;display:flex;flex-direction:column;gap:8px" id="panel">
+      <div class="small" style="background:#F1EFE9;padding:8px 10px;border-radius:8px">{{ panel }}</div>
       {% if 'locked' in panel %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/permission" style="display:flex;flex-direction:column;gap:6px">
         <label for="perm" class="small" style="font-weight:600">Ask Kushal for permission to change it</label>
         <textarea id="perm" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px" placeholder="What has to change, and why"></textarea>
         <button class="sm primary">Ask for permission</button></form>{% endif %}
-      {% else %}
-      <div class="sub small">{% if l.revisions %}Issued as Rev {{ l.last_rev.rev }} · an accepted change makes a new revision when issued{% else %}Not issued yet · changes keep Rev A{% endif %}</div>
-      {% for tr in turns %}
-      <div style="border-top:1px solid #EEECE6;padding-top:8px;display:flex;flex-direction:column;gap:6px">
-        <div class="small" style="align-self:flex-end;background:#F1EFE9;padding:6px 10px;border-radius:10px;max-width:90%">{{ tr.typed }}</div>
-        {% if tr.kind == 'answer' or tr.kind == 'cannot' %}
-        <div class="small" style="background:#E6EDFB;color:#17191C;padding:6px 10px;border-radius:10px;max-width:95%">{{ tr.answer }}</div>
-        {% else %}
-        <div class="small" style="border:1px solid #D6D3CA;padding:8px 10px;border-radius:10px">
-          <div class="label">Proposed change · product file</div>
-          <div style="font-weight:600">{{ tr.said }}</div>
-          {% if tr.answer %}<div class="sub">{{ tr.answer }}</div>{% endif %}
-          {% if tr.status == 'failed' %}<div style="color:#B91C1C">The engine refused it: {{ tr.error }}</div>
-          {% elif tr.status in ('trial', 'accepted') %}<div class="sub">Engine redrew it · {% if tr.rows|selectattr('state', 'ne', 'pass')|list %}{% for c in tr.rows %}{{ c.title|lower }}: {{ c.text|lower }}{{ ', ' if not loop.last }}{% endfor %}{% else %}all automatic checks pass{% endif %}</div>{% endif %}
-          {% if tr.status == 'trial' %}
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-            {% if tr.can_accept %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/accept"{% if l.revisions %} data-confirm="This drawing is issued as Rev {{ l.last_rev.rev }}.\nAccepting changes it; issuing it again makes a new revision." data-yes="Yes, accept"{% endif %}><button class="sm primary">Accept</button></form>
-            {% elif tr.shown != base_key %}<span class="sub">The drawing changed since; ask again.</span>{% endif %}
-            <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form>
-            <a class="sm" style="align-self:center" href="{{ url(s=1) }}{{ '&' if '?' in url(s=1) else '?' }}compare={{ tr.id }}#compare">Compare</a>
-          </div>
-          {% elif tr.status == 'accepted' %}<div><span class="tag ok">Accepted</span> <form method="post" style="display:inline" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ tr.id }}/undo"><button class="sm">Undo</button></form></div>
-          {% elif tr.status == 'undone' %}<span class="tag dim">Dropped</span>{% elif tr.status == 'withdrawn' %}<span class="tag dim">Undone</span>{% elif tr.status == 'expired' %}<span class="tag dim">Dropped: {% if l.last_rev %}Rev {{ l.last_rev.rev }}{% else %}the drawing{% endif %} was issued after this proposal</span>{% endif %}
-        </div>
-        {% endif %}
-      </div>
-      {% endfor %}
-      <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai" style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EEECE6;padding-top:8px">
-        <div style="display:flex;gap:6px;align-items:center"><label class="small" for="aimk">Marker</label>
-          <select id="aimk" name="marker" class="sm"><option value="0">None</option>{% for m in marks %}<option value="{{ m.no }}">{{ m.no }}</option>{% endfor %}</select></div>
-        <label class="sr" for="aitext">Ask or change</label>
-        <textarea id="aitext" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px" placeholder="Ask or change, for example: make the screen 800 wide"></textarea>
-        {% if references_for(o.id, l.no, role)|selectattr('kind', 'equalto', 'image')|list %}<label class="small"><input type="checkbox" name="use_refs" value="1"> Let the AI read the client's sketches and photos for this product</label>{% endif %}
-        <button class="primary">Send</button>
-      </form>
-      <div class="sub small">The AI only changes values in the product file. The locked engine does all drawing. After client approval this panel is off on client drawings.{% if not ai_on %} The AI is not switched on yet: size, shelf, hinge, screen and raceway changes work; questions need the API key.{% endif %}</div>
-      {% endif %}
     </div>
     {% endif %}
-    <div class="card" id="next" style="border-color:{{ '#B91C1C' if nxt.kind in ('blocked', 'failed') else '#9A4508' if nxt.kind in ('confirm', 'redraw') else '#0E6B5C' }}">
-      <div class="label">Next step</div>
-      <div style="font-weight:600">{{ nxt.title }}</div>
-      <div class="sub small">{{ nxt.text }}</div>
-      {% if nxt.kind == 'ready' %}
-      <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ready"><input type="hidden" name="shown" value="{{ base_key }}"><button class="vbtn pri" style="width:100%">Looks right — mark ready to issue</button></form>
-      {% elif nxt.kind == 'done' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#issue">Go to issue</a>
-      {% elif nxt.kind == 'redraw' %}
-      <form method="post" action="/orders/{{ o.source_ref }}/draw"><input type="hidden" name="no" value="{{ l.no }}"><button class="vbtn pri" style="width:100%">Draw again and check</button></form>
-      {% elif nxt.kind == 'bridge' %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#bridge{{ l.no }}">Open the product card</a>
-      {% elif nxt.kind in ('confirm', 'failed') %}<a class="vbtn pri" href="/orders/{{ o.source_ref }}/work#todo">Open questions and changes</a>
+    <div id="msgs" aria-live="polite">
+      {% set recent = 3 %}
+      {% set older = turns[:-recent] if turns|length > recent else [] %}
+      {% if older %}
+      <details style="align-self:center;text-align:center"><summary class="tag dim" style="cursor:pointer">&uarr; Earlier · {{ older|length }} message{{ 's' if older|length != 1 }} · {{ older|selectattr('status', 'equalto', 'accepted')|list|length }} accepted</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;text-align:left">{% for tr in older %}{% include "_chatturn.html" %}{% endfor %}</div>
+      </details>
       {% endif %}
-      <a class="small" href="/orders/{{ o.source_ref }}">Back to all drawings</a>
+      {% for tr in (turns[-recent:] if turns|length > recent else turns) %}{% include "_chatturn.html" %}{% endfor %}
+      {% if not turns and not panel %}<div class="sub small" style="margin-top:auto;text-align:center">Click the drawing to add a marker, or type a change below. Several markers and a note go out together with one Send.</div>{% endif %}
+      <div class="ai" id="typing" style="display:none"><span class="av">AI</span><div class="small"><span class="tag dim">&#9679; &#9679; &#9679;</span> Changing the product file…</div></div>
     </div>
-    <div class="card">
-      <div style="font-weight:600">Versions of this drawing</div>
-      {% if l.drawing and l.drawing.status == 'preview' and not l.issued_current and not locked %}
-      <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}">Current preview</a> <span class="tag ask">not issued</span>{% if not shown %} <span class="tag info">shown</span>{% endif %}</div>{% endif %}
-      {% for r in l.revisions|reverse %}
-      <div class="small" style="border-top:1px solid #EEECE6;padding-top:6px"><a href="/orders/{{ o.source_ref }}/view/{{ l.no }}?rev={{ r.id }}"><b>{{ r.number }} Rev {{ r.rev }}</b></a>{% if shown and shown.id == r.id %} <span class="tag info">shown</span>{% endif %}
-        <div class="sub">{{ r.reason }}<br>Issued by {{ r.issued_by }}, {{ r.issued_at|when }} · engines {{ r.engine_version }}</div></div>
-      {% else %}<div class="sub small">Not issued yet.</div>{% endfor %}
+    {% if not panel %}
+    {% if waiting %}
+    <div class="waitbar" id="waitbar">
+      <b style="flex-grow:1">{{ waiting_n }} change{{ 's' if waiting_n != 1 }} waiting</b>
+      <a class="vbtn" style="min-height:30px" href="{{ url(s=1) }}{{ '&' if '?' in url(s=1) else '?' }}compare={{ waiting.id }}#compare">Compare</a>
+      {% if waiting.can_accept %}<form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai/{{ waiting.id }}/accept"{% if l.revisions %} data-confirm="This drawing is issued as Rev {{ l.last_rev.rev }}.\nAccepting changes it; issuing it again makes a new revision." data-yes="Yes, accept"{% endif %}><button class="vbtn pri" style="min-height:30px">Accept all</button></form>
+      {% else %}<span class="small" style="color:#B91C1C">Not every check passes: undo a line or ask again.</span>{% endif %}
     </div>
-  </div>
+    {% endif %}
+    <form method="post" action="/orders/{{ o.source_ref }}/view/{{ l.no }}/ai" id="sendform" class="cmp">
+      <div id="chips" style="display:flex;flex-wrap:wrap;gap:4px">{% for m in chips %}<span class="chip" data-mark="{{ m.no }}" data-id="{{ m.id }}"><span class="n">{{ m.no }}</span><span>{{ m.label }}{% if m.shown != key %} <span class="sub">(sheet {{ m.shown.split('s')[1] if 's' in m.shown else 1 }})</span>{% endif %}</span><button type="button" aria-label="Remove marker {{ m.no }}" data-remove="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/remove">&times;</button></span>{% endfor %}</div>
+      <label class="sr" for="aitext">Ask or change</label>
+      <textarea id="aitext" name="text" rows="2" placeholder="{{ 'Add a note for the markers, or type a change…' if chips else 'Click the drawing to add a marker, or type a change…' }}"></textarea>
+      {% if references_for(o.id, l.no, role)|selectattr('kind', 'equalto', 'image')|list %}<label class="small"><input type="checkbox" name="use_refs" value="1"> Let the AI read the client's sketches and photos for this product</label>{% endif %}
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="sub small" style="flex-grow:1">{% if l.revisions %}Issued as Rev {{ l.last_rev.rev }} · an accepted change makes a new revision when issued{% else %}Not issued yet · changes keep Rev A{% endif %}</span>
+        <button class="send" aria-label="Send">&uarr;</button>
+      </div>
+    </form>
+    <div class="sub small" style="padding:0 12px 8px">The AI only changes values in the product file; the locked engine does all drawing.{% if not ai_on %} The AI is not switched on yet: size, shelf, hinge, screen and raceway changes work; questions need the API key.{% endif %}</div>
+    {% endif %}
+  </section>
 </div>
-{% if img %}
+{% if img and not cmp %}
 <script>
 (function(){var w=document.getElementById('wrap'),o=document.getElementById('zval'),sh=document.getElementById('sheet'),img=document.getElementById('img'),z=100;
 function set(v){z=Math.max(25,Math.min(400,Math.round(v)));w.style.width=z+'%';o.textContent=z+'%';
-if(z>150&&img.dataset.big&&img.getAttribute('src')!==img.dataset.big){img.src=img.dataset.big;}}   /* sharp picture only when zoomed in */
+if(z>150&&img.dataset.big&&img.getAttribute('src')!==img.dataset.big){img.src=img.dataset.big;}}
 function fit(){if(!img.naturalWidth)return set(100);var h=sh.clientHeight||window.innerHeight*0.7,fw=h*img.naturalWidth/img.naturalHeight/sh.clientWidth*100;set(Math.min(100,fw));}
 document.getElementById('zin').addEventListener('click',function(){set(z*1.25)});
 document.getElementById('zout').addEventListener('click',function(){set(z/1.25)});
 document.getElementById('zfit').addEventListener('click',fit);
-var d=null;sh.addEventListener('pointerdown',function(e){if(window.deskMarking)return;d={x:e.clientX,y:e.clientY,l:sh.scrollLeft,t:sh.scrollTop};sh.classList.add('drag');});
-window.addEventListener('pointermove',function(e){if(!d)return;sh.scrollLeft=d.l-(e.clientX-d.x);sh.scrollTop=d.t-(e.clientY-d.y);});
-window.addEventListener('pointerup',function(){d=null;sh.classList.remove('drag');});
-window.deskZoom=set;})();
+if(img.complete)fit();else img.addEventListener('load',fit,{once:true});
+var d=null;window.deskDragged=false;
+sh.addEventListener('pointerdown',function(e){if(e.target.closest('#pop'))return;d={x:e.clientX,y:e.clientY,l:sh.scrollLeft,t:sh.scrollTop};window.deskDragged=false;sh.classList.add('drag');});
+window.addEventListener('pointermove',function(e){if(!d)return;if(Math.abs(e.clientX-d.x)+Math.abs(e.clientY-d.y)>4)window.deskDragged=true;sh.scrollLeft=d.l-(e.clientX-d.x);sh.scrollTop=d.t-(e.clientY-d.y);});
+window.addEventListener('pointerup',function(){d=null;sh.classList.remove('drag');});})();
 </script>
-{% if mode == 'client' %}
+{% endif %}
 <script>
-(function(){var b=document.getElementById('markbtn'),img=document.getElementById('img'),pin=document.getElementById('newpin'),f=document.getElementById('newmark'),h=document.getElementById('hint');
-if(!b)return;
-function mode(v){window.deskMarking=v;b.setAttribute('aria-pressed',v);b.textContent=v?'Cancel marker':'+ Add numbered marker';h.style.display=v?'block':'none';img.style.cursor=v?'crosshair':'';if(!v){pin.style.display='none';f.style.display='none';}}
-b.addEventListener('click',function(){mode(!window.deskMarking)});
-img.addEventListener('click',function(e){if(!window.deskMarking)return;var r=img.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*100,y=(e.clientY-r.top)/r.height*100;
-pin.style.left=x+'%';pin.style.top=y+'%';pin.style.display='block';document.getElementById('mx').value=x.toFixed(2);document.getElementById('my').value=y.toFixed(2);
-f.style.display='flex';var n=document.getElementById('nomarks');if(n)n.style.display='none';document.getElementById('mlabel').focus();});})();
+(function(){
+var msgs=document.getElementById('msgs');if(msgs)msgs.scrollTop=msgs.scrollHeight;            /* newest at the bottom */
+function hl(no,on){document.querySelectorAll('[data-mark="'+no+'"]').forEach(function(e){e.classList.toggle('hl',on)});}
+document.addEventListener('click',function(e){var t=e.target.closest('.pin[data-mark], .res .r[data-mark], .chip[data-mark]');if(!t||e.target.closest('button[data-remove]'))return;
+  var no=t.getAttribute('data-mark');document.querySelectorAll('.hl').forEach(function(x){x.classList.remove('hl')});hl(no,true);
+  var other=t.classList.contains('pin')?document.querySelector('#msgs .r[data-mark="'+no+'"], #chips .chip[data-mark="'+no+'"]'):document.querySelector('.pin[data-mark="'+no+'"]');
+  if(other)other.scrollIntoView({block:'nearest',behavior:'smooth'});});
+var f=document.getElementById('sendform');if(!f)return;
+var ta=document.getElementById('aitext'),chips=document.getElementById('chips');
+ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(f.requestSubmit)f.requestSubmit();else f.submit();}});
+f.addEventListener('submit',function(e){if(!ta.value.trim()&&!chips.children.length){e.preventDefault();ta.placeholder='Add a marker on the drawing or type a change first';ta.focus();return;}
+  document.getElementById('typing').style.display='flex';msgs.scrollTop=msgs.scrollHeight;});
+chips.addEventListener('click',function(e){var b=e.target.closest('button[data-remove]');if(!b)return;var c=b.closest('.chip'),no=c.getAttribute('data-mark');
+  fetch(b.getAttribute('data-remove'),{method:'POST',headers:{'x-requested-with':'fetch'},credentials:'same-origin'}).then(function(r){if(r.ok){c.remove();var p=document.querySelector('.pin[data-mark="'+no+'"]');if(p)p.remove();}});});
+var img=document.getElementById('img'),pop=document.getElementById('pop');if(!img||!pop)return;
+var at=null,base='/orders/{{ o.source_ref }}',no={{ l.no }},key='{{ key }}',next={{ next_no }};
+function close(){pop.style.display='none';at=null;}
+img.addEventListener('click',function(e){if(window.deskDragged)return;var r=img.getBoundingClientRect();
+  at={x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100};
+  pop.style.left=Math.min(at.x,70)+'%';pop.style.top=Math.min(at.y,80)+'%';pop.style.display='flex';
+  document.getElementById('poppart').textContent='On the drawing';document.getElementById('poptext').value='';document.getElementById('poptext').focus();
+  fetch(base+'/view/'+no+'/part?shown='+key+'&x='+at.x.toFixed(2)+'&y='+at.y.toFixed(2),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():{}}).then(function(j){if(j.part)document.getElementById('poppart').textContent='On: '+j.part;});});
+document.getElementById('popx').addEventListener('click',close);
+function add(){if(!at)return;var fd=new FormData();fd.append('shown',key);fd.append('x',at.x.toFixed(2));fd.append('y',at.y.toFixed(2));fd.append('label',document.getElementById('poptext').value);
+  var p=at;fetch(base+'/marks/'+no,{method:'POST',body:fd,headers:{'x-requested-with':'fetch'},credentials:'same-origin'}).then(function(r){return r.json()}).then(function(m){
+    var pin=document.createElement('button');pin.type='button';pin.className='pin';pin.setAttribute('data-mark',m.no);pin.style.left=p.x+'%';pin.style.top=p.y+'%';pin.title=m.label;pin.textContent=m.no;pin.setAttribute('aria-label','Marker '+m.no+': '+m.label);
+    document.getElementById('wrap').appendChild(pin);
+    var c=document.createElement('span');c.className='chip';c.setAttribute('data-mark',m.no);c.setAttribute('data-id',m.id);
+    var n=document.createElement('span');n.className='n';n.textContent=m.no;var t=document.createElement('span');t.textContent=m.label;
+    var x=document.createElement('button');x.type='button';x.innerHTML='&times;';x.setAttribute('aria-label','Remove marker '+m.no);x.setAttribute('data-remove',base+'/marks/'+no+'/'+m.id+'/remove');
+    c.appendChild(n);c.appendChild(t);c.appendChild(x);chips.appendChild(c);ta.placeholder='Add a note for the markers, or type a change…';});
+  close();}
+document.getElementById('popadd').addEventListener('click',add);
+document.getElementById('poptext').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();add();}else if(e.key==='Escape'){close();}});
+})();
 </script>
-{% endif %}
-{% endif %}
 {% endblock %}
