@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_references.html" import refs_box %}
 {% set help_page = 'viewer' %}
 {% block title %}Product {{ l.no }} · {{ o.source_ref }}{% endblock %}
 {% block crumb %}{% endblock %}
@@ -139,6 +140,7 @@ button.pin{min-height:0;padding:0;font:inherit;font-weight:700;font-size:12px;cu
       {% if mode == 'client' %}<a href="{{ src }}/pdf" target="_blank" rel="noopener">Open PDF</a> <a href="{{ src }}/pdf?download=1">PDF</a>{% if sh.r and sh.r.files.dxf or (not sh.r and l.drawing.files.dxf) %} <a href="{{ src }}/dxf">DXF</a>{% endif %}
       {% elif prod and prod.pdf %}<a href="{{ prod.pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}
     </div>
+    {% if references_for(o.id, l.no, role) %}<div style="padding:0 12px 12px">{{ refs_box(o, l.no, "/orders/%s/view/%d"|format(o.source_ref, l.no), True) }}</div>{% endif %}   {# issue #72 #}
   </section>
 
   {# ---------------- right: the chat ---------------- #}
@@ -178,6 +180,7 @@ button.pin{min-height:0;padding:0;font:inherit;font-weight:700;font-size:12px;cu
       <div id="chips" style="display:flex;flex-wrap:wrap;gap:4px">{% for m in chips %}<span class="chip" data-mark="{{ m.no }}" data-id="{{ m.id }}"><span class="n">{{ m.no }}</span><span>{{ m.label }}{% if m.shown != key %} <span class="sub">(sheet {{ m.shown.split('s')[1] if 's' in m.shown else 1 }})</span>{% endif %}</span><button type="button" aria-label="Remove marker {{ m.no }}" data-remove="/orders/{{ o.source_ref }}/marks/{{ l.no }}/{{ m.id }}/remove">&times;</button></span>{% endfor %}</div>
       <label class="sr" for="aitext">Ask or change</label>
       <textarea id="aitext" name="text" rows="2" placeholder="{{ 'Add a note for the markers, or type a change…' if chips else 'Click the drawing to add a marker, or type a change…' }}"></textarea>
+      {% if references_for(o.id, l.no, role)|selectattr('kind', 'equalto', 'image')|list %}<label class="small"><input type="checkbox" name="use_refs" value="1"> Let the AI read the client's sketches and photos for this product</label>{% endif %}
       <div style="display:flex;align-items:center;gap:8px">
         <span class="sub small" style="flex-grow:1">{% if l.revisions %}Issued as Rev {{ l.last_rev.rev }} · an accepted change makes a new revision when issued{% else %}Not issued yet · changes keep Rev A{% endif %}</span>
         <button class="send" aria-label="Send">&uarr;</button>
