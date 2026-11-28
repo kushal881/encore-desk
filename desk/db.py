@@ -198,6 +198,7 @@ class User(Base):
     engines_dismissed: Mapped[str] = mapped_column(String(20), default="")   # the newer engine version whose notice they closed
     guide_dismissed: Mapped[bool] = mapped_column(Boolean, default=False)   # closed the dashboard's "New here? Read the guide" card
     tour_done: Mapped[bool] = mapped_column(Boolean, default=False)         # saw (or skipped) the first-time tour
+    invited_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)   # last invitation email (issue #67)
 
 
 class Finish(Base):
