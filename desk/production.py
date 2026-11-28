@@ -126,7 +126,8 @@ def _page(request, user, o, l, tab, sheet, error=""):
         user, o=o, l=l, r=r, ps=ps, vs=vs, tab=tab, sheet=sheet, pages=pages, turns=turns, trial=trial, asked=asked,
         bom=bom, rows=rows, depts=DEPTS, allowed=ALLOWED, locked_text=LOCKED, approved=approved, error=error, step=viewer.STEPS,
         job_text=header_value(jo, "Job no. not set"), deadline_text=header_value(dl, "Deadline not set", "deadline "),
-        ready=bool(ps), can_release=bool(ps and not ps.released_at and not trial and not asked), nav="projects"))
+        ready=bool(ps), can_release=bool(ps and not ps.released_at and not trial and not asked), nav="projects",
+        bridge=bool(r is not None and r.engine_version == "BRIDGE")))
 
 
 PLACEHOLDERS = {"", "TBC", "JO-[NO.]", "[DATE]", "[NO.]"}
@@ -205,6 +206,8 @@ def production_ai(ref: str, no: int, text: str = Form(""), marker: int = Form(0)
     ps, r = current_set(l), l.last_rev
     if ps is None:
         return _back(ref, no, error="Make the production drawings first")
+    if r is not None and r.engine_version == "BRIDGE":                  # issue #73: made outside the engine
+        return _back(ref, no, error="This is a bridge drawing made outside the engine: construction changes are made outside and uploaded again")
     with db.Session() as s:
         if s.scalar(select(db.ProdChange.id).where(db.ProdChange.line_id == l.id, db.ProdChange.status.in_(("trial", "asked"))).limit(1)):
             return _back(ref, no, error="A change is already waiting: accept or undo it first")
