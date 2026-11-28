@@ -33,6 +33,34 @@
   <div class="small sub">Only the emails these drawings were sent to can open them. Need a colleague to review? Ask your Encore sales person to add their email.</div>
 </div>
 
+<div class="card" id="requests">
+  <h2>Add or remove a product</h2>
+  {% if done == 'req-sent' %}<div class="okmsg">Sent. Encore will update your quotation and drawings, and you will see the answer here.</div>
+  {% elif done == 'req-view' %}<div class="err">Your email can view and comment on this order. Requests are sent by the person your company named to approve.</div>
+  {% elif done == 'req-noname' %}<div class="err">Write which product you would like to add.</div>
+  {% elif done == 'req-none' %}<div class="err">Tick the product(s) you would like to remove.</div>{% endif %}
+  {% for r in reqs %}<div class="small" style="border-top:1px solid #EEECE6;padding-top:6px">
+    <b>{{ 'Add' if r.kind == 'add' else 'Remove' }}:</b> {% if r.kind == 'add' %}{{ r.product }}{% if r.qty %} · qty {{ r.qty }}{% endif %}{% else %}{% for x in r.items %}Product {{ x.no }} {{ x.name }} ({{ x.qty }}){{ '; ' if not loop.last }}{% endfor %}{% endif %}
+    <span class="tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'declined' else 'ask' }}">{{ req_status[r.status] }}</span>
+    <div class="sub">Sent by {{ r.name }} · {{ r.at|when }}{% if r.answer %} · Encore: "{{ r.answer }}"{% endif %}</div></div>{% endfor %}
+  {% if a.can_approve %}
+  <details><summary class="btn sec">Ask to add a product</summary>
+    <form method="post" action="/portal/orders/{{ o.source_ref }}/request/add" enctype="multipart/form-data" class="f" style="gap:8px;margin-top:8px">
+      <label for="rp">Product name / description</label><input id="rp" name="product" required>
+      <label for="rq">Quantity</label><input id="rq" name="qty" inputmode="numeric">
+      <label for="rn">Note (optional)</label><textarea id="rn" name="note" rows="2"></textarea>
+      <label for="rf">Photo or file (optional)</label><input id="rf" name="file" type="file">
+      <button class="btn">Send request</button></form></details>
+  {% if ds %}<details><summary class="btn sec">Ask to remove a product</summary>
+    <form method="post" action="/portal/orders/{{ o.source_ref }}/request/remove" class="f" style="gap:8px;margin-top:8px">
+      {% for d in ds %}<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="no" value="{{ d.l.no }}" style="width:20px;min-height:20px">
+        <span style="flex:1 1 auto">{{ d.name }} · qty {{ d.qty }}</span>
+        <input name="qty_{{ d.l.no }}" placeholder="all" aria-label="Quantity to remove of {{ d.name }}" style="max-width:90px"></label>{% endfor %}
+      <label for="rr">Reason (optional)</label><textarea id="rr" name="note" rows="2"></textarea>
+      <button class="btn">Send request</button></form></details>{% endif %}
+  {% else %}<div class="small sub">Requests are sent by the person your company named to approve.</div>{% endif %}
+</div>
+
 {% if sum.waiting %}
 <div class="card" id="approve">
   <h2>Approve remaining drawings</h2>
