@@ -338,6 +338,11 @@ def ctx(user, **kw):
         ch_waiting = len(s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")).all())
         tasks = len(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open")).all())
     lv = auth.level(user)
+    try:
+        from .notify import counts                                     # issue #48: the bell on every page
+        kw.setdefault("bell", counts(user))
+    except Exception:
+        kw.setdefault("bell", (0, []))
     from .guide import HELP as _help                                   # issue #42: the "?" next to page titles
     kw.setdefault("guide_help", {k: v for k, v in _help.items() if v[0] == "staff" or lv in ("admin", "admin2")})
     kw.setdefault("guide_card", not getattr(user, "guide_dismissed", False))
@@ -2207,6 +2212,12 @@ app.include_router(_clients)
 
 from .users import router as _users                                  # issue #40: Users & roles
 app.include_router(_users)
+
+
+
+
+from .notify import router as _notify                                # issue #48: notifications
+app.include_router(_notify)
 
 
 from .guide import router as _guide                                  # issue #42: the Guide

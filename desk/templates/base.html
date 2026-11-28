@@ -114,7 +114,19 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
 </nav>
 <div class="content">
 <div class="pagehead">{% if not hide_back %}<button type="button" class="sm" onclick="if(history.length>1){history.back()}else{location.href='/'}" aria-label="Back to the previous page">&larr; Back</button>{% endif %}{% block crumb %}{% endblock %}
-{% if help_page is defined and help_page %}{% set hp = guide_help.get(help_page) %}{% if hp %}<a href="/guide/{{ hp[0] }}#{{ hp[1] }}" class="btn" style="min-width:32px;min-height:32px;padding:0 10px;border-radius:16px;font-weight:700" aria-label="Help for this page in the guide" title="Help for this page">?</a>{% endif %}{% endif %}</div>
+{% if help_page is defined and help_page %}{% set hp = guide_help.get(help_page) %}{% if hp %}<a href="/guide/{{ hp[0] }}#{{ hp[1] }}" class="btn" style="min-width:32px;min-height:32px;padding:0 10px;border-radius:16px;font-weight:700" aria-label="Help for this page in the guide" title="Help for this page">?</a>{% endif %}{% endif %}
+{% if bell is defined %}<details class="bell" style="margin-left:auto;position:relative">
+  <summary aria-label="Notifications: {{ bell[0] }} open" style="list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border:1px solid #D6D3CA;border-radius:10px;background:#fff;cursor:pointer;color:#17191C">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+    {% if bell[0] %}<span style="background:#B91C1C;color:#fff;border-radius:10px;font-size:12px;font-weight:700;padding:1px 7px">{{ bell[0] }}</span>{% endif %}</summary>
+  <div role="region" aria-label="Notifications" style="position:absolute;right:0;top:46px;z-index:20;width:min(420px,92vw);background:#fff;border:1px solid #E3E1DA;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.15);padding:8px">
+    {% for n in bell[1] %}<a href="/notifications/{{ n.id }}/open" style="display:block;padding:8px 10px;border-radius:8px;text-decoration:none;color:#17191C;{% if not n.seen_at %}font-weight:600;background:#F4FAF8{% endif %}">
+      <span aria-hidden="true">{{ {'client':'✎','approved':'✓','quote':'⇄','change':'?','engine':'⚙','task':'•','stop':'!'}.get(n.kind, '•') }}</span> {{ n.title }}
+      <span class="sub small" style="display:block;font-weight:400">{{ n.at|when }}</span></a>
+    {% else %}<div class="sub small" style="padding:8px 10px">Nothing open for you.</div>{% endfor %}
+    <a href="/notifications" class="small" style="display:block;padding:8px 10px;border-top:1px solid #EEECE6">All notifications &rsaquo;</a>
+  </div>
+</details>{% endif %}</div>
 {% block body %}{% endblock %}
 {% if engines_popup %}
 <div role="dialog" aria-label="New engines version" style="position:fixed;right:16px;bottom:16px;max-width:340px;background:#fff;border:1px solid #E3E1DA;border-left:4px solid #9A4508;border-radius:12px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:50;display:flex;flex-direction:column;gap:8px">

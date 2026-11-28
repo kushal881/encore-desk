@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Notifications · Encore drawing desk{% endblock %}
+{% block body %}
+<div class="page">
+  <h1 style="margin:0;font-size:22px">Notifications</h1>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    {% for k, t in (('open', 'Open'), ('resolved', 'Resolved')) %}<a class="btn" style="padding:6px 14px;{% if show == k %}background:#17191C;color:#fff;border-color:#17191C{% endif %}" href="/notifications?show={{ k }}&ref={{ ref|urlencode }}">{{ t }}</a>{% endfor %}
+    <form method="get" action="/notifications" style="margin-left:auto;display:flex;gap:6px"><input type="hidden" name="show" value="{{ show }}">
+      <label class="sr" for="ref">Project</label>
+      <select id="ref" name="ref" onchange="this.form.submit()" style="min-width:200px"><option value="">All projects</option>{% for r in refs %}<option value="{{ r }}" {{ 'selected' if r == ref }}>{{ r }}</option>{% endfor %}</select></form>
+  </div>
+  <div class="card">
+    {% for n in rows %}
+    <a href="/notifications/{{ n.id }}/open" style="display:flex;gap:10px;padding:10px 4px;text-decoration:none;color:#17191C;{% if not loop.first %}border-top:1px solid #EEECE6;{% endif %}{% if not n.seen_at and show == 'open' %}font-weight:600{% endif %}">
+      <span aria-hidden="true" style="width:20px;text-align:center">{{ icon.get(n.kind, '•') }}</span>
+      <span style="flex:1 1 auto">{{ n.title }}<span class="sub small" style="display:block;font-weight:400">{{ n.order_ref or 'Desk' }} · {{ n.at|when }}{% if n.resolved_at %} · resolved {{ n.resolved_at|when }}{% elif n.seen_at %} · seen{% endif %}</span></span>
+    </a>
+    {% else %}<div class="sub">{{ 'Nothing open for you.' if show == 'open' else 'Nothing resolved yet.' }}</div>{% endfor %}
+  </div>
+  <div class="sub small">A notification stays open until the thing it points at is dealt with (change re-issued or declined, quotation change handled, request decided, task done). Opening it only marks it seen.</div>
+</div>
+{% endblock %}

@@ -28,6 +28,23 @@ class UserLog(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Notification(Base):
+    """One notification for one person (issue #48). It stays open until the thing it points at is resolved (a change
+    request re-issued or declined, a quotation change handled, a request decided, a task done); opening it only marks it
+    seen. Notes that need no action (e.g. the client approved) are resolved when opened."""
+    __tablename__ = "notification"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_name: Mapped[str] = mapped_column(String(120))
+    source: Mapped[str] = mapped_column(String(60))                    # client:<approval> | approved:<approval> | quote:<id> | change:<id> | engine:<id> | task:<id>
+    kind: Mapped[str] = mapped_column(String(30), default="")
+    title: Mapped[str] = mapped_column(Text, default="")
+    order_ref: Mapped[str] = mapped_column(String(80), default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class PortalTour(Base):
     """A client email that has seen (or skipped) the portal's first-time tour (issue #43)."""
     __tablename__ = "portal_tour"
