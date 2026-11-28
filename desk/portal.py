@@ -46,9 +46,21 @@ def _ser(salt):
 
 
 def listed(email):
-    """The access-list rows of one email, every order. Empty = this email cannot sign in."""
+    """The access-list rows of one email, every order that is not archived. Empty = this email cannot sign in.
+    An archived order's rows are kept (Reopen gives the same people access again) but count for nothing (issue #50)."""
     with db.Session() as s:
-        return list(s.scalars(select(db.PortalAccess).where(db.PortalAccess.email == (email or "").strip().lower())))
+        return list(s.scalars(select(db.PortalAccess).join(db.Order, db.Order.id == db.PortalAccess.order_id)
+                              .where(db.PortalAccess.email == (email or "").strip().lower(), db.Order.archived_at.is_(None))))
+
+
+def losing_access(order_id):
+    """The client emails on this order that are on no other active order: archiving it ends their portal access."""
+    with db.Session() as s:
+        emails = [a.email for a in s.scalars(select(db.PortalAccess).where(db.PortalAccess.order_id == order_id).order_by(db.PortalAccess.id))]
+    return [e for e in dict.fromkeys(emails) if not any(a.order_id != order_id for a in listed(e))]
+
+
+GONE = "This order is no longer available. Please contact your Encore sales person."
 
 
 def current(request: Request):
@@ -146,6 +158,8 @@ def _access(email, ref):
         a = s.scalar(select(db.PortalAccess).where(db.PortalAccess.order_id == o.id, db.PortalAccess.email == email)) if o else None
     if a is None:
         raise HTTPException(404, "Not found")
+    if o.archived_at:                                                     # archived (issue #50): gone for the client
+        raise HTTPException(404, GONE)
     return _desk().load(ref), a
 
 
@@ -210,7 +224,7 @@ def portal_root(request: Request):
 
 @router.get("/login", response_class=HTMLResponse)
 def login(request: Request, error: str = ""):
-    msg = {"link": "This sign-in link has expired or is no longer valid. Enter your email to get a code."}.get(error, "")
+    msg = {"link": "This sign-in link has expired or is no longer valid. Enter your email to get a code.", "gone": GONE}.get(error, "")
     return page(request, "login.html", "", step="email", error=msg, to="")
 
 
@@ -244,6 +258,8 @@ def link(request: Request, token: str):
         o = s.get(db.Order, a.order_id) if a else None
     if a is None or o is None:
         return RedirectResponse("/portal/login?error=link", status_code=303)
+    if o.archived_at:
+        return RedirectResponse("/portal/login?error=gone", status_code=303)
     return _signed_in(RedirectResponse("/portal/orders/%s" % o.source_ref, status_code=303), a.email, False)
 
 
@@ -349,8 +365,9 @@ def order_set(request: Request, ref: str, done: str = ""):
     o, a = _access(email, ref)
     ds = drawings(o)
     from .portalreq import of_order, STATUS                             # issue #47: the client's add / remove requests
+    from .references import listed as refs_listed                       # issue #72: only references ticked "show to client"
     return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form={}, error="", code_sent=False, tab="orders",
-                reqs=of_order(o.id), req_status=STATUS)
+                reqs=of_order(o.id), req_status=STATUS, refs=refs_listed(o.id, client=True))
 
 
 def _approve(request, o, a, picked, name, designation):
@@ -493,6 +510,12 @@ async def ask_changes(request: Request, ref: str, rid: int):
             folder = _desk()._folder(s, o.client_id)
         if folder:
             storage.keep(proof, "%s/Other/Approvals/%s" % (folder, os.path.basename(proof)))
+        from . import references                                        # issue #72: the client's attachment joins the references
+        try:
+            references.add(o, l.no, proof_name, open(proof, "rb").read(), "Attached by %s with a change request on %s Rev %s" % (who, r.number, r.rev),
+                           "Client: %s" % email, source="portal", show_client=True)
+        except HTTPException:
+            pass                                                        # a file type the reference list does not take: kept with the approval only
     _tell_staff(o, "Changes asked on the portal: %s · %s" % (o.source_ref, o.client.name),
                 "%s (%s) asked for changes on Product %d, %s Rev %s:\n%s" % (who, email, l.no, r.number, r.rev, full))
     numbered = "\n".join(texts + (["Other: " + note] if note else []))
@@ -508,6 +531,18 @@ def _rev(o, rid):
     if d is None:
         raise HTTPException(404, "Not found")
     return d
+
+
+@router.get("/orders/{ref}/references/{fid}")
+def reference_file(request: Request, ref: str, fid: int):
+    """A client reference staff ticked "show to client" (issue #72); any other is not found."""
+    email = current(request)
+    o, a = _access(email, ref)
+    with db.Session() as s:
+        r = s.get(db.Reference, fid)
+    if r is None or r.order_id != o.id or not r.show_client:
+        raise HTTPException(404, "Not found")
+    return storage.serve(request, r.path, r.name, download=r.kind in ("cad", "photo"), who=email, side="portal", order_id=o.id)
 
 
 @router.get("/orders/{ref}/d/{rid}/sheet/{n}")

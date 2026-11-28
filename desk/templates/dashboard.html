@@ -11,6 +11,7 @@
     <a class="tile {{ 'on' if focus == k }}" href="/?focus={{ k }}#drawings" aria-label="{{ n }} {{ t }}. Show the drawings."><div class="n">{{ n }}</div><div class="sub">{{ t }}</div></a>
     {% endfor %}
     {% if is_admin %}<a class="tile" href="/engine-requests"><div class="n">{{ requests_waiting }}</div><div class="sub">Engine requests waiting</div></a>{% endif %}
+    {% if bridges %}<a class="tile" href="/engine-requests#bridges"><div class="n">{{ bridges }}</div><div class="sub">Bridge products waiting for the engine</div></a>{% endif %}
   </div>
   {% if mysteps and show != 'completed' %}
   <div class="card" id="mysteps">

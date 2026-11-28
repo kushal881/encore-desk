@@ -51,6 +51,11 @@ def next_step(l, shown_is_preview, checks, review, asked, mode, approved=None, a
         return dict(kind="confirm", title="Accept or Undo the change first", text="A change from the change panel is waiting. Accept it or Undo it before this drawing is checked or issued.")
     if asked:
         return dict(kind="confirm", title="Confirm the change request first", text="A change to this product is waiting for your yes or no in Questions and changes.")
+    if getattr(l, "bridge", False):                                         # issue #73: made outside the engine
+        if not getattr(l, "bridge_checked", False):
+            return dict(kind="bridge", title="Hand check needed", text="The engine checks cannot run on a bridge drawing. An administrator ticks "
+                        "'Checked by hand (clash, sizes, true view)' on the product card before it can be issued.")
+        return dict(kind="done", title="Ready to issue", text="Checked by hand by %s." % ((l.drawing.spec.get("bridge") or {}).get("checked_by") or ""))
     if not checks:
         return dict(kind="redraw", title="Run the automatic checks", text="This preview was made before the desk showed its checks. Draw it again to run them; nothing is sent to the client.")
     if not all_pass(checks):

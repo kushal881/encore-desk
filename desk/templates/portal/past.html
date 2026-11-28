@@ -7,7 +7,7 @@
 {% if sent == -1 %}<div class="err">Tick at least one product to reorder.</div>{% endif %}
 <form method="get" action="/portal/past" class="row">
   <div class="f" style="flex:0 1 140px"><label for="yr">Year</label><select id="yr" name="year"><option value="">All</option>{% for y in years %}<option {{ 'selected' if year == y|string }}>{{ y }}</option>{% endfor %}</select></div>
-  <div class="f" style="flex:1 1 220px"><label for="q">Search</label><input id="q" name="q" value="{{ q }}" placeholder="Quotation or product"></div>
+  <div class="f" style="flex:1 1 220px"><label for="q">Search</label><input type="search" data-live id="q" name="q" value="{{ q }}" placeholder="Quotation or product"></div>
   <button class="btn sec" style="align-self:flex-end">Show</button>
 </form>
 <div class="row" style="align-items:flex-start;gap:16px">

@@ -273,7 +273,8 @@ def load(ref):
                     l.engine_for = c.values["use_engine"]
             l.issued_current = bool(l.last_rev and l.drawing and l.drawing.status == "preview" and l.last_rev.spec.get("model") == l.drawing.spec.get("model")
                                     and l.last_rev.spec.get("swatches") == l.drawing.spec.get("swatches") and l.last_rev.engine_version == l.drawing.engine_version
-                                    and (l.last_rev.spec.get("item") or {}).get("qty") == (l.drawing.spec.get("item") or {}).get("qty"))   # decision 4: qty is in the title block
+                                    and (l.last_rev.spec.get("item") or {}).get("qty") == (l.drawing.spec.get("item") or {}).get("qty")   # decision 4: qty is in the title block
+                                    and (l.last_rev.spec.get("bridge") or {}).get("upload") == (l.drawing.spec.get("bridge") or {}).get("upload"))   # issue #73: the same bridge upload
             if not l.issued_current and l.last_rev and l.drawing and l.drawing.status == "preview" and _stale_preview(l):
                 l.issued_current = True                              # a preview left from before the issue: the issued revision replaced it
             l.can_update_engine = bool(l.last_rev and l.engine_for == l.last_rev.engine_version and __import__("re").fullmatch(r"v\d+", l.last_rev.engine_version or "")
@@ -281,6 +282,10 @@ def load(ref):
             _ = l.sets, l.marks, l.areas
             if l.remake:
                 l.open_count = 0                                     # an exact copy of a past drawing needs no answers
+            l.bridge = bridge.is_bridge(l)                            # issue #73: a drawing made outside the engine
+            l.bridge_checked = l.bridge and bridge.checked(l.drawing)
+            if l.bridge:
+                l.open_count = 0                                     # the engine's questions do not apply to an uploaded drawing
             ph = s.scalar(select(db.Photo).where(db.Photo.product == product_key(l.name)))
             l.photo = ph.id if ph else None
             l.photo_v = int(ph.at.timestamp()) if ph else 0
@@ -298,6 +303,12 @@ def load(ref):
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
         o.client_open = sum(1 for l in o.lines if l.last_rev and not l.cancelled_at and _client_changes(s, l.last_rev.id))
+        for l in o.lines:                                            # issue #69: the status in the order's Drawings menu
+            ap = s.scalars(select(db.Approval).where(db.Approval.revision_id == l.last_rev.id).order_by(db.Approval.id.desc())).first() if l.last_rev else None
+            l.nav_status = ("Cancelled" if l.cancelled_at else "Changes asked" if l.last_rev and _client_changes(s, l.last_rev.id)
+                            else "Approved" if ap is not None and ap.outcome == "approved" and l.issued_current
+                            else "Issued" if l.issued_current else "Could not draw" if l.drawing and l.drawing.status == "failed" and not l.revisions
+                            else "Draft" if l.drawing or l.revisions else "Not drawn")
         o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
@@ -400,7 +411,7 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
                         if _inv(lo, user):
                             cur, no, total = _cs(_cl(lo, auth.sees_production(user)))
                             if cur:
-                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["title"], state=cur["state"],
+                                mysteps.append(dict(ref=o.source_ref, client=o.client.name, no=no, total=total, title=cur["action"], state=cur["state"],
                                                     block=cur["block"], url=cur["url"] or "/orders/%s" % o.source_ref, label=cur["label"] or "Open"))
                 except Exception:
                     gd = dict(title="", step=0)
@@ -412,7 +423,9 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
     quotes = [q for q in ODOO.open_quotations() if q["ref"] not in known] if ODOO.configured else []
     odoo = (ODOO.status() if ODOO.configured else "Not connected yet.") if user.role == "admin" else ""
     from .tour import for_desk                                         # issue #43: first-time tour
-    return T.TemplateResponse(request, "dashboard.html", ctx(user, tour_tags=for_desk(user, bool(tour)), mysteps=mysteps[:12], rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
+    with db.Session() as s:
+        bridges = len(bridge.open_bridges(s)) if auth.level(user) in ("admin", "admin2") else 0
+    return T.TemplateResponse(request, "dashboard.html", ctx(user, bridges=bridges, tour_tags=for_desk(user, bool(tour)), mysteps=mysteps[:12], rows=rows, count=count, show=show, samples=samples, odoo=odoo, odoo_on=ODOO.configured, quotes=quotes, stage_note=ODOO.stage_note, focus=focus, items=items, focus_title=titles.get(focus, ""),
                                                                   hide_back=not focus and show == "active"))
 
 
@@ -424,20 +437,22 @@ def open_order(ref: str = Form(...), user=User):
 def _finish_gap(l):
     """'finishes not set (laminate, fabric)' when the preview still shows placeholder finishes, else ''. Issued drawings are
     never re-checked (issue #45: old issued drawings are not changed)."""
-    if not l.drawing or l.drawing.status != "preview" or getattr(l, "issued_current", False):
+    if not l.drawing or l.drawing.status != "preview" or getattr(l, "issued_current", False) or bridge.is_bridge(l):
         return ""
     return finishcheck.reason(l.drawing.spec)
 
 
 def _ready(l):
     return bool(not l.cancelled_at and l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
-                and not getattr(l, "ai_waiting", False) and not _finish_gap(l))
+                and not getattr(l, "ai_waiting", False) and not _finish_gap(l) and (not bridge.is_bridge(l) or bridge.checked(l.drawing)))
 
 
 def _why_not_ready(l):
     """Why a product cannot be issued yet, in plain words."""
     if getattr(l, "ai_waiting", False):
         return "Accept or Undo the change first"
+    if bridge.is_bridge(l) and not bridge.checked(l.drawing):
+        return "the bridge drawing needs an administrator's tick: %s" % bridge.CHECK
     gap = _finish_gap(l)
     if gap:
         keys = finishcheck.missing(l.drawing.spec)
@@ -550,9 +565,10 @@ def project(request: Request, ref: str, user=User):
     keys = [k for k, _ in FLOW]
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     from .checklist import steps as _checklist_steps                    # issue #44
-    return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
+    from .portal import losing_access
+    return T.TemplateResponse(request, "project.html", ctx(user, o=o, archive_losing=losing_access(o.id) if user.role == "admin" and not o.archived_at else [], todo=todo, flow=flow, checklist=_checklist_steps(o, auth.sees_production(user)) if auth.sees_client(user) else [], remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), has_board_labels=engines.has_board_labels(), board_sets=board_label_sets(o.id),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -572,12 +588,14 @@ def order(request: Request, ref: str, user=User):
         else:
             serial0 += 1
             plan.append("Product %d: new drawing %s" % (l.no, "Encore-%s-%s-%02d Rev A" % (datetime.date.today().strftime("%b-%Y"), client_no, serial0) if client_no else "number given after you enter the folder number"))
-    return T.TemplateResponse(request, "order.html", ctx(user, o=o, g=guide(o), steps=GUIDE_STEPS, tab="work", plan=plan, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
+    with db.Session() as s:
+        bridge_requests = bridge.requests_for(s, o.source_ref, "")      # issue #73: engine requests a bridge drawing can be linked to
+    return T.TemplateResponse(request, "order.html", ctx(user, o=o, bridge_requests=bridge_requests, bridge_check=bridge.CHECK, can_bridge=bridge._may_upload(user), g=guide(o), steps=GUIDE_STEPS, tab="work", plan=plan, events=timeline(o), open_total=sum(l.open_count for l in o.lines),
                               can_draw=any(l.open_count == 0 for l in o.lines), drawn=sum(1 for l in o.lines if l.drawing and l.drawing.status == "preview"),
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), has_board_labels=engines.has_board_labels(), board_sets=board_label_sets(o.id), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
                               reqs=__import__("desk.portalreq", fromlist=["of_order"]).of_order(o.id), linked=__import__("desk.portalreq", fromlist=["linked_change"]).linked_change,
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
@@ -624,8 +642,8 @@ def make_spec(s, o, l, issue=None, edir=None, extra=None):
 def _draw_lines(o, s, who, only=None):
     """Runs the approved engine for every line whose questions are all answered. Each result is a preview."""
     for l in o.lines:
-        if l.open_count or (only and l.no not in only):
-            continue
+        if l.open_count or (only and l.no not in only) or getattr(l, "bridge", False):
+            continue                                                  # a bridge drawing stays until Redraw on the engine
         line = s.get(db.OrderLine, l.id)
         d = line.drawing or db.Drawing()
         line.drawing = d
@@ -749,9 +767,13 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
                     pr = s.get(db.Revision, l.remake)
                     reason = "Remake of %s Rev %s" % (pr.number, pr.rev) if pr else reason
                 revs = [dict(rev="A", date=today, desc=reason if len(reason) <= 40 else reason[:37] + "...", by="")]
-            sp = make_spec(s, o, l, issue=dict(folder=client.folder_no, serial=serial, revisions=revs), edir=edir)
-            files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev), edir)
             number = "Encore-%s-%s-%s-%s" % (datetime.datetime.strptime(revs[0]["date"], "%d %b %Y").strftime("%b"), revs[0]["date"][-4:], client.folder_no, serial)
+            if bridge.is_bridge(l):                                  # issue #73: the uploaded drawing, with Encore's number and revision
+                sp = dict(l.drawing.spec, revisions=revs, issue=dict(folder=client.folder_no, serial=serial, revisions=revs))
+                files, ver = bridge.issue_files(l.drawing, "%d/line%d/issued/rev%s" % (o.id, l.no, rev), number, rev, today), bridge.BRIDGE
+            else:
+                sp = make_spec(s, o, l, issue=dict(folder=client.folder_no, serial=serial, revisions=revs), edir=edir)
+                files = engines.draw(sp, "%d/line%d/issued/rev%s" % (o.id, l.no, rev), edir)
             s.add(db.Revision(line_id=l.id, number=number, rev=rev, reason=reason, engine_version=ver, spec=sp, files=files, issued_by=user.name))
             d_ = s.get(db.OrderLine, l.id).drawing                   # the drawing shown from now on is the one issued
             d_.spec, d_.files, d_.engine_version, d_.status, d_.error = sp, dict(files), ver, "preview", ""
@@ -763,6 +785,7 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
         s.commit()
     if done:
         keep_issued(o.id)
+        references.keep_all(o.id)                                      # issue #72: the client's folder exists now
     return RedirectResponse("/orders/%s/issue" % ref if back == "issue" else "/orders/%s/work" % ref, status_code=303)
 
 
@@ -1044,6 +1067,8 @@ def _panel_state(o, l, sh, mode):
     """Whether the change panel is open on the drawing shown. -> "" when it is, otherwise the reason in plain words."""
     if mode == "prod":
         return "Construction changes are made on the production screen."
+    if sh.get("engine_version") == bridge.BRIDGE or (sh.get("r") is None and bridge.is_bridge(l)):
+        return "This is a bridge drawing made outside the engine. Changes are made outside and uploaded again as a new version (product card, Bridge drawing)."
     if l.remake:
         return "This product is an exact remake of a past drawing, so it is not changed here."
     if sh["r"] is not None and not l.issued_current and l.drawing and l.drawing.status == "preview":
@@ -1077,7 +1102,7 @@ def _changed_box(sh, tr):
 
 
 @app.post("/orders/{ref}/view/{no}/ai")
-def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user=User):
+def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), use_refs: str = Form(""), user=User):
     """The user asks the assistant about this product. A change is drawn as a trial; the drawing stays as it is until
     someone presses Accept."""
     text = text.strip()
@@ -1104,7 +1129,8 @@ def ai_ask(ref: str, no: int, text: str = Form(...), marker: int = Form(0), user
         history = [(t.typed, t.said or t.answer) for t in s.scalars(select(db.AiTurn).where(db.AiTurn.line_id == l.id).order_by(db.AiTurn.id))]
     product = dict(product="Product %d" % l.no, name=l.name.split("(")[0].strip(), family=l.read["family"], qty=l.qty,
                    issued=("Rev %s" % l.last_rev.rev) if l.last_rev else "not issued")
-    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history)
+    pictures = references.images_for_ai(o.id, l.no) if use_refs else []   # issue #72: the client's sketches and photos, when ticked
+    reply = assistant.ask(text, product, current.get("model", {}), marks, edir, history, images=pictures)
     tr = db.AiTurn(line_id=l.id, shown=sh["key"], typed=text, kind=reply["kind"], said=reply["said"], values=reply["values"], by=user.name,
                    answer=reply["answer"] + (" (Not used: %s.)" % "; ".join(reply["problems"]) if reply["problems"] and reply["kind"] == "change" else ""))
     tr.status = reply["kind"] if reply["kind"] != "change" else "trial"
@@ -1628,9 +1654,14 @@ def production_preview(ref: str, no: int, rev: int = Form(0), user=User):
     sp = __import__("copy").deepcopy(sh["r"].spec if sh["r"] else l.drawing.spec)
     sp["drawing_set"], sp["production"] = "PRODUCTION", viewer.placeholders(o.job_order)
     edir, ver = engines.dir_for(sh["engine_version"] or None)
+    if sh["engine_version"] == bridge.BRIDGE:
+        ver = bridge.BRIDGE
     pp = db.ProdPreview(line_id=l.id, shown=sh["key"], engine_version=ver, made_by=user.name)
     try:
-        files = engines.draw_set(sp, "%d/line%d/prodpreview/%s" % (o.id, l.no, sh["key"]), edir)
+        if ver == bridge.BRIDGE:                                       # issue #73: the uploaded drawing with the BRIDGE band
+            files = bridge.production_files(sh["r"] or l.drawing, "%d/line%d/prodpreview/%s" % (o.id, l.no, sh["key"]))
+        else:
+            files = engines.draw_set(sp, "%d/line%d/prodpreview/%s" % (o.id, l.no, sh["key"]), edir)
         pp.pdf, pp.pages = files[0]["pdf"], files[0]["pages"]
     except RuntimeError as e:
         pp.error = str(e)[:400]
@@ -1747,7 +1778,8 @@ def engine_request_new(text: str = Form(...), order_ref: str = Form(""), product
 def engine_requests(request: Request, user=User):
     with db.Session() as s:
         rows = s.scalars(select(db.EngineRequest).order_by(db.EngineRequest.id.desc())).all()
-    return T.TemplateResponse(request, "engine_requests.html", ctx(user, rows=rows))
+        bridges = bridge.open_bridges(s)                                  # issue #73: products waiting for the engine
+    return T.TemplateResponse(request, "engine_requests.html", ctx(user, rows=rows, bridges=bridges))
 
 
 @app.post("/engine-requests/{rid}/{decision}")
@@ -1816,19 +1848,22 @@ def make_sets(request: Request, ref: str, kind: str, job_order: str = Form(""), 
             sp = __import__("copy").deepcopy(prev.spec if prev is not None and prev.spec else r.spec)
             sp["drawing_set"], sp["production"] = kind, dict(details)
             if approved_on:                                        # the client's approval, when it has been recorded for this issue
-                sp["drawing"].update(approved="CLIENT", approval_date=approved_on)
+                sp.setdefault("drawing", {}).update(approved="CLIENT", approval_date=approved_on)
             edir, ver = engines.dir_for(r.engine_version)
             try:
-                files = engines.draw_set(sp, "%d/line%d/%s/rev%s-p%d" % (o.id, l.no, kind.lower(), r.rev, prev.prod_no if prev else 1), edir)
+                if r.engine_version == bridge.BRIDGE:                 # issue #73: the uploaded drawing, marked BRIDGE for the shop floor
+                    files, ver = bridge.production_files(r, "%d/line%d/%s/rev%s-p%d" % (o.id, l.no, kind.lower(), r.rev, prev.prod_no if prev else 1),
+                                                         "Production drawing" if kind == "PRODUCTION" else "Subcontractor drawing"), bridge.BRIDGE
+                else:
+                    files = engines.draw_set(sp, "%d/line%d/%s/rev%s-p%d" % (o.id, l.no, kind.lower(), r.rev, prev.prod_no if prev else 1), edir)
             except RuntimeError as e:
                 failed.append("product %d (%s)" % (l.no, str(e)[:120])); continue
             keep = dict(prod_no=prev.prod_no, released_by=prev.released_by, released_at=prev.released_at) if prev is not None else {}
             for old in s.scalars(select(db.ProductionSet).where(db.ProductionSet.line_id == l.id, db.ProductionSet.kind == kind)):
                 s.delete(old)
-            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name)
-            s.add(ps_)
+            ps_ = db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep)
+            s.add(ps_)                                                 # one set per product: the same record goes to the bucket
             made_sets.append(ps_)
-            s.add(db.ProductionSet(line_id=l.id, revision_id=r.id, kind=kind, files=files, details=details, engine_version=ver, made_by=user.name, spec=sp, **keep))
             made.append("%s Rev %s" % (r.number, r.rev))
         what = "Production drawings" if kind == "PRODUCTION" else "Subcontractor drawings"
         s.add(db.Message(order_id=o.id, who="desk", text=(what + " made for " + ", ".join(made) + "." if made else what + " could not be made.") + (" Not made: " + "; ".join(failed) + "." if failed else "")))
@@ -1851,10 +1886,18 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
     if o.quote_open:                                                   # screen 8: drawings and quotation must match first
         from .quotes import lock_reason
         raise HTTPException(400, lock_reason(o.id))
-    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
-    if not revs:
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != bridge.BRIDGE}
+    bridged = [l for l in o.lines if l.last_rev and not l.cancelled_at and l.last_rev.engine_version == bridge.BRIDGE]
+    if not revs and not bridged:
         raise HTTPException(400, "Nothing has been issued yet")
     on = bool(panel_saw)
+    note = (" Bridge products are not in it (BOM supplied with the bridge drawing): " + ", ".join(
+        "Product %d%s" % (l.no, "" if l.last_rev.files.get("bom") else " (no BOM uploaded)") for l in bridged) + ".") if bridged else ""
+    if not revs:                                                       # issue #73: only bridge products: their uploaded BOMs
+        with db.Session() as s:
+            s.add(db.Message(order_id=o.id, who="desk", text="No bill of material made: every issued product is a bridge drawing." + note))
+            s.commit()
+        return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     pf = db.ProductionFile(order_id=o.id, kind="bom", panel_saw=on, made_by=user.name, engine_version=engines.version_label(),
                            revisions=", ".join(sorted(revs)), name="%s-Bill of Material%s.xlsx" % (o.source_ref, " (panel saw)" if on else ""))
@@ -1864,8 +1907,8 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
         pf.error = str(e)
     with db.Session() as s:
         s.add(pf)
-        s.add(db.Message(order_id=o.id, who="desk", text=("Bill of material made%s by %s." % (" with panel-saw cutting" if on else "", user.name)) if not pf.error
-                         else "The bill of material could not be made: %s" % pf.error))
+        s.add(db.Message(order_id=o.id, who="desk", text=(("Bill of material made%s by %s." % (" with panel-saw cutting" if on else "", user.name)) if not pf.error
+                         else "The bill of material could not be made: %s" % pf.error) + note))
         s.commit()
         folder = _folder(s, o.client_id)
     if folder and not pf.error:
@@ -1883,9 +1926,10 @@ def make_cutting(ref: str, user=User):
     if o.quote_open:                                                   # screen 8: drawings and quotation must match first
         from .quotes import lock_reason
         raise HTTPException(400, lock_reason(o.id))
-    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != bridge.BRIDGE}
     if not revs:
-        raise HTTPException(400, "Nothing has been issued yet")
+        raise HTTPException(400, "Nothing to cut: no product drawn on the engine has been issued (bridge products use the cut list uploaded with them)"
+                            if any(l.last_rev and l.last_rev.engine_version == bridge.BRIDGE for l in o.lines) else "Nothing has been issued yet")
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     common = dict(order_id=o.id, panel_saw=True, made_by=user.name, engine_version=engines.version_label(), revisions=", ".join(sorted(revs)))
     dia = db.ProductionFile(kind="cutting", name="%s-Board cutting diagrams.pdf" % o.source_ref, **common)
@@ -1907,6 +1951,79 @@ def make_cutting(ref: str, user=User):
     if folder and not dia.error:
         for f in (dia, lab):
             storage.keep(f.path, "%s/Bill of Material/%s" % (folder, storage.safe(f.name)))
+    return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
+
+
+def board_label_sets(order_id):
+    """The order's board label sets, newest first: [dict(f, p, withdrawn)] (issue #61). A set made from other issued
+    revisions than the one before it is the next P; every earlier P is withdrawn."""
+    with db.Session() as s:
+        files = list(s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == order_id, db.ProductionFile.kind == "boardlabels",
+                                                              db.ProductionFile.error == "").order_by(db.ProductionFile.id)))
+    out, p, last = [], 0, None
+    for f in files:
+        if f.revisions != last:
+            p, last = p + 1, f.revisions
+        out.append(dict(f=f, p=p))
+    for x in out:
+        x["withdrawn"] = x["p"] < p
+    latest = {}
+    for x in out:                                                       # one line per P: its latest print
+        latest[x["p"]] = x
+    return sorted(latest.values(), key=lambda x: -x["p"])
+
+
+@app.post("/orders/{ref}/board-labels")
+def make_board_labels(ref: str, user=User):
+    """One label per full board, in cutting sequence, for the store team to reserve the boards (issue #61), made by the approved
+    engines from the same panel-saw board plan as the BOM and cutting diagrams. Not for salespeople."""
+    if user.role == "sales":
+        raise HTTPException(403, "Board labels are for production, designers, coordinators and the administrator")
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    if not engines.has_board_labels():
+        raise HTTPException(400, "The approved engines (%s) have no board labels yet. Approve the board labels proposal in encore-approved, "
+                            "then update the engines here." % engines.version_label())
+    with db.Session() as s:
+        has_bom = s.scalar(select(db.ProductionFile.id).where(db.ProductionFile.order_id == o.id, db.ProductionFile.kind == "bom",
+                                                              db.ProductionFile.error == "").limit(1)) is not None
+    if not has_bom:
+        raise HTTPException(400, "Make the bill of material first: the board labels follow its board plan (panel-saw cutting)")
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != "BRIDGE"}
+    if not revs:
+        raise HTTPException(400, "Nothing has been issued yet")
+    sets = board_label_sets(o.id)
+    rev_text = ", ".join(sorted("%s Rev %s" % (l.last_rev.number, l.last_rev.rev) for l in o.lines
+                                if l.last_rev and not l.cancelled_at and l.last_rev.engine_version != "BRIDGE"))   # a new revision: a new set
+    p = (sets[0]["p"] if sets and sets[0]["f"].revisions == rev_text else (sets[0]["p"] + 1 if sets else 1))
+    ps_ = next((x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"), None)
+    job = (ps_.details.get("job_order") if ps_ else "") or o.job_order or ""
+    deadline = (ps_.details.get("deadline") if ps_ else "") or o.delivery_date or ""
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    f = db.ProductionFile(order_id=o.id, kind="boardlabels", panel_saw=True, made_by=user.name, engine_version=engines.version_label(), revisions=rev_text,
+                          name="%s-Board labels P%d.pdf" % (o.source_ref, p))
+    try:
+        got = engines.board_labels(revs, "%d/boardlabels/%s" % (o.id, stamp), client=o.client.name, job=job, deadline=deadline,
+                                   replaces="P%d" % (p - 1) if p > 1 else "")
+        f.path = got["pdf"]
+        f.summary = " · ".join(["%d board%s" % (got["boards"], "" if got["boards"] == 1 else "s")] + ["%s: %d" % m for m in got["by_material"]])
+        f.name = "%s-Board labels P%d (%d boards).pdf" % (o.source_ref, p, got["boards"])
+    except RuntimeError as e:
+        f.error = str(e)
+    with db.Session() as s:
+        s.add(f)
+        s.add(db.Message(order_id=o.id, who="desk", text=("Board labels P%d made by %s: %s.%s" % (p, user.name, f.summary, " The labels of P%d are withdrawn." % (p - 1) if p > 1 and not (sets and sets[0]["p"] == p) else ""))
+                         if not f.error else "The board labels could not be made: %s" % f.error))
+        s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not f.error:
+        storage.keep(f.path, "%s/Bill of Material/%s" % (folder, storage.safe(f.name)))
+    if f.error:
+        raise HTTPException(400, f.error)
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
@@ -2114,8 +2231,11 @@ def archive_order(ref: str, reason: str = Form(""), user=User):
         order = s.get(db.Order, o.id)
         if order.archived_at:
             raise HTTPException(400, "%s is already archived" % ref)
+        from .portal import losing_access                                 # the client emails whose only active order this was
+        gone = losing_access(o.id)
         order.archived_at, order.archived_by, order.archived_reason = db.now(), user.name, reason
-        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened." % (user.name, reason)))
+        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened. "
+                         "It is hidden from the client portal%s." % (user.name, reason, "; portal access ended for " + ", ".join(gone) if gone else "")))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
@@ -2249,3 +2369,11 @@ app.include_router(_guide)
 
 from .tour import router as _tour                                    # issue #43: first-time tour
 app.include_router(_tour)
+
+
+from . import references                                              # issue #72: client references
+app.include_router(references.router)
+
+
+from . import bridge                                                  # issue #73: bridge products (drawings made outside the engine)
+app.include_router(bridge.router)
