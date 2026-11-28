@@ -1051,6 +1051,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
                                                                                          approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,
                                                                                          ai=l.ai_waiting), review=review,
                               marks=marks, next_no=max([m.no for m in l.marks], default=0) + 1, part_map=_part_map(l, skey) is not None, locked=locked,
+                              prows=__import__("desk.products", fromlist=["rows_for"]).rows_for(o),   # issue #84: the product switcher
                               chips=chips, waiting=waiting, waiting_n=sum(1 for x in waiting.lines if x["state"] == "waiting") if waiting else 0))
 
 
@@ -2456,3 +2457,7 @@ app.include_router(_tour)
 
 from . import bridge                                                  # issue #73: bridge products (drawings made outside the engine)
 app.include_router(bridge.router)
+
+
+from .products import router as _products                            # issue #84: Products tab
+app.include_router(_products)

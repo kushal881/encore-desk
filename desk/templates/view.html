@@ -49,10 +49,20 @@ button.pin{min-height:0;padding:0;font:inherit;font-weight:700;font-size:12px;cu
   <section class="dcard" aria-label="Drawing">
     <div class="vbar">
       {% if prev_no %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ prev_no }}" aria-label="Previous product">&lsaquo;</a>{% endif %}
-      <div style="flex:1 1 200px;min-width:0">
-        <div class="sub small">Product {{ l.no }} · {{ pos }} of {{ count }} drawn · {{ title }}</div>
-        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.name.split('(')[0] }}</div>
-      </div>
+      {# issue #84: jump to any product (type to search, status filters, up/down + Enter) #}
+      <details class="drop sw" id="psw" style="flex:1 1 220px;min-width:0"><summary class="vbtn" style="justify-content:flex-start;width:100%;font-weight:400;text-align:left">
+        <span style="flex-grow:1;min-width:0"><span class="sub small" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Product {{ l.no }} · {{ pos }} of {{ count }} drawn{% set myrow = prows|selectattr('no', 'equalto', l.no)|first %}{% if myrow and myrow.areas and myrow.areas != 'No area' %} · {{ myrow.areas }}{% endif %} · {{ title }}</span>
+        <b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.name.split('(')[0] }}</b></span><span aria-hidden="true">&#9662;</span></summary>
+        <div style="width:min(520px,90vw);max-height:65vh;overflow:auto;padding:8px">
+          <label class="sr" for="swq">Find a product</label>
+          <input type="search" id="swq" placeholder="Type a name, number or area" autocomplete="off" style="flex:0 0 auto;min-height:38px">
+          <div style="display:flex;flex-wrap:wrap;gap:4px">{% for k, lab in (('all', 'All'), ('review', 'Your review'), ('ai', 'AI waiting'), ('bridge', 'Bridge'), ('ready', 'Ready')) %}<button type="button" class="vbtn" data-swf="{{ k }}" aria-pressed="{{ 'true' if k == 'all' else 'false' }}" style="min-height:28px;padding:0 8px;font-size:12px">{{ lab }} {{ prows|selectattr('key', 'equalto', k)|list|length if k != 'all' and k != 'bridge' else (prows|selectattr('bridge')|list|length if k == 'bridge' else prows|rejectattr('key', 'equalto', 'nodrawing')|list|length) }}</button>{% endfor %}</div>
+          <div id="swlist" role="listbox" aria-label="Products">
+          {% for r in prows if r.key != 'nodrawing' %}<a role="option" href="{{ r.url }}" data-st="{{ r.key }}" data-bridge="{{ 1 if r.bridge else 0 }}" data-text="{{ (r.no ~ ' ' ~ r.name ~ ' ' ~ r.areas)|lower }}" style="display:flex;gap:8px;align-items:center;padding:7px 8px;border-radius:8px;text-decoration:none;color:#17191C;{% if r.no == l.no %}background:#F4FAF8;font-weight:600{% endif %}">
+            <b style="width:30px">{{ r.no }}</b><span style="flex-grow:1;min-width:0">{{ r.name }}<span class="sub small" style="display:block">{{ r.areas }} · qty {{ '%g'|format(r.qty) }}</span></span><span class="tag {{ r.cls }}">{{ r.text }}</span></a>{% endfor %}
+          </div>
+          <div class="sub small" id="swcount"></div>
+        </div></details>
       {% if next_no_ %}<a class="vbtn" href="/orders/{{ o.source_ref }}/view/{{ next_no_ }}" aria-label="Next product">&rsaquo;</a>{% endif %}
       <span class="stepchip" title="{{ steps|join(' · ') }}">Step {{ step[0] }} of 8 · {{ step[1] }}</span>
       <nav class="seg" aria-label="Which drawing">
@@ -204,6 +214,14 @@ window.addEventListener('pointerup',function(){d=null;sh.classList.remove('drag'
 </script>
 {% endif %}
 <script>
+(function(){var d=document.getElementById('psw');if(!d)return;var q=document.getElementById('swq'),f='all',items=[].slice.call(document.querySelectorAll('#swlist a')),cur=-1;   /* issue #84: the product switcher */
+function vis(){return items.filter(function(a){return a.style.display!=='none'})}
+function show(){var v=q.value.toLowerCase().trim();items.forEach(function(a){var k=a.getAttribute('data-st');a.style.display=((f==='all'||k===f||(f==='bridge'&&a.getAttribute('data-bridge')==='1'))&&(!v||a.getAttribute('data-text').indexOf(v)>=0))?'flex':'none';a.style.outline='';});
+  cur=-1;document.getElementById('swcount').textContent=vis().length+' of '+items.length+' products · up/down move · Enter opens';}
+d.addEventListener('toggle',function(){if(d.open){show();q.focus();}});q.addEventListener('input',show);
+document.querySelectorAll('[data-swf]').forEach(function(b){b.addEventListener('click',function(){f=b.getAttribute('data-swf');document.querySelectorAll('[data-swf]').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});show();});});
+q.addEventListener('keydown',function(e){var v=vis();if(!v.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(cur>=0&&v[cur])v[cur].style.outline='';cur=Math.max(0,Math.min(v.length-1,cur+(e.key==='ArrowDown'?1:-1)));v[cur].style.outline='2px solid #1D4ED8';v[cur].scrollIntoView({block:'nearest'});}
+  else if(e.key==='Enter'){e.preventDefault();location.href=(v[cur>=0?cur:0]).href;}else if(e.key==='Escape'){d.open=false;}});})();
 (function(){
 var msgs=document.getElementById('msgs');if(msgs)msgs.scrollTop=msgs.scrollHeight;            /* newest at the bottom */
 function hl(no,on){document.querySelectorAll('[data-mark="'+no+'"]').forEach(function(e){e.classList.toggle('hl',on)});}

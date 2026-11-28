@@ -1,4 +1,4 @@
-"""Order page fixes (issue #69): one "Drawings" menu instead of a tab per product (Product N, never Drawing N), search
+"""Order page fixes (issue #69; since #84 the Products tab replaces the Drawings menu): no tab per product (Product N, never Drawing N), search
 boxes that filter as you type and show everything when cleared, and the checklist chip in the same action words as the
 "What to do next" bar. Drawing parts need ENGINES_DIR."""
 import os, sys, tempfile, re
@@ -27,7 +27,7 @@ def nav(html):
 
 
 def test_drawings_menu_twelve_products():
-    """An order with 12 drawn products: one Drawings menu with 12 entries, 'Product N', a status each, no 'Drawing N' tabs."""
+    """An order with 12 drawn products: one Products tab (12), 'Product N' with a status each, no 'Drawing N' tabs."""
     c.get(A)
     with db.Session() as s:
         o = s.query(db.Order).filter_by(source_ref="Q-2026-10-444").one()
@@ -41,11 +41,11 @@ def test_drawings_menu_twelve_products():
         s.query(db.OrderLine).filter_by(order_id=o.id, no=12).one().drawing.status = "failed"
         s.commit()
     n = nav(c.get(A).text)
-    assert n.count('role="menuitem"') == 12 and "Drawings" in n
-    assert not re.search(r">Drawing \d+<", n) and "Product 1 · " in n and "Product 12 · Pedestal 12" in n
-    assert "Draft" in n and "Could not draw" in n
+    assert "Products · 12" in n and not re.search(r">Drawing \d+<", n) and "Product 12" not in n
+    p = c.get(A + "/products").text
+    assert "Product 1 · " in p and "Product 12 · Pedestal 12" in p and "Could not draw" in p
     v = c.get(A + "/view/2").text
-    assert "Drawings: Product 2" in nav(v) and "Drawing 2 of" not in v                  # the viewer: which product is open
+    assert "Product 2 · 2 of 12 drawn" in v and "Drawing 2 of" not in v                 # the viewer: which product is open
 
 
 def test_status_chips_issued_approved_changes():
@@ -63,8 +63,8 @@ def test_status_chips_issued_approved_changes():
             if no == 3:
                 s.add(db.Approval(order_id=o.id, revision_id=r.id, outcome="changes", name="Mr Singh", how="portal", note="wider"))
         s.commit()
-    n = nav(c.get(A).text)
-    row = lambda no: re.search(r"Product %d · .*?</a>" % no, n, re.S).group(0)
+    n = c.get(A + "/products").text
+    row = lambda no: re.search(r'class="prow" role="row"[^>]*data-text="%d .*?</div>' % no, n, re.S).group(0)
     assert "Issued" in row(1) and "Rev A" in row(1)
     assert "Approved" in row(2) and "Changes asked" in row(3)
 
@@ -111,7 +111,7 @@ def test_chip_matches_next_step_bar():
 
 
 def test_old_order_unchanged():
-    """An order with nothing drawn has no Drawings menu; the other tabs are as before."""
+    """An order with nothing drawn: no product menu, the Products tab still there; the other tabs are as before."""
     with db.Session() as s:
         o = s.query(db.Order).filter_by(source_ref="SAMPLE-REPEAT-1").one()
         for l in s.query(db.OrderLine).filter_by(order_id=o.id):
@@ -119,7 +119,7 @@ def test_old_order_unchanged():
                 s.delete(l.drawing)
         s.commit()
     n = nav(c.get("/orders/SAMPLE-REPEAT-1").text)
-    assert "drawmenu" not in n and "Overview" in n and "Issue and approval" in n
+    assert "drawmenu" not in n and "Overview" in n and "Issue and approval" in n and "Products · " in n
 
 
 if __name__ == "__main__":

@@ -139,7 +139,7 @@ def test_failed_and_old_drawings():
     assert "Production drawing</span>" in v and "+ Add numbered marker" not in v        # no production drawing, no markers
     assert c.post(A + "/view/1/ready", data={"shown": "d1"}).status_code == 400
     assert c.post(A + "/view/1/production").status_code == 400
-    assert 'href="/orders/Q-2026-10-444/view/1"' in c.get(A + "/work").text                  # still reachable from the tabs
+    assert 'href="/orders/Q-2026-10-444/view/1"' in c.get(A + "/products").text              # still reachable from the Products tab
 
     # a preview made before the desk recorded checks: draw it again from the viewer
     with db.Session() as s:
