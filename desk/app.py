@@ -54,6 +54,48 @@ def _not_for_role(request: Request, exc):
                         '<h1 style="font-size:20px;margin:0 0 8px">Not shown for your role</h1><p>%s</p><p>%s</p></div></body></html>' % (text, link), status_code=403)
 
 
+from starlette.exceptions import HTTPException as _StarletteHTTP
+from fastapi.exceptions import RequestValidationError as _Invalid
+from fastapi.exception_handlers import http_exception_handler as _json_http, request_validation_exception_handler as _json_invalid
+import html as _html
+
+
+def _wants_page(request):
+    """A person in a browser (not the Odoo webhook, a script or the page's own fetch calls) gets a readable page."""
+    return "text/html" in request.headers.get("accept", "") and not request.url.path.startswith("/webhooks")
+
+
+def _error_page(request, title, text, status):
+    portal_side = request.url.path.startswith("/portal")
+    home = ('<a href="/portal">Your orders</a>' if portal_side else '<a href="/">Dashboard</a>')
+    who = "Encore Prime Furniture" if portal_side else "Encore drawing desk"
+    return HTMLResponse('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+                        '<title>%s · %s</title></head><body style="font-family:Inter,system-ui,sans-serif;background:#F4F3EF;color:#17191C;padding:24px">'
+                        '<div style="max-width:560px;margin:40px auto;background:#fff;border:1px solid #E3E1DA;border-radius:12px;padding:20px">'
+                        '<h1 style="font-size:20px;margin:0 0 8px">%s</h1><p style="margin:0 0 16px">%s</p>'
+                        '<p style="display:flex;gap:16px;margin:0"><a href="javascript:history.back()">&larr; Go back</a>%s</p></div></body></html>'
+                        % (_html.escape(title), who, _html.escape(title), _html.escape(text), home), status_code=status)
+
+
+@app.exception_handler(_StarletteHTTP)
+async def _http_error(request: Request, exc):
+    if not _wants_page(request):
+        return await _json_http(request, exc)
+    detail = exc.detail if isinstance(exc.detail, str) else ""
+    title = {404: "Not found", 403: "Not allowed", 400: "Please check and try again", 409: "Could not be done", 502: "Odoo could not be reached"}.get(
+        exc.status_code, "Something went wrong")
+    if exc.status_code == 404 and not detail:
+        detail = "This page does not exist, or what it showed has been removed."
+    return _error_page(request, title, detail or "Go back and try again. If it happens again, tell Kushal.", exc.status_code)
+
+
+@app.exception_handler(_Invalid)
+async def _invalid_form(request: Request, exc):
+    if not _wants_page(request):
+        return await _json_invalid(request, exc)
+    return _error_page(request, "Something was left empty", "Go back, fill in or pick the missing answer, and try again.", 422)
+
+
 @app.exception_handler(portal.PortalSignIn)
 def _to_portal_login(request: Request, exc):
     return RedirectResponse("/portal/login", status_code=303)
@@ -219,7 +261,7 @@ def load(ref):
             try:
                 src = SOURCE.get_order(ref)
             except KeyError:
-                raise HTTPException(404, "Order %s was not found" % ref)
+                raise HTTPException(404, "No quotation or order %s was found in Odoo. Check the number, or search by client name on New project." % ref)
             except OdooError as e:
                 raise HTTPException(502, "Odoo could not be read: %s" % e)
             c = s.scalar(select(db.Client).where(db.Client.name == src.client_name)) or db.Client(name=src.client_name, contact=src.client_contact)
@@ -417,8 +459,16 @@ def home(request: Request, show: str = "active", focus: str = "", tour: int = 0,
 
 
 @app.post("/open")
-def open_order(ref: str = Form(...), user=User):
-    return RedirectResponse("/orders/%s" % ref.strip(), status_code=303)
+def open_order(ref: str = Form(""), user=User):
+    """Opens a quotation by its number. Anything that isn't a number (e.g. a client name like 'sudeva') searches the open
+    Odoo quotations on New project instead of failing."""
+    import urllib.parse
+    ref = ref.strip()
+    if not ref:
+        return RedirectResponse("/", status_code=303)
+    if not any(ch.isdigit() for ch in ref):
+        return RedirectResponse("/new?q=%s" % urllib.parse.quote(ref), status_code=303)
+    return RedirectResponse("/orders/%s" % urllib.parse.quote(ref.upper() if ref.lower().startswith("q-") else ref), status_code=303)
 
 
 def _finish_gap(l):
@@ -583,10 +633,10 @@ def order(request: Request, ref: str, user=User):
 
 
 @app.post("/orders/{ref}/answer/{qid}")
-def answer(ref: str, qid: int, value: str = Form(...), back: str = Form(""), user=User):
+def answer(ref: str, qid: int, value: str = Form(""), back: str = Form(""), user=User):
     value = value.strip()
     if not value:
-        raise HTTPException(400, "Enter an answer first")
+        raise HTTPException(400, "Pick one of the options or type your answer, then press Answer.")
     with db.Session() as s:
         q = s.get(db.Question, qid)
         if q is None:
