@@ -1800,5 +1800,7 @@ def remove_order(ref: str, user=User):
     return RedirectResponse("/", status_code=303)
 
 
+from .newproject import router as _newproject                        # screen 2: New project and Remake
+app.include_router(_newproject)
 from .quotes import router as _quotes                                # screen 8: Quotation changes + the Odoo webhook
 app.include_router(_quotes)

@@ -97,6 +97,8 @@ td{padding:10px 12px;border-bottom:1px solid #F1EFE9;vertical-align:top}
 <nav class="sidenav" aria-label="Main">
   <a class="brand" href="/"><img src="/static/encore-logo.png" alt="Encore Prime logo"><span><b style="display:block;font-size:15px">Encore Prime</b><span class="sub small">Drawing desk</span></span></a>
   <a href="/" class="item {{ 'on' if nav == 'dash' }}">Dashboard</a>
+  <a href="/new" class="item {{ 'on' if nav == 'new' }}">New project</a>
+  <a href="/new#remake" class="item">Past orders / Remake</a>
   {% if is_approver %}<a href="/approvals" class="item {{ 'on' if nav == 'appr' }}">Approvals{% if approvals_waiting %}<span class="count" style="margin-left:auto">{{ approvals_waiting }}</span>{% endif %}</a>{% endif %}
   {% if is_admin %}<a href="/engine-requests" class="item {{ 'on' if nav == 'eng' }}">Engine requests{% if requests_waiting %}<span class="count" style="margin-left:auto">{{ requests_waiting }}</span>{% endif %}</a>{% endif %}
   <div class="me"><div><b>{{ user }}</b><div class="sub">{{ role }}</div></div>
