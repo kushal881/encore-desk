@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
+from . import finishcheck
 from . import db, spec, engines, finishes, auth, viewer, parts, assistant, specify, issuing, storage, portal, changes as chg
 import datetime, secrets, io, re
 from .reading import read_line, fmt
@@ -246,7 +247,15 @@ def load(ref):
         changed = False
         for l in o.lines:
             l.read = read_line(l.name, l.description)
+            # finishes the preview still shows as placeholders (LAMINATE NAME + CODE): asked on Specify (issue #45)
+            fq = finishcheck.questions(l.drawing.spec if l.drawing else None, l.read["fields"], {x["key"] for x in l.read["questions"]})
+            l.read["questions"] += fq
             changed |= _sync_questions(s, l)
+            if l.revisions:                                          # issued products: questions are not synced, so add these here
+                have = {q.key for q in l.questions}
+                for w in fq:
+                    if w["key"] not in have:
+                        l.questions.append(db.Question(key=w["key"], text=w["text"], options=w["options"])); changed = True
             l.size_text = fmt(l.read["size"]) if l.read["size"] else "size not found"
             l.open_count = sum(1 for q in l.questions if not q.answer)
             _ = l.questions, l.drawing, l.changes, l.revisions
@@ -397,15 +406,30 @@ def open_order(ref: str = Form(...), user=User):
     return RedirectResponse("/orders/%s" % ref.strip(), status_code=303)
 
 
+def _finish_gap(l):
+    """'finishes not set (laminate, fabric)' when the preview still shows placeholder finishes, else ''. Issued drawings are
+    never re-checked (issue #45: old issued drawings are not changed)."""
+    if not l.drawing or l.drawing.status != "preview" or getattr(l, "issued_current", False):
+        return ""
+    return finishcheck.reason(l.drawing.spec)
+
+
 def _ready(l):
     return bool(not l.cancelled_at and l.drawing and l.drawing.status == "preview" and not l.open_count and not any(c.status == "asked" for c in l.changes)
-                and not getattr(l, "ai_waiting", False))
+                and not getattr(l, "ai_waiting", False) and not _finish_gap(l))
 
 
 def _why_not_ready(l):
     """Why a product cannot be issued yet, in plain words."""
     if getattr(l, "ai_waiting", False):
         return "Accept or Undo the change first"
+    gap = _finish_gap(l)
+    if gap:
+        keys = finishcheck.missing(l.drawing.spec)
+        asked = [q for q in l.questions if q.key in keys]
+        if asked and all(q.answer for q in asked):
+            return gap + ". Draw the preview again to show the finishes you answered"
+        return gap + ". Answer them on Specify before issuing"
     if l.open_count:
         return "questions to answer"
     if any(c.status == "asked" for c in l.changes):
@@ -467,7 +491,7 @@ FLOW = [("drawing", "Drawings"), ("issued", "Issued"), ("sent", "With client"), 
 
 def _bom_files(o):
     with db.Session() as s:
-        return s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id).order_by(db.ProductionFile.id.desc()).limit(6)).all()
+        return s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id).order_by(db.ProductionFile.id.desc()).limit(12)).all()
 
 
 @app.get("/orders/{ref}", response_class=HTMLResponse)
@@ -512,7 +536,7 @@ def project(request: Request, ref: str, user=User):
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -537,7 +561,7 @@ def order(request: Request, ref: str, user=User):
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
                               reqs=__import__("desk.portalreq", fromlist=["of_order"]).of_order(o.id), linked=__import__("desk.portalreq", fromlist=["linked_change"]).linked_change,
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
@@ -595,6 +619,10 @@ def _draw_lines(o, s, who, only=None):
             d.spec = make_spec(s, o, l, edir=edir)
             d.files = engines.draw(d.spec, "%d/line%d/preview" % (o.id, l.no), edir)
             d.status = "preview"
+            try:
+                storage.previews(d.files["pdf"])                       # a light picture per sheet now, so the viewer opens at once
+            except Exception:
+                pass
         except (spec.CannotDraw, RuntimeError) as e:
             d.status, d.error = "failed", str(e)
             d.files = {"checks": e.checks} if isinstance(e, engines.EngineFailed) else {}
@@ -669,6 +697,9 @@ def issue(ref: str, folder_no: str = Form(""), nos: str = Form(""), back: str = 
     if nos.strip():                                                    # the Issue screen: only the drawings picked
         pick = {int(x) for x in re.findall(r"\d+", nos)}
         ready = [l for l in ready if l.no in pick]
+        gaps = [l for l in o.lines if l.no in pick and not getattr(l, "ai_waiting", False) and _finish_gap(l)]
+        if gaps and not any(getattr(l, "ai_waiting", False) for l in o.lines if l.no in pick):
+            raise HTTPException(400, " ".join("Product %d: %s." % (l.no, _why_not_ready(l)) for l in gaps))
     if not ready:
         waiting = [l.no for l in o.lines if getattr(l, "ai_waiting", False)]
         raise HTTPException(400, ("Product %s: Accept or Undo the change first." % ", ".join(map(str, waiting))) if waiting else
@@ -792,10 +823,26 @@ def _pages(pdf_path):
         return len(doc)
 
 
+def _sheet(pdf_path, page):
+    """The light picture of one sheet (made when the engine drew it, or now for older drawings), or None."""
+    pv = storage.preview_paths(pdf_path)
+    if not 0 <= page < len(pv):
+        return None
+    p = storage.local(pv[page]) or pv[page]
+    return p if os.path.exists(p) else None
+
+
 @app.get("/revisions/{rid}/{kind}")
 def revision_file(request: Request, rid: int, kind: str, download: int = 0, page: int = 0, user=User):
-    if kind not in ("png", "pdf", "dxf", "big"):
+    if kind not in ("png", "pdf", "dxf", "big", "sheet"):
         raise HTTPException(404)
+    if kind == "sheet":                                                # fast: the light picture of one sheet
+        with db.Session() as s:
+            r = s.get(db.Revision, rid)
+        got = _sheet(r.files.get("pdf"), page) if r and r.files.get("pdf") else None
+        if got is None:
+            raise HTTPException(404)
+        return FileResponse(got)
     with db.Session() as s:
         r = s.get(db.Revision, rid)
         path, name = (r.files.get("pdf" if kind == "big" else kind), "%s-Rev%s.%s" % (r.number, r.rev, kind)) if r else (None, "")
@@ -811,8 +858,15 @@ def revision_file(request: Request, rid: int, kind: str, download: int = 0, page
 
 @app.get("/drawings/{did}/{kind}")
 def drawing_file(did: int, kind: str, download: int = 0, page: int = 0, user=User):
-    if kind not in ("png", "pdf", "dxf", "big"):
+    if kind not in ("png", "pdf", "dxf", "big", "sheet"):
         raise HTTPException(404)
+    if kind == "sheet":
+        with db.Session() as s:
+            d = s.get(db.Drawing, did)
+        got = _sheet(d.files.get("pdf"), page) if d and d.files and d.files.get("pdf") and os.path.exists(d.files["pdf"]) else None
+        if got is None:
+            raise HTTPException(404)
+        return FileResponse(got)
     with db.Session() as s:
         d = s.get(db.Drawing, did)
         path = d.files.get("pdf" if kind == "big" else kind) if d else None
@@ -917,8 +971,10 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     else:
         pages = _pages(sh["pdf"]) if sh["pdf"] and os.path.exists(sh["pdf"]) else 1
     sheet = max(1, min(s, pages))
-    if prod is None:
-        img = None if sh["failed"] else "%s/big?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
+    big = None
+    if prod is None:                                                   # the light sheet picture first; the sharp one when zoomed in
+        img = None if sh["failed"] else "%s/sheet?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
+        big = None if sh["failed"] else "%s/big?page=%d&v=%d" % (sh["src"], sheet - 1, sh["stamp"])
     else:
         img = (prod["img"] % (sheet - 1)) + "?v=%d" % prod["stamp"] if prod["kind"] != "none" else None
     skey = viewer.sheet_key(sh["key"], sheet)
@@ -945,7 +1001,7 @@ def view(request: Request, ref: str, no: int, rev: int = 0, s: int = 1, mode: st
     box = _changed_box(sh, cmp_) if cmp_ else None
     return T.TemplateResponse(request, "view.html", ctx(user, o=o, l=l, tab="p%d" % l.no, sh=sh, src=sh["src"], title=sh["title"], shown=sh["r"], key=skey, base_key=sh["key"],
                               panel=_panel_state(o, l, sh, mode), turns=turns, cmp=cmp_, box=box, ai_on=assistant.configured(),
-                              rev_q=rev_q, mode=mode, prod=prod, img=img, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
+                              rev_q=rev_q, mode=mode, prod=prod, img=img, big=big, sheet=sheet, pages=pages, url=url, step=step, steps=viewer.STEPS,
                               prev_no=drawn[i - 1] if i > 0 else None, next_no_=drawn[i + 1] if i + 1 < len(drawn) else None, count=len(drawn), pos=i + 1,
                               checks=viewer.check_rows(sh["checks"]), nxt=viewer.next_step(l, sh["preview"], sh["checks"], review, asked or l.ai_waiting, mode,
                                                                                          approved=_approval_of(l.last_rev) if l.last_rev and not _permitted(o, l) else None,
@@ -1601,7 +1657,7 @@ def step(request: Request, ref: str, kind: str, note: str = Form(""), user=User)
     if kind == "approved" and not note:
         raise HTTPException(400, "Enter who approved it at the client and how (for example: Mr Singh, by email)")
     if kind == "released" and o.stage != "approved":
-        if user.role not in ("admin", "drawing"):
+        if user.role not in ("admin", "admin2", "drawing"):
             raise HTTPException(403, "Only an administrator or a drawing user can release before the client has approved")
         if not note:
             raise HTTPException(400, "Enter the reason for releasing before client approval")
@@ -1801,6 +1857,43 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
+@app.post("/orders/{ref}/cutting")
+def make_cutting(ref: str, user=User):
+    """Board cutting diagrams (fence plan, one page per board, numbered saw cuts) and 60 x 40 panel labels for the whole
+    order, from each product's latest issued revision, made by the approved engines' cutting command (panel-saw rules)."""
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
+    if not revs:
+        raise HTTPException(400, "Nothing has been issued yet")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    common = dict(order_id=o.id, panel_saw=True, made_by=user.name, engine_version=engines.version_label(), revisions=", ".join(sorted(revs)))
+    dia = db.ProductionFile(kind="cutting", name="%s-Board cutting diagrams.pdf" % o.source_ref, **common)
+    lab = db.ProductionFile(kind="labels", name="%s-Panel labels.pdf" % o.source_ref, **common)
+    try:
+        got = engines.cutting(revs, "%d/cutting/%s" % (o.id, stamp), client=o.client.name)
+        dia.path, lab.path = got["diagrams"], got["labels"]
+        lab.name = "%s-Panel labels (%d).pdf" % (o.source_ref, got["labels_count"]) if got["labels_count"] else lab.name
+    except RuntimeError as e:
+        dia.error = str(e)
+    with db.Session() as s:
+        s.add(dia)
+        if not dia.error:
+            s.add(lab)
+        s.add(db.Message(order_id=o.id, who="desk", text=("Board cutting diagrams and panel labels made by %s." % user.name) if not dia.error
+                         else "The cutting diagrams could not be made: %s" % dia.error))
+        s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not dia.error:
+        for f in (dia, lab):
+            storage.keep(f.path, "%s/Bill of Material/%s" % (folder, storage.safe(f.name)))
+    return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
+
+
 @app.get("/production-files/{fid}")
 def production_file(request: Request, fid: int, user=User):
     with db.Session() as s:
@@ -1950,7 +2043,10 @@ def remove_line(ref: str, no: int, reason: str = Form(""), user=User):
             raise HTTPException(400, "Product %d has an issued drawing. Removing it after issue is a quotation change: it gets a Cancelled stamp and the set is reissued." % no)
         o.not_drawn.append(db.NoDrawingLine(name=l.name, qty=l.qty, description=l.description, reason="Removed: " + reason, no=l.no, by=user.name))
         o.messages.append(db.Message(who="desk", text="Product %d (%s) was removed from the drawings by %s. Reason: %s. It can be added back." % (no, l.name.split("(")[0].strip(), user.name, reason)))
-        s.delete(l); s.commit()
+        lid = l.id
+        s.flush(); s.expunge_all()                                   # the message and the No-drawing line are written; now the product
+        db.delete_line(s, lid)                                       # with its previews, AI turns, reviews, marks ... (issue #50)
+        s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 
 
@@ -1997,8 +2093,14 @@ def remove_order(ref: str, user=User):
     o = load(ref)
     if any(l.revisions for l in o.lines):
         raise HTTPException(400, "This project has issued drawings and cannot be removed. Mark it completed instead.")
-    with db.Session() as s:
-        s.delete(s.get(db.Order, o.id)); s.commit()
+    from sqlalchemy.exc import SQLAlchemyError
+    try:
+        with db.Session() as s:                                      # every table that belongs to the order, in one go (issue #50)
+            db.delete_order(s, o.id)
+            s.commit()
+    except SQLAlchemyError as e:
+        print("Remove order %s failed: %s" % (ref, str(e)[:300]), flush=True)
+        raise HTTPException(409, "The project could not be removed: something still refers to it. Nothing was changed. Tell Kushal (issue #50).")
     return RedirectResponse("/", status_code=303)
 
 
@@ -2016,6 +2118,10 @@ app.include_router(_quotes)
 
 from .clients import router as _clients                              # issue #34: client approvals column
 app.include_router(_clients)
+
+
+from .users import router as _users                                  # issue #40: Users & roles
+app.include_router(_users)
 
 
 from .notify import router as _notify                                # issue #48: notifications
