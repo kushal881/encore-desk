@@ -146,13 +146,9 @@ def _stop_alert(s, order, qc):
     text = "STOP: the quotation changed after production started. %s (%s). Hold this product until the production drawings are redone." % (
         _title(qc), order.source_ref)
     s.add(db.Message(order_id=order.id, who="desk", text=text))
-    names = {u.name for u in s.scalars(select(db.User).where(db.User.active == True)) if u.role in ("admin", "production")  # noqa: E712
-             or (u.email or "").lower() in auth.SECONDARY}
-    if order.salesperson:
-        names.add(order.salesperson)
-    for name in sorted(names):
-        s.add(db.Task(assignee=name, order_ref=order.source_ref, line_no=qc.line_no, text=text, source="quotestop:%d" % qc.id))
-    qc.note = "Stop alert sent to %s" % ", ".join(sorted(names))
+    from .alerts import stop                                           # decision 12: task + email to each
+    names = stop(s, order, qc.line_no, text, "quotestop:%d" % qc.id, os.environ.get("DESK_URL", ""))
+    qc.note = "Stop alert sent to %s" % ", ".join(names)
 
 
 def _title(qc):
