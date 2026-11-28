@@ -12,6 +12,15 @@
     {% endfor %}
     {% if is_admin %}<a class="tile" href="/engine-requests"><div class="n">{{ requests_waiting }}</div><div class="sub">Engine requests waiting</div></a>{% endif %}
   </div>
+  {% if mysteps and show != 'completed' %}
+  <div class="card" id="mysteps">
+    <div style="font-weight:600">My next steps</div>
+    {% for m in mysteps %}<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;{% if not loop.first %}border-top:1px solid #F1EFE9;padding-top:6px{% endif %}">
+      <span class="tag {{ 'bad' if m.state == 'blocked' else 'ask' }}">Step {{ m.no }}/{{ m.total }}</span>
+      <span style="flex:1 1 260px"><b>{{ m.client }}</b> <span class="sub small">{{ m.ref }}</span> · {{ m.title }}{% if m.state == 'blocked' %}<span class="small" style="display:block;color:#B91C1C">{{ m.block }}</span>{% endif %}</span>
+      <a class="btn" style="padding:4px 12px" href="{{ m.url }}">{{ m.label }}</a></div>{% endfor %}
+  </div>
+  {% endif %}
   {% if focus %}
   <div class="card" id="drawings">
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
