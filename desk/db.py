@@ -56,6 +56,9 @@ class Order(Base):
     delivery_date: Mapped[str] = mapped_column(String(40), default="")     # Odoo's Delivery Date (production deadline); "" = not entered
     read_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
     checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)   # quotation last compared with Odoo
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # taken off the active lists (issue #50)
+    archived_by: Mapped[str] = mapped_column(String(120), default="")
+    archived_reason: Mapped[str] = mapped_column(Text, default="")
     client: Mapped[Client] = relationship()
     lines: Mapped[list["OrderLine"]] = relationship(order_by="OrderLine.no", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(order_by="Message.id", cascade="all, delete-orphan")

@@ -83,7 +83,7 @@ def new_page(request: Request, q: str = "", p: str = "", error: str = "", user=U
     with db.Session() as s:
         quotes = open_quotations(s, q)
         past = approved_drawings(s, p)
-        on_desk = [o.source_ref for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())) if not o.lines or not any(l.revisions for l in o.lines)]
+        on_desk = [o.source_ref for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())) if not o.archived_at and (not o.lines or not any(l.revisions for l in o.lines))]
     return T.TemplateResponse(request, "newproject.html", ctx(user, quotes=quotes, past=past, q=q, p=p, error=error, on_desk=on_desk,
                                                                odoo_on=ODOO.configured, today=datetime.date.today(), nav="new"))
 
