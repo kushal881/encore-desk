@@ -293,13 +293,8 @@ def apply_approved(cr, who):
         alert = "STOP: production drawing of Product %d (%s) changed from P%d to P%d (%s). Use the new sheets; the P%d sheets are withdrawn." % (
             l.no, o.source_ref, old.prod_no, old.prod_no + 1, pc.said or pc.typed, old.prod_no)
         s.add(db.Message(order_id=o.id, who="desk", text=alert + " Allowed by %s." % who))
-        notify = {u.name for u in s.scalars(select(db.User).where(db.User.active == True)) if u.role in ("admin", "production")}  # noqa: E712
-        from . import auth
-        notify |= {u.name for u in s.scalars(select(db.User)) if (u.email or "").lower() in auth.SECONDARY}
-        if o.salesperson:
-            notify.add(o.salesperson)
-        for name in sorted(notify):
-            s.add(db.Task(assignee=name, order_ref=o.source_ref, line_no=l.no, text=alert, source="prodstop:%d" % pc.id))
+        from .alerts import stop                                       # decision 12: task + email to each
+        stop(s, o, l.no, alert, "prodstop:%d" % pc.id, os.environ.get("DESK_URL", ""))
         s.delete(old)
         s.commit()
 

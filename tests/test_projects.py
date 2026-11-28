@@ -86,6 +86,21 @@ def test_stages_and_attention():
     assert row("Q-2026-10-444")["st"] == 6 and row("Q-2026-10-444")["flag"] == "Waiting 4 days on client"
     c.post("%s/answer-from-client/%d" % (A, rid), data={"outcome": "changes", "name": "Mr Singh", "how": "phone", "note": "1500 long"})
     assert row("Q-2026-10-444")["flag"] == "Client asked for changes"
+    with db.Session() as s:                                                         # declined on the desk: no longer waiting
+        ap = s.query(db.Approval).filter_by(outcome="changes").one()
+        s.add(db.ClientAction(order_id=ap.order_id, approval_id=ap.id, kind="reject", text="stays as is", by="Sushil Singhal")); s.commit()
+    assert row("Q-2026-10-444")["flag"] != "Client asked for changes"
+    with db.Session() as s:                                                         # an open quotation change comes first
+        o = s.query(db.Order).filter_by(source_ref="Q-2026-10-444").one()
+        s.add(db.QuoteChange(order_id=o.id, version=2, kind="qty", name="Storage", before={"qty": 1}, after={"qty": 2}, stage="issued"))
+        s.add(db.QuoteChange(order_id=o.id, version=2, kind="price", name="Storage", status="ignored")); s.commit()
+        s.add(db.AiTurn(line_id=o.lines[0].id, typed="x", kind="change", status="trial")); s.commit()
+    assert row("Q-2026-10-444")["flag"] == "1 quotation change"
+    assert "1 quotation change" in c.get("/projects").text
+    with db.Session() as s:
+        s.query(db.QuoteChange).filter_by(status="open").one().status = "handled"
+        s.query(db.AiTurn).filter_by(status="trial").delete(); s.commit()
+    assert row("Q-2026-10-444")["flag"] != "1 quotation change"
     with db.Session() as s:                                                         # approved: the client's answer is replaced
         s.query(db.Approval).delete(); o = s.query(db.Order).filter_by(source_ref="Q-2026-10-444").one()
         s.add(db.Step(order_id=o.id, kind="approved", note="Mr Singh", by="Sushil Singhal")); s.commit()
