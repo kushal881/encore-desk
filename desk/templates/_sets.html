@@ -31,7 +31,7 @@
     {% endfor %}
     <div class="label">Bill of material and cut list</div>
     <div class="card">
-      {% for f in bom_files %}<div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}>
+      {% for f in bom_files if f.kind == 'bom' %}<div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}>
         {% if f.error %}<span class="tag bad">Not made</span> {{ f.error }}{% else %}<a href="/production-files/{{ f.id }}"><b>{{ f.name }}</b></a>{% endif %}
         {% if f.panel_saw %} <span class="tag info">Panel-saw cutting</span>{% endif %}
         <div class="sub">From {{ f.revisions }} · engines {{ f.engine_version }} · {{ f.made_by }}, {{ f.made_at|when }}</div></div>
@@ -43,6 +43,21 @@
         <div><button class="sm primary">Make the bill of material</button></div>
         <div class="sub small">Made by the approved engines from each product's latest issued revision. Without the tick, boards are counted as before (3 mm saw cut, finished sizes).</div>
       </form>
+      {% endif %}
+    </div>
+    <div class="label">Board cutting diagrams and panel labels</div>
+    <div class="card">
+      {% for f in bom_files if f.kind in ('cutting', 'labels') %}<div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}>
+        {% if f.error %}<span class="tag bad">Not made</span> {{ f.error }}{% else %}<a href="/production-files/{{ f.id }}"><b>{{ f.name }}</b></a>{% endif %}
+        <div class="sub">From {{ f.revisions }} · engines {{ f.engine_version }} · {{ f.made_by }}, {{ f.made_at|when }}</div></div>
+      {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
+      {% if o.stage in ('production', 'completed') %}
+      {% if has_cutting %}
+      <form method="post" action="/orders/{{ o.source_ref }}/cutting" style="border-top:1px solid #EEECE6;padding-top:8px"><button class="sm primary">Make cutting diagrams and labels</button></form>
+      <div class="sub small">Panel saw: fence plan, one page per board with the saw cuts numbered in order, and a 60 x 40 label for every panel in the order it comes off the saw. Made by the approved engines from each product's latest issued revision.</div>
+      {% else %}
+      <div class="small" style="color:#9A4508">Waiting for the engines: approve the "cutting diagrams + panel labels" proposal in encore-approved, then update the engines here.</div>
+      {% endif %}
       {% endif %}
     </div>
     {% endif %}

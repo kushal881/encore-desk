@@ -446,7 +446,7 @@ FLOW = [("drawing", "Drawings"), ("issued", "Issued"), ("sent", "With client"), 
 
 def _bom_files(o):
     with db.Session() as s:
-        return s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id).order_by(db.ProductionFile.id.desc()).limit(6)).all()
+        return s.scalars(select(db.ProductionFile).where(db.ProductionFile.order_id == o.id).order_by(db.ProductionFile.id.desc()).limit(12)).all()
 
 
 @app.get("/orders/{ref}", response_class=HTMLResponse)
@@ -491,7 +491,7 @@ def project(request: Request, ref: str, user=User):
     flow = [(t, "now" if k == o.stage else "done" if keys.index(k) < keys.index(o.stage) else "") for k, t in FLOW]
     return T.TemplateResponse(request, "project.html", ctx(user, o=o, todo=todo, flow=flow, remove_reasons=REMOVE_REASONS, g=guide(o), steps=GUIDE_STEPS, tab="overview", latest=engines.version(), issued=sum(1 for l in o.lines if l.revisions),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -516,7 +516,7 @@ def order(request: Request, ref: str, user=User):
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
+                              bom_files=_bom_files(o), has_cutting=engines.has_cutting(), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -1776,6 +1776,43 @@ def make_bom(ref: str, panel_saw: str = Form(""), user=User):
         folder = _folder(s, o.client_id)
     if folder and not pf.error:
         storage.keep(pf.path, "%s/Bill of Material/%s" % (folder, storage.safe(pf.name)))
+    return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/cutting")
+def make_cutting(ref: str, user=User):
+    """Board cutting diagrams (fence plan, one page per board, numbered saw cuts) and 60 x 40 panel labels for the whole
+    order, from each product's latest issued revision, made by the approved engines' cutting command (panel-saw rules)."""
+    o = load(ref)
+    if o.stage not in ("production", "completed"):
+        raise HTTPException(400, "Release the order to production first")
+    if o.quote_open:                                                   # screen 8: drawings and quotation must match first
+        from .quotes import lock_reason
+        raise HTTPException(400, lock_reason(o.id))
+    revs = {l.last_rev.number: l.last_rev.spec for l in o.lines if l.last_rev and not l.cancelled_at}
+    if not revs:
+        raise HTTPException(400, "Nothing has been issued yet")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    common = dict(order_id=o.id, panel_saw=True, made_by=user.name, engine_version=engines.version_label(), revisions=", ".join(sorted(revs)))
+    dia = db.ProductionFile(kind="cutting", name="%s-Board cutting diagrams.pdf" % o.source_ref, **common)
+    lab = db.ProductionFile(kind="labels", name="%s-Panel labels.pdf" % o.source_ref, **common)
+    try:
+        got = engines.cutting(revs, "%d/cutting/%s" % (o.id, stamp), client=o.client.name)
+        dia.path, lab.path = got["diagrams"], got["labels"]
+        lab.name = "%s-Panel labels (%d).pdf" % (o.source_ref, got["labels_count"]) if got["labels_count"] else lab.name
+    except RuntimeError as e:
+        dia.error = str(e)
+    with db.Session() as s:
+        s.add(dia)
+        if not dia.error:
+            s.add(lab)
+        s.add(db.Message(order_id=o.id, who="desk", text=("Board cutting diagrams and panel labels made by %s." % user.name) if not dia.error
+                         else "The cutting diagrams could not be made: %s" % dia.error))
+        s.commit()
+        folder = _folder(s, o.client_id)
+    if folder and not dia.error:
+        for f in (dia, lab):
+            storage.keep(f.path, "%s/Bill of Material/%s" % (folder, storage.safe(f.name)))
     return RedirectResponse("/orders/%s#sets" % ref, status_code=303)
 
 
