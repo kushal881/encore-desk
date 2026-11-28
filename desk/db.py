@@ -248,6 +248,19 @@ class Photo(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class ClientAction(Base):
+    """What staff did with a client's answer on one issued drawing (issue #34): applied the change (sent to the change
+    panel), re-issued the next revision, replied, or rejected. Replies and rejections are shown to the client on the portal."""
+    __tablename__ = "client_action"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    approval_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))                       # applied | reissued | reply | reject
+    text: Mapped[str] = mapped_column(Text, default="")
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class QuoteVersion(Base):
     """A saved copy of the quotation's lines each time Odoo shows a difference (version 1 = as first read)."""
     __tablename__ = "quote_version"

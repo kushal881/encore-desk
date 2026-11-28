@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Re-issue to client · {{ o.source_ref }}{% endblock %}
+{% block body %}
+{% include "_ordernav.html" %}
+<div class="page" style="max-width:760px">
+  <h1 style="margin:0;font-size:22px">Re-issue to client · Product {{ c.l.no }}</h1>
+  <div class="card" style="gap:8px">
+    <div><b>Issued:</b> {{ plan.next }} <span class="sub">(was {{ c.r.number }} Rev {{ c.r.rev }}, changes asked by {{ c.ap.name }})</span></div>
+    <div><b>To:</b> {{ plan.to|join(', ') if plan.to else 'nobody: add the client on the Issue screen (portal access list) first' }}</div>
+    <div><b>Subject:</b> {{ plan.subject }}</div>
+    <div><b>Message:</b><div class="small" style="white-space:pre-line;background:#F4F3EF;border-radius:8px;padding:10px">{{ plan.body }}</div></div>
+    <div class="sub small">Each person on the access list gets their own portal sign-in link. The combined PDF is made again and attached.{% if not plan.mail_on %} <b style="color:#B91C1C">Email is not set up on this server: the drawing is issued, but the email cannot be sent.</b>{% endif %}</div>
+    <form method="post" action="/orders/{{ o.source_ref }}/client/{{ c.ap.id }}/reissue" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary big" {{ 'disabled' if not plan.to }}>Issue {{ plan.next }} and send</button>
+      <a class="btn" style="padding:0 16px;min-height:48px" href="/orders/{{ o.source_ref }}/work#client">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

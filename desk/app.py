@@ -176,6 +176,14 @@ def _sync_questions(s, l):
     return changed
 
 
+def _client_changes(s, rid):
+    """The client's latest answer on this revision asks for changes and staff have not re-issued or declined it yet."""
+    ap = s.scalars(select(db.Approval).where(db.Approval.revision_id == rid).order_by(db.Approval.id.desc())).first()
+    if ap is None or ap.outcome != "changes":
+        return False
+    return s.scalar(select(db.ClientAction.id).where(db.ClientAction.approval_id == ap.id, db.ClientAction.kind.in_(("reissued", "reject"))).limit(1)) is None
+
+
 def load(ref):
     """The order from our own database; read from its source and copied in the first time it is opened."""
     with db.Session() as s:
@@ -254,6 +262,7 @@ def load(ref):
         _ = o.client, o.messages, o.steps
         o.stage, o.approval_pending = stage_of(o.steps, any(l.revisions for l in o.lines))
         o.stage_text = STAGES[o.stage]
+        o.client_open = sum(1 for l in o.lines if l.last_rev and not l.cancelled_at and _client_changes(s, l.last_rev.id))
         o.quote_open = len(s.scalars(select(db.QuoteChange.id).where(db.QuoteChange.order_id == o.id, db.QuoteChange.status == "open")).all())
         past = s.scalars(select(db.Revision).join(db.OrderLine).join(db.Order).where(db.Order.client_id == o.client_id).order_by(db.Revision.id)).all()
         latest = {}
@@ -282,6 +291,8 @@ def timeline(o):
         if st.kind != "issued":
             ev.append((st.at, 10 ** 6, dict(kind="step", text=STEP_TEXT.get(st.kind, st.kind), note=st.note, by=st.by)))
     for m in o.messages[1:]:
+        if m.text.startswith("Changes asked on the portal"):
+            continue                                                   # issue #34: the client's requests have their own column
         ev.append((m.at, 10 ** 6 + m.id, dict(kind="say" if m.who == "desk" else "me", text=m.text, by=m.who)))
     return [e for _, _, e in sorted(ev, key=lambda x: (x[0].replace(tzinfo=None), x[1]))]
 
@@ -334,6 +345,7 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
                 except Exception:
                     gd = dict(title="", step=0)
                 rows.append(dict(next=gd["title"], ref=o.source_ref, client=o.client.name, n=n, issued=issued, failed=failed, stage=st, stage_text=STAGES[st], pending=pend and st == "production",
+                                 client_open=sum(1 for l in o.lines if l.revisions and not l.cancelled_at and _client_changes(s, l.revisions[-1].id)),
                                  salesperson=o.salesperson, last=last, drawings=[dict(number=l.revisions[-1].number, rev=l.revisions[-1].rev, no=l.no) for l in o.lines if l.revisions]))
         known = {o.source_ref for o in s.scalars(select(db.Order))}
     samples = [r for r in SampleSource().list_refs() if r not in known]
@@ -433,6 +445,8 @@ def project(request: Request, ref: str, user=User):
     with db.Session() as s:
         for tk in s.scalars(select(db.Task).where(db.Task.order_ref == ref, db.Task.status == "open")):
             todo.append(("Task for %s%s: %s" % (tk.assignee, " (Product %d)" % tk.line_no if tk.line_no else "", tk.text), "Done", "/tasks/%d/done" % tk.id))
+    if o.client_open:                                                   # issue #34
+        todo.append(("The client asked for changes on %d drawing%s" % (o.client_open, "" if o.client_open == 1 else "s"), "See the requests", "/orders/%s/work#client" % ref))
     for n, nm, why in issued_aside:
         todo.append(("Product %d (%s) needs no drawing (%s) but its drawing is issued. Removing it is a quotation change: Cancelled stamp and reissue." % (n, nm.split("(")[0].strip(), why.lower()), "See", "/orders/%s/view/%d" % (ref, n)))
     q = sum(l.open_count for l in o.lines)
@@ -486,7 +500,7 @@ def order(request: Request, ref: str, user=User):
                               can_issue=True, not_ready=[l.no for l in o.lines if not _ready(l)],
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
-                              bom_files=_bom_files(o),
+                              bom_files=_bom_files(o), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -1960,3 +1974,7 @@ from .production import router as _production                        # screen 11
 app.include_router(_production)
 from .quotes import router as _quotes                                # screen 8: Quotation changes + the Odoo webhook
 app.include_router(_quotes)
+
+
+from .clients import router as _clients                              # issue #34: client approvals column
+app.include_router(_clients)

@@ -44,7 +44,7 @@
         <td><a href="/orders/{{ r.ref }}"><b>{{ r.ref }}</b></a><div class="sub small">{{ r.salesperson }}</div></td>
         <td>{{ r.client }}</td>
         <td>{% if r.next and show != 'completed' %}<a class="btn" href="/orders/{{ r.ref }}" style="padding:6px 12px;font-weight:600">{{ r.next }} &rsaquo;</a>{% endif %}</td>
-        <td>{{ r.issued }} of {{ r.n }} issued{% if r.failed %}<div><span class="tag bad">{{ r.failed }} could not be drawn</span></div>{% endif %}</td>
+        <td>{{ r.issued }} of {{ r.n }} issued{% if r.client_open %}<div><a class="tag ask" href="/orders/{{ r.ref }}/work#client">Client asked for changes ({{ r.client_open }})</a></div>{% endif %}{% if r.failed %}<div><span class="tag bad">{{ r.failed }} could not be drawn</span></div>{% endif %}</td>
         <td><span class="tag {{ 'ask' if r.stage in ('drawing','issued','sent') else 'ok' if r.stage in ('approved','production') else 'dim' }}">{{ r.stage_text }}</span>{% if r.pending %}<div class="sub small">Client approval pending</div>{% endif %}</td>
         <td class="small">{% for d in r.drawings %}<a href="/orders/{{ r.ref }}/view/{{ d.no }}">{{ d.number }} Rev {{ d.rev }}</a><br>{% else %}<span class="sub">None yet</span>{% endfor %}</td>
         <td class="sub small" style="white-space:nowrap">{{ r.last|when }}</td>

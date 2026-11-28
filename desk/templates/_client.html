@@ -1,0 +1,43 @@
+{% if clients %}
+<div class="card" id="client" style="gap:10px;border-color:{{ '#9A4508' if o.client_open else '#E3E1DA' }}">
+  <div style="font-weight:600">Client approvals{% if o.client_open %} <span class="count">{{ o.client_open }}</span>{% endif %}</div>
+  <div class="sub small">The client's answer on each issued drawing (portal, email or phone), apart from the conversation.</div>
+  {% for c in clients %}
+  <div style="border-top:1px solid #EEECE6;padding-top:8px;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <b class="small">Product {{ c.l.no }} · {{ c.r.number }} Rev {{ c.r.rev }}</b>
+      <span class="tag {{ 'ok' if c.status == 'approved' else 'ask' if c.status == 'changes' else 'dim' }}" style="margin-left:auto">{{ c.status_text }}</span>
+    </div>
+    {% if c.ap %}<div class="sub small">{{ c.ap.name }}{% if c.ap.how %} · {{ c.ap.how }}{% endif %} · {{ c.ap.at|when }}</div>{% endif %}
+    {% if c.status == 'waiting' and c.prev and c.prev.outcome == 'changes' %}<div class="sub small">Re-issued after the client's changes on Rev {{ c.l.revisions[-2].rev }}; waiting for their answer.</div>{% endif %}
+    {% if c.status == 'changes' %}
+      {% for m in c.marks %}<div class="small"><span class="tag info">[{{ m.no }}]</span> {{ m.label }}</div>{% endfor %}
+      {% if c.ap.note and not c.marks %}<div class="small">{{ c.ap.note }}</div>{% elif c.ap.note and c.marks %}<div class="small sub">All notes: {{ c.ap.note }}</div>{% endif %}
+      <div class="small"><a href="/orders/{{ o.source_ref }}/view/{{ c.l.no }}?rev={{ c.r.id }}">View the marked-up drawing</a></div>
+      {% for a in c.actions %}<div class="small sub">{{ {'applied': 'Sent to the change panel', 'reissued': 'Re-issued', 'reply': 'Replied', 'reject': 'Declined'}[a.kind] }} by {{ a.by }}, {{ a.at|when }}: {{ a.text }}</div>{% endfor %}
+      {% if c.open %}
+        {% if c.ai_waiting %}
+        <div class="small" style="color:#9A4508">A change is waiting in the change panel. <a href="/orders/{{ o.source_ref }}/view/{{ c.l.no }}#panel">Accept or Undo it</a>, then re-issue.</div>
+        {% elif c.can_reissue %}
+        <a class="btn primary" style="padding:0 14px;min-height:44px" href="/orders/{{ o.source_ref }}/client/{{ c.ap.id }}/reissue">Re-issue to client &rsaquo;</a>
+        {% else %}
+        <form method="post" action="/orders/{{ o.source_ref }}/client/{{ c.ap.id }}/apply" style="display:flex;flex-direction:column;gap:6px">
+          <label class="small" for="ap{{ c.ap.id }}">Change for the change panel (edit if needed)</label>
+          <textarea id="ap{{ c.ap.id }}" name="text" rows="3" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px">Product {{ c.l.no }}: {% for m in c.marks %}[{{ m.no }}] {{ m.label }}{{ '; ' if not loop.last }}{% endfor %}{% if not c.marks %}{{ c.ap.note }}{% endif %}</textarea>
+          <button class="primary">Apply change</button>
+        </form>
+        {% endif %}
+        <details><summary>Reply to the client or decline</summary>
+          <form method="post" action="/orders/{{ o.source_ref }}/client/{{ c.ap.id }}/reply" style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+            <label class="small" for="rp{{ c.ap.id }}">Answer (shown to the client on the portal)</label>
+            <textarea id="rp{{ c.ap.id }}" name="text" rows="2" required style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px"></textarea>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" name="kind" value="reply">Reply</button>
+              <button class="sm danger" name="kind" value="reject" data-confirm="Decline this change request? The drawing stays as it is and the client sees your answer.">Decline the change</button></div>
+          </form>
+        </details>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

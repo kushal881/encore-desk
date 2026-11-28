@@ -4,7 +4,7 @@
   <span style="flex-grow:1"></span>
   <a class="tab {{ 'on' if tab == 'overview' }}" href="/orders/{{ o.source_ref }}">Overview</a>
   <a class="tab {{ 'on' if tab == 'specify' }}" href="/orders/{{ o.source_ref }}/specify">Specify</a>
-  <a class="tab {{ 'on' if tab == 'work' }}" href="/orders/{{ o.source_ref }}/work">Questions and changes</a>
+  <a class="tab {{ 'on' if tab == 'work' }}" href="/orders/{{ o.source_ref }}/work">Questions and changes{% if o.client_open %} <span class="count" title="The client asked for changes">{{ o.client_open }}</span>{% endif %}</a>
   <a class="tab {{ 'on' if tab == 'issue' }}" href="/orders/{{ o.source_ref }}/issue">Issue and approval</a>
   <a class="tab {{ 'on' if tab == 'changes' }}" href="/orders/{{ o.source_ref }}/changes">Quotation changes{% if o.quote_open %} <span class="count">{{ o.quote_open }}</span>{% endif %}</a>
   {% for x in o.lines %}{% if x.revisions or x.drawing %}<a class="tab {{ 'on' if tab == 'p' ~ x.no }}" href="/orders/{{ o.source_ref }}/view/{{ x.no }}" title="{{ x.name.split('(')[0] }}">Drawing {{ x.no }}</a>{% endif %}{% endfor %}

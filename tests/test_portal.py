@@ -146,7 +146,8 @@ def test_portal(monkeypatch):
         mk = s.query(db.Mark).filter(db.Mark.by.like("Client:%")).one()
         assert (mk.shown, mk.x, mk.label) == ("r%d" % r2.id, 40.5, "Screen 800 wide please")
     assert any(m["subject"].startswith("Changes asked on the portal") and issuing.COMPANY in m["to"] for m in MAIL)
-    assert "Changes asked on the portal by Ms Rao" in staff.get(A + "/work").text
+    h = staff.get(A + "/work").text                                         # issue #34: in the Client approvals column, not the conversation
+    assert "Changes asked on the portal by Ms Rao" not in h and "Client approvals" in h and "Screen 800 wide please" in h
     assert "Changes asked" in c.get(P).text
 
     # approve the remaining (waiting) drawing: code, name, tick; each mistake said plainly

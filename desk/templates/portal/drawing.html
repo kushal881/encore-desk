@@ -48,6 +48,7 @@
       <div class="small sub">Need a change now? Contact your Encore sales person; changes after approval may affect cost and delivery date.</div></div>
     {% else %}
     {% if d.status == 'changes' %}<div class="card"><span class="tag ask">Changes asked</span><div class="small">{{ d.ap.note }}</div><div class="small sub">Asked by {{ d.ap.name }} on {{ d.ap.on }}. Our team is making the changes; the drawing will come back to you as a new revision for approval. You can add more changes below.</div></div>
+    {% for x in d.replies %}<div class="card" style="border-color:{{ '#B91C1C' if x.kind == 'reject' else '#0E6B5C' }}"><span class="tag {{ 'bad' if x.kind == 'reject' else 'ok' }}">{{ {'reply': 'Encore replied', 'reject': 'Change not made', 'reissued': 'Revised drawing sent'}[x.kind] }}</span><div class="small">{{ x.text }}</div><div class="small sub">{{ x.by }} · {{ x.at.strftime('%d %b %Y') }}</div></div>{% endfor %}
     {% else %}
     <div class="card">
       <h2>What would you like to do?</h2>
