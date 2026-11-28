@@ -32,19 +32,19 @@ def test_project():
     assert 'id="issue"' in w and "Product 1: new drawing number given after you enter the folder number" in w and "data-confirm=" in w
     # markers on the drawing
     v = c.get(A + "/view/2").text
-    assert "+ Add numbered marker" in v and 'id="zin"' in v and 'id="zout"' in v and "None on this sheet" in v
+    assert 'id="pop"' in v and 'id="zin"' in v and 'id="zout"' in v and "Click the drawing to add a marker" in v      # chat style (issue #82)
     shown = v.split('name="shown" value="')[1].split('"')[0]
     assert c.post(A + "/marks/2", data={"shown": shown, "x": "140", "y": "10"}).status_code == 400
     c.post(A + "/marks/2", data={"shown": shown, "x": "31.5", "y": "42", "label": "left shutter"})
     v = c.post(A + "/marks/2", data={"shown": shown, "x": "60", "y": "20", "label": ""}).text
-    assert v.count('class="pin" style="left:') == 2 and "left shutter" in v and "Change this drawing" in v and '<option value="1">1</option>' in v
+    assert v.count('class="pin" data-mark=') == 2 and "left shutter" in v and "Change this drawing" in v and '<span class="n">1</span>' in v
     with db.Session() as s:
         m2 = s.query(db.Mark).filter_by(no=2).one().id
     c.post("%s/marks/2/%d/label" % (A, m2), data={"label": "top"})
     h = c.post(A + "/change", data={"text": "At 1 and 2 make it 1500 long", "line": "2", "shown": shown}).text
     assert re.search(r"At 1 and 2 make it 1500 long \[Markers: 1 = left shutter[^;\]]*; 2 = top[^\]]*\]", h) and "length 1500 mm" in h and "see the markers on the drawing" in h
     v = c.post("%s/marks/2/%d/remove" % (A, m2)).text
-    assert v.count('class="pin" style="left:') == 1
+    assert v.count('class="pin" data-mark=') == 1
     with db.Session() as s:
         cid = s.query(db.Change).filter_by(status="asked").one().id
     assert "1 change request waiting for your yes or no" in c.get(A).text

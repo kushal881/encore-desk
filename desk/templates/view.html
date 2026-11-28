@@ -118,7 +118,7 @@ button.pin{min-height:0;padding:0;font:inherit;font-weight:700;font-size:12px;cu
         {% if mode == 'client' and not panel %}<div id="pop" role="dialog" aria-label="New marker">
           <div style="display:flex;align-items:center;gap:6px"><span class="pin" style="position:static;transform:none;background:#1D4ED8">{{ next_no }}</span><b class="small" id="poppart" style="flex-grow:1">On the drawing</b><button type="button" id="popx" class="vbtn" style="min-height:28px;min-width:28px" aria-label="Close">&times;</button></div>
           <label class="sr" for="poptext">What should change here</label>
-          <input type="text" id="poptext" style="flex:0 0 auto;min-height:36px" placeholder="What should change here?">
+          <input type="text" id="poptext" style="flex:0 0 auto;min-height:36px" placeholder="{{ 'Leave empty to use the part it sits on' if part_map else 'For example: screen should be L800' }}">
           <div style="display:flex;align-items:center;gap:6px"><span class="sub small" style="flex-grow:1">Enter = add to the message</span><button type="button" id="popadd" class="vbtn blue" style="min-height:30px">Add &#8629;</button></div>
         </div>{% endif %}
       </div>
