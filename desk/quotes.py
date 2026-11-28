@@ -379,7 +379,7 @@ def odoo_nightly(request: Request):
     from .app import stage_of
     done, failed = 0, []
     with db.Session() as s:
-        refs = [o.source_ref for o in s.scalars(select(db.Order).where(db.Order.source == "odoo")) if stage_of(o.steps)[0] != "completed"]
+        refs = [o.source_ref for o in s.scalars(select(db.Order).where(db.Order.source == "odoo")) if stage_of(o.steps)[0] != "completed" and not o.archived_at]
     for ref in refs:
         try:
             check(ref, "nightly"); done += 1

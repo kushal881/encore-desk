@@ -40,7 +40,7 @@
       <tr><th>Project</th><th>Folder</th><th>Stage</th><th>Drawings</th><th>Needs attention</th><th>Last activity</th><th></th></tr>
       {% for r in rows %}
       <tr>
-        <td><b>{{ r.client }}</b><div class="sub small">{{ r.ref }}{% if r.salesperson %} · {{ r.salesperson }}{% endif %}</div></td>
+        <td><b>{{ r.client }}</b>{% if r.archived %} <span class="tag dim" title="{{ r.archived_reason }}">Archived</span>{% endif %}<div class="sub small">{{ r.ref }}{% if r.salesperson %} · {{ r.salesperson }}{% endif %}</div></td>
         <td class="small">{{ r.folder or '—' }}</td>
         <td style="min-width:150px"><div class="small" style="font-weight:600;color:{{ '#0E6B5C' if r.st == 8 else '#3A3E45' }}">{{ r.stage }}</div>
           <div style="display:flex;gap:2px;margin-top:4px" aria-hidden="true">{% for x in steps %}<span style="flex:1;height:5px;border-radius:2px;background:{{ '#0E6B5C' if loop.index < r.st or r.st == 8 else ('#D97706' if loop.index == r.st else '#E3E1DA') }}"></span>{% endfor %}</div></td>

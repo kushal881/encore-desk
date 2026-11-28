@@ -356,6 +356,8 @@ def home(request: Request, show: str = "active", focus: str = "", user=User):
     focus = focus if focus in titles else ""
     with db.Session() as s:
         for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
+            if o.archived_at:                                            # archived: off the lists and counts (issue #50)
+                continue
             st, pend = stage_of(o.steps, any(l.revisions for l in o.lines))
             n = len(o.lines)
             issued = sum(1 for l in o.lines if l.revisions)
@@ -2074,6 +2076,42 @@ def add_line(ref: str, name: str = Form(""), qty: float = Form(1), details: str 
         _new_line(s, o.id, no, name, details.strip(), qty)
         s.add(db.AddedLine(order_id=o.id, no=no, name=name, by=user.name))
         s.add(db.Message(order_id=o.id, who="desk", text="Product %d (%s, qty %g) was added by %s. It is not in the quotation: the salesperson must add it to the quotation." % (no, name, qty, user.name)))
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/archive")
+def archive_order(ref: str, reason: str = Form(""), user=User):
+    """Takes a test or abandoned project off the active lists and counts, at any stage (issue #50). Administrator only,
+    with a reason. Nothing is deleted: drawings, revisions, approvals and history stay, and it can be reopened."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator can archive a project")
+    reason = " ".join(reason.split())[:500]
+    if not reason:
+        raise HTTPException(400, "Give the reason for archiving (for example: test project, client dropped the order)")
+    o = load(ref)
+    with db.Session() as s:
+        order = s.get(db.Order, o.id)
+        if order.archived_at:
+            raise HTTPException(400, "%s is already archived" % ref)
+        order.archived_at, order.archived_by, order.archived_reason = db.now(), user.name, reason
+        s.add(db.Message(order_id=o.id, who="desk", text="Project archived by %s: %s. Its drawings and records are kept; it can be reopened." % (user.name, reason)))
+        s.commit()
+    return RedirectResponse("/orders/%s" % ref, status_code=303)
+
+
+@app.post("/orders/{ref}/reopen")
+def reopen_order(ref: str, user=User):
+    """Brings an archived project back onto the active lists, as it was."""
+    if user.role != "admin":
+        raise HTTPException(403, "Only the administrator can reopen a project")
+    o = load(ref)
+    with db.Session() as s:
+        order = s.get(db.Order, o.id)
+        if not order.archived_at:
+            raise HTTPException(400, "%s is not archived" % ref)
+        order.archived_at, order.archived_by, order.archived_reason = None, "", ""
+        s.add(db.Message(order_id=o.id, who="desk", text="Project reopened by %s." % user.name))
         s.commit()
     return RedirectResponse("/orders/%s" % ref, status_code=303)
 

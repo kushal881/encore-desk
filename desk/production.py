@@ -370,7 +370,7 @@ def production_home(request: Request, user=User):
     with db.Session() as s:
         for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
             st, _ = stage_of(o.steps, any(l.revisions for l in o.lines))
-            if st not in ("production", "completed"):
+            if st not in ("production", "completed") or o.archived_at:
                 continue
             for l in o.lines:
                 if not l.revisions or l.cancelled_at:

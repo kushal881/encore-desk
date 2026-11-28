@@ -3,6 +3,10 @@
 {% block crumb %}{% endblock %}
 {% block body %}
 {% include "_ordernav.html" %}
+{% if o.archived_at %}<div role="alert" style="background:#F1EFE9;padding:12px 24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;border-bottom:1px solid #E3E1DA">
+  <b>Archived</b> <span>by {{ o.archived_by }}, {{ o.archived_at|when }}: {{ o.archived_reason }}. It is not on the active lists; its drawings and records are kept.</span>
+  {% if is_admin %}<form method="post" action="/orders/{{ o.source_ref }}/reopen" style="margin-left:auto"><button class="sm primary">Reopen project</button></form>{% endif %}
+</div>{% endif %}
 {% include "_guide.html" %}
 <div class="cols">
   <div style="flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:16px">
@@ -14,6 +18,16 @@
         {% if is_admin and not issued %}<form method="post" action="/orders/{{ o.source_ref }}/remove" data-confirm="Remove {{ o.source_ref }} from the desk?\nIts answers and previews here are deleted. Nothing changes in Odoo, and the order can be opened again." data-yes="Yes, remove"><button class="sm danger">Remove from the desk</button></form>{% endif %}
       </div>
       <div class="sub small">{{ issued }} of {{ o.lines|length }} drawings issued · engines in use: {{ latest }}</div>
+      {% if is_admin and not o.archived_at %}
+      <details><summary class="small">Archive this project</summary>
+        <form method="post" action="/orders/{{ o.source_ref }}/archive" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"
+              data-confirm="Archive {{ o.source_ref }}?\nIt leaves the active lists and counts. Drawings, revisions, approvals and history are kept, and it can be reopened." data-yes="Yes, archive">
+          <label class="small" for="arr">Reason</label>
+          <input type="text" id="arr" name="reason" required placeholder="for example: test project, client dropped the order">
+          <div><button class="sm danger">Archive project</button></div>
+          <div class="sub small">For a test or abandoned project at any stage. Nothing is deleted; Odoo is not touched.</div>
+        </form></details>
+      {% endif %}
     </div>
     <div class="card">
       <div style="font-weight:600">Everything that is waiting</div>

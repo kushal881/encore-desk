@@ -77,6 +77,7 @@ def folder(o):
 def rows(s):
     out = []
     for o in s.scalars(select(db.Order).order_by(db.Order.id.desc())):
+        archived = bool(o.archived_at)
         lines = list(o.lines)
         st, _ = stage_of(o.steps, any(l.revisions for l in lines))
         n = project_stage(st, lines)
@@ -84,7 +85,7 @@ def rows(s):
                    + [m.at for m in o.messages] + [q.answered_at for l in lines for q in l.questions if q.answered_at],
                    key=lambda d: d.replace(tzinfo=None))
         out.append(dict(ref=o.source_ref, client=o.client.name, folder=folder(o), salesperson=o.salesperson or "", st=n, stage="%d · %s" % (n, STEPS[n - 1]),
-                        done=sum(1 for l in lines if l.revisions), total=len(lines), flag=attention(s, o, st, n, lines), last=last))
+                        done=sum(1 for l in lines if l.revisions), total=len(lines), flag="" if archived else attention(s, o, st, n, lines), last=last, archived=archived, archived_reason=o.archived_reason or ""))
     return out
 
 
@@ -94,10 +95,10 @@ def projects(request: Request, show: str = "Active", stage: int = 0, sp: str = "
     stage = stage if 1 <= stage <= 8 else 0
     with db.Session() as s:
         allr = rows(s)
-    counts = [sum(1 for r in allr if r["st"] == i + 1) for i in range(8)]
+    counts = [sum(1 for r in allr if r["st"] == i + 1 and not r["archived"]) for i in range(8)]     # archived projects are not counted
     people = sorted({r["salesperson"] for r in allr if r["salesperson"]})
     ql = q.strip().lower()
-    shown = [r for r in allr if (show == "All" or (r["st"] == 8) == (show == "Completed")) and (not stage or r["st"] == stage)
+    shown = [r for r in allr if (show == "All" or (not r["archived"] and (r["st"] == 8) == (show == "Completed"))) and (not stage or r["st"] == stage)
              and (not sp or r["salesperson"] == sp) and (not ql or ql in (r["client"] + " " + r["ref"] + " " + r["folder"]).lower())]
     title = (STEPS[stage - 1] + " · " if stage else "") + show + " projects"
     return T.TemplateResponse(request, "projects.html", ctx(user, nav="projects", rows=shown, counts=counts, steps=STEPS, show=show, stage=stage,
