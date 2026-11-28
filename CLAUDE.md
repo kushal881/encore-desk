@@ -3,7 +3,7 @@
 Claude Code reads this file at the start of every session.
 
 ## What this app is
-The Encore Prime Furniture drawing desk (live on Railway, to be served at design.encoreprimefurniture.com). Staff turn Odoo quotations into client drawings and production drawings; clients approve or ask for changes in a client portal.
+The Encore Prime Furniture drawing desk (live on Railway, served at portal.encoreprimefurniture.com). Staff turn Odoo quotations into client drawings and production drawings; clients approve or ask for changes in a client portal.
 
 - Owner and admin: Kushal (kushal@encoreprimefurniture.com). Secondary admin: Sushil Singhal.
 - Drawing engines: master copy in `kushal881/encore-engines` (tool/, templates/, library/, ENCORE_DRAWING_RULES.txt, ENCORE_PRODUCT_KNOWLEDGE.txt). The desk fetches approved engines **read-only, by version**, from `ENGINES_REPO` (default `kushal881/encore-approved`). The desk never stores or edits engine code.
@@ -38,6 +38,7 @@ When Kushal says "work the issue queue": read the open GitHub issues in this rep
 - **Run tests with `python tests/run_all.py`**, never a plain `pytest` over the whole folder: each test file sets up its own temporary database and must run in its own process. The drawing tests need `ENGINES_DIR` pointing at a copy of the approved engines.
 - GitHub Actions (`.github/workflows/tests.yml`) runs all tests on every pull request against the newest approved engine version from `kushal881/encore-approved` (needs the `ENGINES_READ_TOKEN` repository secret).
 - `encore-engines` already has `engine-check.yml`, `tool/regress.py` and `tool/regress_fingerprints.json`: use these as the golden-drawing check.
+- Portal links in emails use Railway's `DESK_URL` (live: `https://portal.encoreprimefurniture.com`); without it they use whatever address the page was opened on. No email text has the address written in.
 - Railway project `fantastic-renewal` is the separate Field Sales App. Don't touch it while working on the desk.
 
 ## Testing
