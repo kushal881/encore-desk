@@ -106,12 +106,13 @@ def test_portal(monkeypatch):
     v = c.get(P).text
     assert "Drawings for your approval" in v and "Waiting</b>" not in v and "Encore-Nov-2026-06-01 Rev A" in v and "Approve 2 drawings" in v
     assert "Achiever Apparels Pvt Ltd" in v
-    # only issued drawings: product 2 (a preview, not issued) is not there; an AI change waiting on product 1 changes nothing
+    # only issued drawings can be opened: product 2 (a preview, not issued) shows as "Being drawn" (issue #85), no picture, no link;
+    # an AI change waiting on product 1 changes nothing
     with db.Session() as s:
         l1 = s.query(db.OrderLine).filter_by(no=1).one()
         s.add(db.AiTurn(line_id=l1.id, typed="make it 1500", kind="change", status="trial", said="Length 1500", files={})); s.commit()
     v = c.get(P).text
-    assert v.count('class="card" style="padding:12px"') == 2 and "1500" not in v
+    assert v.count('<a class="nm" href=') == 2 and v.count('data-st="drawing"') == 1 and "Being drawn" in v and "1500" not in v
     assert c.get("%s/d/%d/sheet/1" % (P, r1.id)).headers["content-type"] == "image/png"
     assert c.get("%s/d/%d/pdf" % (P, r1.id)).content.startswith(b"%PDF")
     assert c.get(P + "/set.pdf").content.startswith(b"%PDF")
@@ -205,7 +206,7 @@ def test_old_data_and_past_orders(monkeypatch):
     assert c.get("%s/d/%d/sheet/1" % (P, r1.id)).status_code == 200
     assert c.get("%s/d/%d/sheet/99" % (P, r1.id)).status_code == 404
     v = c.get(P).text
-    assert "Approve remaining drawings" not in v and v.count(">Approved</span>") == 3
+    assert "Approve drawings" not in v and 'id="abar"' not in v and v.count(">Approved</span>") == 2 and "2 approved · 0 waiting for you" in v
 
     # past orders: completed orders, with reorder to the sales person
     staff.post(A + "/step/released", data={"note": ""}); staff.post(A + "/step/completed", data={"note": ""})

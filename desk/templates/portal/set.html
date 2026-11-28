@@ -2,31 +2,122 @@
 {% block title %}Drawings for approval{% endblock %}
 {% block body %}
 <a class="back" href="/portal/orders">← All orders</a>
+{# issue #85: built for 100 drawings. Search, filter chips, area groups, tick several and approve them with one email code. #}
+<style>
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pbar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:#F1EFE9}
+.pbar span{display:block;height:100%}
+.fchip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:999px;border:1px solid #D6D3CA;background:#fff;font:inherit;font-size:14px;font-weight:600;color:#17191C;cursor:pointer}
+.fchip[aria-pressed=true]{background:#17191C;color:#fff;border-color:#17191C}.fchip .c{opacity:.75}
+.dgrp{background:#fff;border:1px solid #E3E1DA;border-radius:12px;overflow:hidden}
+.dgrp>summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:center;padding:10px 14px;background:#F7F6F2;font-weight:600}
+.dgrp>summary::before{content:"\25B8";display:inline-block;width:12px}.dgrp[open]>summary::before{content:"\25BE"}
+.drow{display:grid;grid-template-columns:30px 84px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 14px;border-top:1px solid #F0EEE8}
+.drow img,.drow .noimg{width:84px;aspect-ratio:1.414;object-fit:contain;background:#FAFAF7;border:1px solid #EEECE6;border-radius:6px}
+.drow a.nm{color:#17191C;font-weight:600;text-decoration:none}.drow a.nm:hover{text-decoration:underline}
+.abar{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 14px;background:#F3FAF8;border:1px solid #BFE0D6;border-radius:12px;box-shadow:0 -4px 12px rgba(0,0,0,.05)}
+@media (max-width:640px){.drow{grid-template-columns:28px 64px minmax(0,1fr)}.drow img,.drow .noimg{width:64px}.drow .st{grid-column:3}}
+</style>
 <div>
-  <div class="sub">Quotation {{ o.source_ref }}{% if ds %} · Rev {{ ds|map(attribute='r')|map(attribute='rev')|unique|join(', ') }} · sent {{ (ds|map(attribute='r')|map(attribute='issued_at')|max)|when }}{% endif %}</div>
+  <div class="sub">Quotation {{ o.source_ref }}{% if ds %} · sent {{ (ds|map(attribute='r')|map(attribute='issued_at')|max)|when }}{% endif %}</div>
   <h1>Drawings for your approval</h1>
-  <div class="sub">Please check each drawing. Approve it, or mark what you want changed. Our team will be notified straight away.</div>
+  <div class="sub">{{ sum.total + todo|length }} drawing{{ 's' if sum.total + todo|length != 1 }} · {{ sum.approved }} approved · {{ sum.waiting }} waiting for you{% if sum.changes %} · {{ sum.changes }} change{{ 's' if sum.changes != 1 }} asked{% endif %}{% if todo %} · {{ todo|length }} being drawn{% endif %}</div>
 </div>
 {% if done.startswith('approved') %}<div class="okmsg">Thank you. Your approval is recorded and a confirmation with the approved drawings is on its way to {{ email }}.</div>{% endif %}
 {% if error %}<div class="err" id="msg">{{ error }}</div>{% endif %}
-<div class="tiles">
-  <div class="tile"><span class="sub">Approved</span><b>{{ sum.approved }}</b></div>
-  <div class="tile"><span class="sub">Changes asked</span><b>{{ sum.changes }}</b></div>
-  <div class="tile"><span class="sub">Waiting</span><b>{{ sum.waiting }}</b></div>
+{% set all_n = sum.total + todo|length %}
+{% if all_n %}
+<div>
+  <div class="pbar" role="img" aria-label="{{ sum.approved }} approved, {{ sum.changes }} changes asked, {{ all_n - sum.approved - sum.changes }} to go">
+    <span style="width:{{ 100 * sum.approved / all_n }}%;background:#0E6B5C"></span><span style="width:{{ 100 * sum.changes / all_n }}%;background:#D97706"></span></div>
+  <div class="small sub" style="margin-top:4px"><span style="color:#0E6B5C">&#9632;</span> Approved {{ sum.approved }} · <span style="color:#D97706">&#9632;</span> Changes asked {{ sum.changes }} · <span style="color:#C9C5BB">&#9632;</span> To go {{ all_n - sum.approved - sum.changes }}</div>
+</div>
+<div class="row" style="gap:8px;align-items:center">
+  <label class="sr" for="dq">Search drawings</label>
+  <input type="search" id="dq" placeholder="Search {{ all_n }} drawings: name, code, area…" autocomplete="off" style="flex:1 1 240px;max-width:360px">
+  {% for k, lab, n in (('all', 'All', all_n), ('waiting', 'Waiting for you', sum.waiting), ('changes', 'Change asked', sum.changes), ('approved', 'Approved', sum.approved), ('drawing', 'Being drawn', todo|length)) %}
+  <button type="button" class="fchip" data-f="{{ k }}" aria-pressed="{{ 'true' if k == 'all' else 'false' }}">{{ lab }} <span class="c">{{ n }}</span></button>{% endfor %}
 </div>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">
-{% for d in ds %}
-  <div class="card" style="padding:12px">
-    <a href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}"><img src="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}/sheet/1" alt="Drawing preview: {{ d.name }}" loading="lazy" style="width:100%;aspect-ratio:1.414;object-fit:contain;background:#FAFAF7;border:1px solid #EEECE6;border-radius:8px"></a>
-    <div class="row" style="justify-content:space-between;gap:6px"><b>{{ d.name }}</b>
-      {% if d.status == 'approved' %}<span class="tag ok">Approved</span>{% elif d.status == 'changes' %}<span class="tag ask">Changes asked</span>{% else %}<span class="tag dim">Waiting</span>{% endif %}</div>
-    <div class="small sub">{{ d.code }}{% if d.finishes %} · {{ d.finishes[0][1] }}{% endif %} · Qty {{ d.qty }} · Sheet {{ d.sheet }}/{{ d.total }} · Rev {{ d.r.rev }}</div>
-    {% if d.status == 'changes' and d.ap.note %}<div class="small" style="color:#9A4508">"{{ d.ap.note[:80] }}{{ '…' if d.ap.note|length > 80 }}"</div>{% endif %}
-    <a class="btn{{ ' sec' if d.status != 'waiting' }}" href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}">{{ 'Review' if d.status == 'waiting' else 'View changes' if d.status == 'changes' else 'View' }}</a>
+<form method="post" action="/portal/orders/{{ o.source_ref }}/approve#approve" class="f" id="bulk" style="gap:12px">
+{% for area, rows in groups %}
+<details class="dgrp" open>
+  <summary><span>{{ area }} · {{ rows|length }} drawing{{ 's' if rows|length != 1 }}</span><span class="small sub" style="font-weight:400">{{ rows|selectattr('status', 'equalto', 'waiting')|list|length }} waiting for you</span></summary>
+  {% for x in rows %}{% if x.kind == 'd' %}{% set d = x.d %}
+  <div class="drow" data-st="{{ d.status }}" data-text="{{ (d.name ~ ' ' ~ d.code ~ ' ' ~ d.areas ~ ' ' ~ d.r.number)|lower }}">
+    <span>{% if d.status == 'waiting' and a.can_approve %}<input type="checkbox" class="pick" name="pick" value="{{ d.r.id }}" aria-label="Tick {{ d.name }}" style="width:20px;min-height:20px" {{ 'checked' if d.r.id in picked }}>{% endif %}</span>
+    <a href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}" tabindex="-1"><img src="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}/sheet/1" alt="" loading="lazy"></a>
+    <span style="min-width:0"><a class="nm" href="/portal/orders/{{ o.source_ref }}/d/{{ d.r.id }}">{{ d.name }}</a>
+      <span class="small sub" style="display:block">{{ d.code ~ ' · ' if d.code }}{{ d.r.number }} Rev {{ d.r.rev }} · {{ d.r.issued_at|when }} · {{ d.areas }} · Qty {{ d.qty }}</span>
+      {% if d.status == 'changes' and d.ap.note %}<span class="small" style="display:block;color:#9A4508">"{{ d.ap.note[:80] }}{{ '…' if d.ap.note|length > 80 }}"</span>{% endif %}</span>
+    <span class="st">{% if d.status == 'approved' %}<span class="tag ok">Approved</span>{% elif d.status == 'changes' %}<span class="tag ask">Change asked</span>{% else %}<span class="tag info">Waiting for you</span>{% endif %}</span>
   </div>
+  {% else %}{% set tt = x.t %}
+  <div class="drow" data-st="drawing" data-text="{{ (tt.name ~ ' ' ~ tt.area)|lower }}">
+    <span></span><span class="noimg" aria-hidden="true"></span>
+    <span style="min-width:0"><b>{{ tt.name }}</b><span class="small sub" style="display:block">{{ tt.area }} · Qty {{ tt.qty }}</span></span>
+    <span class="st"><span class="tag dim">Being drawn</span></span>
+  </div>
+  {% endif %}{% endfor %}
+</details>
 {% endfor %}
+<div id="dnone" class="sub" style="display:none">No drawing matches.</div>
+
+{% if sum.waiting and a.can_approve %}
+<div class="abar" id="abar" aria-live="polite">
+  <b id="acount">0 selected</b>
+  <span class="small sub">Tick: <a href="#" data-sel="all">all waiting</a> · <a href="#" data-sel="none">none</a></span>
+  <span style="flex-grow:1"></span>
+  <a class="btn sec" id="aone" href="#">Review one by one &rsaquo;</a>
+  <a class="btn" id="ago" href="#approve">Approve {{ sum.waiting }} · one email code</a>
 </div>
+{% endif %}
+
+{% if sum.waiting %}
+<div class="card" id="approve">
+  <h2>Approve drawings</h2>
+  {% if not a.can_approve %}
+  <div class="sub">Your email can view and comment on these drawings. Approval is given by the person your company named to us. Ask your Encore sales person if you should approve.</div>
+  {% else %}
+  <div class="small sub" id="awhich">With nothing ticked, this approves every drawing waiting for you. Tick drawings above to approve only those.</div>
+    <div class="row" style="align-items:flex-start">
+      <div class="f" style="flex:1 1 200px"><label for="nm">Your name</label><input id="nm" name="name" value="{{ form.name or a.name }}" autocomplete="name"></div>
+      <div class="f" style="flex:1 1 200px"><label for="dg">Designation</label><input id="dg" name="designation" value="{{ form.designation }}"></div>
+    </div>
+    <div class="row" style="align-items:flex-end">
+      <div class="f" style="flex:1 1 200px"><label for="cd">One-time code sent to your email</label><input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></div>
+      <button class="btn sec" name="do" value="code">{{ 'Send a new code' if code_sent else 'Email me a code' }}</button>
+    </div>
+    {% if code_sent %}<div class="okmsg">We emailed a 6-digit code to {{ email }}. It is valid for 10 minutes. One code approves all the drawings you ticked.</div>{% endif %}
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" value="1" style="width:20px;min-height:20px;margin-top:2px" {{ 'checked' if form.agree }}>
+      <span>I approve the <span id="aagree">drawings marked "Waiting for you"</span> for manufacturing as shown, including sizes, finishes and quantities. After approval the drawings go to production. Changes after that may affect cost and delivery date.</span></label>
+    <button class="btn" name="do" value="approve" id="ado">Approve {{ sum.waiting }} drawing{{ '' if sum.waiting == 1 else 's' }}</button>
+    {% if sum.changes %}<div class="small sub">{{ sum.changes }} drawing{{ ' has' if sum.changes == 1 else 's have' }} changes asked; it will come back as a new revision for approval.</div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
+</form>
+<script>
+(function(){
+var rows=[].slice.call(document.querySelectorAll('.drow')),q=document.getElementById('dq'),f='all',picks=[].slice.call(document.querySelectorAll('.pick')),W={{ sum.waiting }};
+function show(){if(!q)return;var v=q.value.toLowerCase().trim(),n=0;rows.forEach(function(r){var ok=(f==='all'||r.getAttribute('data-st')===f)&&(!v||r.getAttribute('data-text').indexOf(v)>=0);r.style.display=ok?'':'none';if(ok)n++;});
+  document.querySelectorAll('.dgrp').forEach(function(g){g.style.display=[].some.call(g.querySelectorAll('.drow'),function(r){return r.style.display!=='none'})?'':'none';});
+  document.getElementById('dnone').style.display=n?'none':'block';}
+if(q)q.addEventListener('input',show);
+document.querySelectorAll('.fchip').forEach(function(b){b.addEventListener('click',function(){f=b.getAttribute('data-f');document.querySelectorAll('.fchip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});show();});});
+function count(){var sel=picks.filter(function(p){return p.checked}),n=sel.length||W,c=document.getElementById('acount');if(!c)return;
+  c.textContent=sel.length+' selected';
+  document.getElementById('ago').textContent='Approve '+n+' · one email code';
+  document.getElementById('ado').textContent='Approve '+n+' drawing'+(n===1?'':'s');
+  document.getElementById('awhich').textContent=sel.length?'This approves the '+sel.length+' drawing'+(sel.length===1?'':'s')+' you ticked, with one code.':'With nothing ticked, this approves every drawing waiting for you. Tick drawings above to approve only those.';
+  document.getElementById('aagree').textContent=sel.length?sel.length+' drawing'+(sel.length===1?'':'s')+' I ticked':'drawings marked "Waiting for you"';
+  var o=document.getElementById('aone'),first=sel[0]||picks[0];o.href=first?'/portal/orders/{{ o.source_ref }}/d/'+first.value:'#';}
+picks.forEach(function(p){p.addEventListener('change',count)});
+document.querySelectorAll('[data-sel]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();var s=a.getAttribute('data-sel');picks.forEach(function(p){p.checked=s==='all'&&p.closest('.drow').style.display!=='none'});count();});});
+count();
+})();
+</script>
+{% endif %}
 
 <div class="row">
   {% if ds %}<a class="btn sec" href="/portal/orders/{{ o.source_ref }}/set.pdf">Download full set PDF</a>{% endif %}
@@ -61,28 +152,4 @@
   {% else %}<div class="small sub">Requests are sent by the person your company named to approve.</div>{% endif %}
 </div>
 
-{% if sum.waiting %}
-<div class="card" id="approve">
-  <h2>Approve remaining drawings</h2>
-  {% if not a.can_approve %}
-  <div class="sub">Your email can view and comment on these drawings. Approval is given by the person your company named to us. Ask your Encore sales person if you should approve.</div>
-  {% else %}
-  <form method="post" action="/portal/orders/{{ o.source_ref }}/approve#approve" class="f" style="gap:10px">
-    <div class="row" style="align-items:flex-start">
-      <div class="f" style="flex:1 1 200px"><label for="nm">Your name</label><input id="nm" name="name" value="{{ form.name or a.name }}" autocomplete="name"></div>
-      <div class="f" style="flex:1 1 200px"><label for="dg">Designation</label><input id="dg" name="designation" value="{{ form.designation }}"></div>
-    </div>
-    <div class="row" style="align-items:flex-end">
-      <div class="f" style="flex:1 1 200px"><label for="cd">One-time code sent to your email</label><input id="cd" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></div>
-      <button class="btn sec" name="do" value="code">{{ 'Send a new code' if code_sent else 'Email me a code' }}</button>
-    </div>
-    {% if code_sent %}<div class="okmsg">We emailed a 6-digit code to {{ email }}. It is valid for 10 minutes.</div>{% endif %}
-    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" value="1" style="width:20px;min-height:20px;margin-top:2px" {{ 'checked' if form.agree }}>
-      <span>I approve the drawings marked "Waiting" ({% for d in ds if d.status == 'waiting' %}{{ d.r.number }} Rev {{ d.r.rev }}{{ ', ' if not loop.last }}{% endfor %}) for manufacturing as shown, including sizes, finishes and quantities. After approval the drawings go to production. Changes after that may affect cost and delivery date.</span></label>
-    <button class="btn" name="do" value="approve">Approve {{ sum.waiting }} drawing{{ '' if sum.waiting == 1 else 's' }}</button>
-    {% if sum.changes %}<div class="small sub">{{ sum.changes }} drawing{{ ' has' if sum.changes == 1 else 's have' }} changes asked; it will come back as a new revision for approval.</div>{% endif %}
-  </form>
-  {% endif %}
-</div>
-{% endif %}
 {% endblock %}

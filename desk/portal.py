@@ -176,11 +176,35 @@ def drawings(o):
         ap = desk._approval_of(r)
         item = (r.spec or {}).get("item", {})
         from .clients import replies_for                                    # issue #34: Encore's answers to the client
+        areas = [a.area for a in (getattr(l, "areas", None) or [])] or ([item["area"]] if item.get("area") else [])   # issue #85
         out.append(dict(l=l, r=r, ap=ap, status=status_of(ap), sheet=n, total=len(cur), name=item.get("product_name") or l.name,
+                        area=areas[0] if areas else NO_AREA, areas=", ".join(areas) or NO_AREA,
                         replies=replies_for(ap.id if ap is not None and ap.outcome == "changes" else 0),
                         code=item.get("product_code", ""), qty=item.get("qty", int(l.qty or 0)),
                         finishes=[(sw.get("use", ""), sw.get("code", "")) for sw in (r.spec or {}).get("swatches", []) if sw.get("code")]))
     return out
+
+
+NO_AREA = "No area"
+
+
+def being_drawn(o, ds):
+    """Products of the order not issued yet (issue #85): shown as "Being drawn", never ticked or approved."""
+    issued = {d["l"].id for d in ds}
+    return [dict(no=l.no, name=l.name.split("(")[0].strip(), qty=int(l.qty or 0), area=([a.area for a in (getattr(l, "areas", None) or [])] or [NO_AREA])[0])
+            for l in sorted(o.lines, key=lambda x: x.no) if l.id not in issued and not l.cancelled_at]
+
+
+def groups(ds, todo):
+    """[(area, [row])] for the order page: issued drawings and products being drawn, by area in first-seen order, "No area" last.
+    row = dict(kind "d" | "todo", d or t, status)"""
+    seen = {}
+    for d in ds:
+        seen.setdefault(d["area"], []).append(dict(kind="d", d=d, status=d["status"]))
+    for t in todo:
+        seen.setdefault(t["area"], []).append(dict(kind="todo", t=t, status="drawing"))
+    keys = [a for a in seen if a != NO_AREA] + ([NO_AREA] if NO_AREA in seen else [])
+    return [(a, seen[a]) for a in keys]
 
 
 def summary(ds):
@@ -364,9 +388,15 @@ def order_set(request: Request, ref: str, done: str = ""):
     email = current(request)
     o, a = _access(email, ref)
     ds = drawings(o)
+    return _set_page(request, email, o, a, ds, done=done)
+
+
+def _set_page(request, email, o, a, ds, done="", form=None, error="", code_sent=False, picked=()):
+    """The order page (issue #85: built for 100 drawings): progress, search, filter chips, area groups, tick and approve."""
     from .portalreq import of_order, STATUS                             # issue #47: the client's add / remove requests
-    return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form={}, error="", code_sent=False, tab="orders",
-                reqs=of_order(o.id), req_status=STATUS)
+    todo = being_drawn(o, ds)
+    return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form=form or {}, error=error, code_sent=code_sent, tab="orders",
+                reqs=of_order(o.id), req_status=STATUS, todo=todo, groups=groups(ds, todo), picked=set(picked))
 
 
 def _approve(request, o, a, picked, name, designation):
@@ -415,9 +445,11 @@ async def approve_set(request: Request, ref: str):
     f = {k: (form.get(k) or "").strip() for k in ("name", "designation", "code", "agree", "do")}
     ds = drawings(o)
     rid = int(form.get("rid") or 0)
-    waiting = [d for d in ds if d["status"] == "waiting" and (not rid or d["r"].id == rid)]
-    back = (lambda err="", sent=False: page(request, "drawing.html" if rid else "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done="", form=f,
-                                            error=err, code_sent=sent, tab="orders", **(_drawing_ctx(ds, rid) if rid else {})))
+    picks = {int(x) for x in form.getlist("pick") if str(x).isdigit()}   # issue #85: the ticked drawings; none ticked = all waiting
+    waiting = [d for d in ds if d["status"] == "waiting" and (not rid or d["r"].id == rid) and (rid or not picks or d["r"].id in picks)]
+    back = ((lambda err="", sent=False: page(request, "drawing.html", email, o=o, a=a, ds=ds, sum=summary(ds), done="", form=f,
+                                             error=err, code_sent=sent, tab="orders", **_drawing_ctx(ds, rid))) if rid else
+            (lambda err="", sent=False: _set_page(request, email, o, a, ds, form=f, error=err, code_sent=sent, picked=picks)))
     if not a.can_approve:
         return back("Your email can view and comment on these drawings, but not approve them. Ask your Encore sales person if you should approve.")
     if not waiting:
