@@ -314,6 +314,59 @@ class ProductionFile(Base):
     made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class PortalAccess(Base):
+    """Who may sign in to the client portal for one order. Only these emails can; CC addresses and forwarded mails cannot.
+    can_approve: approve drawings; otherwise view and comment. Every addition and removal is logged in the conversation."""
+    __tablename__ = "portal_access"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    email: Mapped[str] = mapped_column(String(200))
+    name: Mapped[str] = mapped_column(String(200), default="")
+    can_approve: Mapped[bool] = mapped_column(Boolean, default=False)
+    added_by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EmailLog(Base):
+    """An email sent (or tried) to the client from the Issue screen."""
+    __tablename__ = "email_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="first")
+    to: Mapped[str] = mapped_column(Text, default="")
+    cc: Mapped[str] = mapped_column(Text, default="")
+    subject: Mapped[str] = mapped_column(Text, default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    attachment: Mapped[str] = mapped_column(Text, default="")            # file name of the combined PDF, "" = none
+    error: Mapped[str] = mapped_column(Text, default="")                 # "" = sent
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Approval(Base):
+    """The client's answer on one issued drawing (decision 11): approved, or changes asked. Recorded by staff when the
+    client replied by email or phone (the portal records its own later, code-verified). Kept with the fingerprint of
+    the exact PDF approved. An approval locks that drawing for the client."""
+    __tablename__ = "approval"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    revision_id: Mapped[int] = mapped_column(ForeignKey("revision.id"))
+    outcome: Mapped[str] = mapped_column(String(20))                    # approved | changes
+    name: Mapped[str] = mapped_column(String(200), default="")
+    designation: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    how: Mapped[str] = mapped_column(String(40), default="")            # email | phone | signed PDF | portal
+    on: Mapped[str] = mapped_column(String(20), default="")             # the date the client gave it
+    note: Mapped[str] = mapped_column(Text, default="")
+    proof: Mapped[str] = mapped_column(Text, default="")                # attached mail / signed PDF (path)
+    proof_name: Mapped[str] = mapped_column(Text, default="")
+    pdf_sha256: Mapped[str] = mapped_column(String(64), default="")
+    ip: Mapped[str] = mapped_column(String(60), default="")
+    code_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    by: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def _default_sql(col, dialect):
     """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
     d = col.default
