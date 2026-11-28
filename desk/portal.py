@@ -262,7 +262,9 @@ def home(request: Request):
     rows = _orders(email)
     active, past = [x for x in rows if not x["past"]], [x for x in rows if x["past"]]
     tiles = dict(active=len(active), waiting=sum(x["sum"]["waiting"] for x in active), changes=sum(x["sum"]["changes"] for x in active), past=len(past))
-    return page(request, "home.html", email, active=active, past=past, tiles=tiles, tab="orders")
+    from .tour import for_portal                                       # issue #43: the client's first-time tour
+    return page(request, "home.html", email, active=active, past=past, tiles=tiles, tab="orders",
+                tour_tags=for_portal(email, request.query_params.get("tour") == "1"))
 
 
 @router.get("/past", response_class=HTMLResponse)

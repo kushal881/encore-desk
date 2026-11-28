@@ -28,6 +28,13 @@ class UserLog(Base):
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class PortalTour(Base):
+    """A client email that has seen (or skipped) the portal's first-time tour (issue #43)."""
+    __tablename__ = "portal_tour"
+    email: Mapped[str] = mapped_column(String(200), primary_key=True)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Client(Base):
     __tablename__ = "client"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -148,6 +155,7 @@ class User(Base):
     last_sign_in: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     engines_dismissed: Mapped[str] = mapped_column(String(20), default="")   # the newer engine version whose notice they closed
     guide_dismissed: Mapped[bool] = mapped_column(Boolean, default=False)   # closed the dashboard's "New here? Read the guide" card
+    tour_done: Mapped[bool] = mapped_column(Boolean, default=False)         # saw (or skipped) the first-time tour
 
 
 class Finish(Base):
