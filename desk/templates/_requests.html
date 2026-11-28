@@ -1,0 +1,25 @@
+{% if reqs %}
+<div class="card" id="requests" style="gap:8px;border-color:{{ '#9A4508' if reqs|selectattr('status', 'in', ['received', 'handling'])|list else '#E3E1DA' }}">
+  <div style="font-weight:600">Client requests</div>
+  <div class="sub small">Asked on the portal. The salesperson updates the Odoo quotation; the quotation change then adds or cancels the product.</div>
+  {% for r in reqs %}
+  <div style="border-top:1px solid #EEECE6;padding-top:8px;display:flex;flex-direction:column;gap:6px">
+    <div class="small"><b>{{ 'Add' if r.kind == 'add' else 'Remove' }}:</b>
+      {% if r.kind == 'add' %}{{ r.product }}{% if r.qty %} · qty {{ r.qty }}{% endif %}{% else %}{% for x in r.items %}Product {{ x.no }} {{ x.name }} ({{ x.qty }}){{ '; ' if not loop.last }}{% endfor %}{% endif %}
+      <span class="tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'declined' else 'ask' }}">{{ {'received': 'Received', 'handling': 'Being handled', 'done': 'Done', 'declined': 'Declined'}[r.status] }}</span></div>
+    <div class="sub small">{{ r.name }} ({{ r.email }}) · {{ r.at|when }}{% if r.note %} · "{{ r.note }}"{% endif %}{% if r.file %} · <a href="/portal-requests/{{ r.id }}/file">{{ r.file_name }}</a>{% endif %}</div>
+    {% if r.answer %}<div class="small">Answer by {{ r.handled_by }}: {{ r.answer }}</div>{% endif %}
+    {% set qc = linked(r) %}{% if qc %}<div class="small"><a href="/orders/{{ o.source_ref }}/changes">The quotation change has come from Odoo ›</a></div>{% endif %}
+    {% if r.status in ('received', 'handling') %}
+    <form method="post" style="display:flex;flex-direction:column;gap:6px">
+      {% if r.status == 'received' %}<div><button class="sm" formaction="/orders/{{ o.source_ref }}/requests/{{ r.id }}/handling">Mark being handled</button></div>{% endif %}
+      <label class="small" for="ra{{ r.id }}">Answer to the client (needed for Done / Decline)</label>
+      <textarea id="ra{{ r.id }}" name="answer" rows="2" style="font:inherit;padding:8px 10px;border:1px solid #D6D3CA;border-radius:10px"></textarea>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm primary" formaction="/orders/{{ o.source_ref }}/requests/{{ r.id }}/done">Done</button>
+        <button class="sm danger" formaction="/orders/{{ o.source_ref }}/requests/{{ r.id }}/declined">Decline</button></div>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

@@ -71,6 +71,12 @@ def _open_items(s):
                 what = {"added": "added", "dropped": "dropped", "qty": "quantity changed", "spec": "specification changed"}.get(qc.kind, qc.kind)
                 out["quote:%d" % qc.id] = dict(kind="quote", title="%s · quotation: %s%s" % (o.source_ref, ("Product %d " % qc.line_no) if qc.line_no else "", what),
                                                ref=o.source_ref, url="/orders/%s/changes" % o.source_ref, people=people, info=False)
+    for pr in s.scalars(select(db.PortalRequest).where(db.PortalRequest.status.in_(("received", "handling")))):   # issue #47
+        o = s.get(db.Order, pr.order_id)
+        if o is None:
+            continue
+        out["portalreq:%d" % pr.id] = dict(kind="client", title="%s · client asks to %s a product" % (o.source_ref, pr.kind), ref=o.source_ref,
+                                           url="/orders/%s/work#requests" % o.source_ref, people=_team(s, o, users), info=False)
     for cr in s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")):
         tab = {"after_approval": "after", "revision": "revision", "production": "production"}.get(cr.kind, "after")
         out["change:%d" % cr.id] = dict(kind="change", title="%s · %s waiting for your decision" % (cr.order_ref, {"after_approval": "change after approval", "revision": "revision raise",

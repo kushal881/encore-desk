@@ -317,7 +317,9 @@ def order_set(request: Request, ref: str, done: str = ""):
     email = current(request)
     o, a = _access(email, ref)
     ds = drawings(o)
-    return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form={}, error="", code_sent=False, tab="orders")
+    from .portalreq import of_order, STATUS                             # issue #47: the client's add / remove requests
+    return page(request, "set.html", email, o=o, a=a, ds=ds, sum=summary(ds), done=done, form={}, error="", code_sent=False, tab="orders",
+                reqs=of_order(o.id), req_status=STATUS)
 
 
 def _approve(request, o, a, picked, name, designation):

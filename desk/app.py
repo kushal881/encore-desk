@@ -538,6 +538,7 @@ def order(request: Request, ref: str, user=User):
                               needs_issue=any(_ready(l) and not l.issued_current for l in o.lines), latest=engines.version(),
                               prod_sets=[x for l in o.lines for x in l.sets if x.kind == "PRODUCTION"], vendor_sets=[x for l in o.lines for x in l.sets if x.kind == "VENDOR"],
                               bom_files=_bom_files(o), clients=__import__("desk.clients", fromlist=["cards"]).cards(o),
+                              reqs=__import__("desk.portalreq", fromlist=["of_order"]).of_order(o.id), linked=__import__("desk.portalreq", fromlist=["linked_change"]).linked_change,
                               today=datetime.date.today().strftime("%d %b %Y").upper()))
 
 
@@ -2019,3 +2020,7 @@ app.include_router(_clients)
 
 from .notify import router as _notify                                # issue #48: notifications
 app.include_router(_notify)
+
+
+from .portalreq import router as _portalreq                          # issue #47: client add / remove requests
+app.include_router(_portalreq)

@@ -18,6 +18,28 @@ class Base(DeclarativeBase):
     pass
 
 
+class PortalRequest(Base):
+    """A client's request on the portal to add or remove a product (issue #47). Nothing changes by itself: the salesperson
+    updates the Odoo quotation and the quotation changes inbox does the rest. The client sees the status and the answer."""
+    __tablename__ = "portal_request"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    kind: Mapped[str] = mapped_column(String(10))                       # add | remove
+    email: Mapped[str] = mapped_column(String(200), default="")
+    name: Mapped[str] = mapped_column(String(200), default="")         # the client who asked
+    product: Mapped[str] = mapped_column(Text, default="")             # add: name / description
+    qty: Mapped[str] = mapped_column(String(40), default="")           # add: quantity
+    items: Mapped[list] = mapped_column(JSON, default=list)            # remove: [dict(no, name, qty)]
+    note: Mapped[str] = mapped_column(Text, default="")
+    file: Mapped[str] = mapped_column(Text, default="")
+    file_name: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="received")   # received | handling | done | declined
+    answer: Mapped[str] = mapped_column(Text, default="")
+    handled_by: Mapped[str] = mapped_column(String(120), default="")
+    answered_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Notification(Base):
     """One notification for one person (issue #48). It stays open until the thing it points at is resolved (a change
     request re-issued or declined, a quotation change handled, a request decided, a task done); opening it only marks it
