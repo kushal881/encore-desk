@@ -297,6 +297,23 @@ class LineArea(Base):
     by: Mapped[str] = mapped_column(String(120), default="")
 
 
+class ProductionFile(Base):
+    """A file the approved engines made for production of the whole order: the bill of material (Excel) with its cut list.
+    panel_saw: made with the panel-saw cutting rules (4 mm saw cut, cut sizes, grain, optimised boards)."""
+    __tablename__ = "production_file"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("order_.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="bom")
+    panel_saw: Mapped[bool] = mapped_column(Boolean, default=False)
+    path: Mapped[str] = mapped_column(Text, default="")
+    name: Mapped[str] = mapped_column(Text, default="")
+    revisions: Mapped[str] = mapped_column(Text, default="")             # the issued drawings it was made from
+    engine_version: Mapped[str] = mapped_column(String(80), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def _default_sql(col, dialect):
     """The value existing rows get when a column is added: the column's own default, as SQL. None = no default."""
     d = col.default

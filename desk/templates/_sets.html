@@ -27,4 +27,20 @@
       {% endif %}
     </div>
     {% endfor %}
+    <div class="label">Bill of material and cut list</div>
+    <div class="card">
+      {% for f in bom_files %}<div class="small" {% if not loop.first %}style="border-top:1px solid #EEECE6;padding-top:6px"{% endif %}>
+        {% if f.error %}<span class="tag bad">Not made</span> {{ f.error }}{% else %}<a href="/production-files/{{ f.id }}"><b>{{ f.name }}</b></a>{% endif %}
+        {% if f.panel_saw %} <span class="tag info">Panel-saw cutting</span>{% endif %}
+        <div class="sub">From {{ f.revisions }} · engines {{ f.engine_version }} · {{ f.made_by }}, {{ f.made_at|when }}</div></div>
+      {% else %}<div class="sub small">Not made yet.</div>{% endfor %}
+      {% if o.stage in ('production', 'completed') %}
+      <form method="post" action="/orders/{{ o.source_ref }}/bom" style="display:flex;flex-direction:column;gap:8px;border-top:1px solid #EEECE6;padding-top:8px">
+        <label class="small" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" name="panel_saw" value="1" {{ 'checked' if bom_files and bom_files[0].panel_saw }} style="min-height:auto;width:20px;height:20px;flex:none">
+          <span><b>Panel-saw cutting</b> · 4 mm saw cut, cut sizes (finished size less edge band), grain kept along the board, boards optimised for the fewest boards and fence settings.</span></label>
+        <div><button class="sm primary">Make the bill of material</button></div>
+        <div class="sub small">Made by the approved engines from each product's latest issued revision. Without the tick, boards are counted as before (3 mm saw cut, finished sizes).</div>
+      </form>
+      {% endif %}
+    </div>
     {% endif %}

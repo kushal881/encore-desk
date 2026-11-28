@@ -194,6 +194,36 @@ def draw(spec, key, edir=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def bom(specs, key, edir=None, panel_saw=False, client="Client"):
+    """The approved BOM engine (tool/bom.py) for a whole order: specs = {drawing number: issued specification}.
+    panel_saw: the panel-saw cutting rules (--panel-saw: 4 mm saw cut, cut sizes, grain, optimised boards).
+    -> path of the workbook under FILES/key, or raises RuntimeError with the engine's reason."""
+    edir = edir or ENGINES_DIR
+    tool = os.path.join(edir or "", "tool")
+    if not os.path.exists(os.path.join(tool, "bom.py")):
+        raise RuntimeError("The approved engines are not available on this server (%s)." % version_label())
+    work = tempfile.mkdtemp(prefix="desk_bom_")
+    try:
+        os.makedirs(os.path.join(work, "Other"))
+        safe = re.sub(r'[<>:"/\\|?*]', "", client).strip() or "Client"
+        serials = []
+        for number, sp in specs.items():
+            json.dump(sp, open(os.path.join(work, "Other", "%s-%s.json" % (number, safe)), "w", encoding="utf-8"), indent=1)
+            serials.append(str(int(number.rsplit("-", 1)[1])))
+        out = os.path.join(FILES, key)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        env = {k: v for k, v in os.environ.items() if k not in ("ENCORE_ENGINE_APPROVAL_RUN", "ENCORE_PANEL_SAW")}   # the lock check always applies
+        cmd = [sys.executable, "-W", "ignore", os.path.join(tool, "bom.py")] + sorted(serials, key=int) + ["--client=" + work, "--out=" + out]
+        r = subprocess.run(cmd + (["--panel-saw"] if panel_saw else []), capture_output=True, text=True, timeout=900, cwd=tool, env=env)
+        if r.returncode != 0 or not os.path.exists(out):
+            lines = [l for l in (r.stderr + "\n" + r.stdout).splitlines() if l.strip()]
+            msg = next((l for l in reversed(lines) if "Error" in l or "STOP" in l or "serial" in l), lines[-1] if lines else "The engine gave no output.")
+            raise RuntimeError(msg.split("Error: ")[-1].strip()[:400])
+        return out
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def draw_set(spec, key, edir=None):
     """A production or vendor set: the engine writes several PDFs (the complete product and one set per department).
     -> [dict(title, pdf, pages)] under FILES/key, the complete-product sheet first."""
