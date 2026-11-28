@@ -28,6 +28,11 @@ def test_project_stage():
     assert [pj.project_stage(st, [L()]) for st in ("issued", "sent", "approved", "production", "completed")] == [5, 6, 7, 7, 8]
 
 
+def body(url):
+    """The page without the header (the notifications bell also names projects)."""
+    return c.get(url).text.split('class="page"', 1)[1]
+
+
 def row(ref):
     with db.Session() as s:
         return next(r for r in pj.rows(s) if r["ref"] == ref)
@@ -51,9 +56,9 @@ def test_projects_page():
     assert "No projects in this view." in c.get("/projects?show=Completed").text
     sp = row("Q-2026-10-444")["salesperson"]
     if sp:
-        h = c.get("/projects?sp=" + sp).text
+        h = body("/projects?sp=" + sp)
         assert "Q-2026-10-444" in h and "SAMPLE-REPEAT-1" not in h
-    h = c.get("/projects?q=repeat").text
+    h = body("/projects?q=repeat")
     assert "SAMPLE-REPEAT-1" in h and "Q-2026-10-444" not in h
     assert "No projects in this view." in c.get("/projects?q=nothing-like-this").text
     assert "Active projects" in c.get("/projects?show=bogus&stage=99").text            # wrong values: the default view
@@ -97,9 +102,9 @@ def test_stages_and_attention():
     assert row("Q-2026-10-444")["flag"] == "Engine request pending"
     c.post(A + "/step/completed", data={"note": ""})
     assert row("Q-2026-10-444")["st"] == 8
-    h = c.get("/projects?show=Completed").text
+    h = body("/projects?show=Completed")
     assert "Q-2026-10-444" in h and "SAMPLE-REPEAT-1" not in h and "8 · Done" in h
-    assert "Q-2026-10-444" in c.get("/projects?show=All").text and "Q-2026-10-444" not in c.get("/projects").text
+    assert "Q-2026-10-444" in c.get("/projects?show=All").text and "Q-2026-10-444" not in body("/projects")
 
 
 if __name__ == "__main__":

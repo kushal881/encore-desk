@@ -329,6 +329,11 @@ def ctx(user, **kw):
         ch_waiting = len(s.scalars(select(db.ChangeRequest).where(db.ChangeRequest.status == "asked")).all())
         tasks = len(s.scalars(select(db.Task).where(db.Task.assignee == user.name, db.Task.status == "open")).all())
     lv = auth.level(user)
+    try:
+        from .notify import counts                                     # issue #48: the bell on every page
+        kw.setdefault("bell", counts(user))
+    except Exception:
+        kw.setdefault("bell", (0, []))
     newer = engines.NEWER if user.role == "admin" else ""                # a newer approved engine version: administrators only
     kw.setdefault("engines_newer", newer)
     kw.setdefault("engines_popup", bool(newer) and (getattr(user, "engines_dismissed", "") or "") != newer)
@@ -2010,3 +2015,7 @@ app.include_router(_quotes)
 
 from .clients import router as _clients                              # issue #34: client approvals column
 app.include_router(_clients)
+
+
+from .notify import router as _notify                                # issue #48: notifications
+app.include_router(_notify)
